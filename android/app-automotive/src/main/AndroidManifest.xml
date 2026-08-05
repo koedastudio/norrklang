@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <!-- Dedicated Android Automotive OS artifact. -->
+  <uses-feature
+    android:name="android.hardware.type.automotive"
+    android:required="true" />
+  <!-- Media apps must not require hardware a car may lack. -->
+  <uses-feature
+    android:name="android.hardware.touchscreen"
+    android:required="false" />
+  <uses-feature
+    android:name="android.hardware.wifi"
+    android:required="false" />
+
+  <uses-permission android:name="android.permission.INTERNET" />
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+
+  <!-- allowBackup=false: DataStore holds the (encrypted) server token —
+       credentials must never ride along in device backups or transfers. -->
+  <application
+    android:name=".NorrklangAutomotiveApplication"
+    android:allowBackup="false"
+    android:appCategory="audio"
+    android:icon="@mipmap/ic_launcher"
+    android:label="@string/app_name"
+    android:networkSecurityConfig="@xml/network_security_config"
+    android:theme="@style/Theme.Norrklang">
+
+    <!-- Declares this as an automotive media app. -->
+    <meta-data
+      android:name="com.android.automotive"
+      android:resource="@xml/automotive_app_desc" />
+
+    <!-- Parked-only sign-in, launched via the media UI's error-resolution
+         intent. Intentionally no launcher intent-filter and no
+         distractionOptimized meta-data. exported=false suffices: the only
+         launcher is our own PendingIntent (NorrklangMediaLibraryService),
+         which resolves same-UID via setPackage() and ignores the flag. -->
+    <activity
+      android:name=".SignInActivity"
+      android:exported="false"
+      android:launchMode="singleTask">
+      <intent-filter>
+        <action android:name="studio.koeda.norrklang.action.SIGN_IN" />
+        <category android:name="android.intent.category.DEFAULT" />
+      </intent-filter>
+    </activity>
+
+    <!-- The car settings UI looks for APPLICATION_PREFERENCES. -->
+    <activity
+      android:name=".SettingsActivity"
+      android:exported="true"
+      android:launchMode="singleTask">
+      <intent-filter>
+        <action android:name="android.intent.action.APPLICATION_PREFERENCES" />
+        <category android:name="android.intent.category.DEFAULT" />
+      </intent-filter>
+    </activity>
+  </application>
+
+</manifest>

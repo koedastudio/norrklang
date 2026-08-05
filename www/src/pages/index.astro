@@ -1,0 +1,192 @@
+---
+import Base from '../layouts/Base.astro';
+import Mark from '../components/Mark.astro';
+import { GITHUB_URL, LICENSE_URL, PLAY_URL, PUBLISHER, PUBLISHER_URL, TAGLINE } from '../config';
+
+const requirements = [
+  {
+    title: 'A Navidrome or Subsonic server',
+    body: 'Current stable Navidrome, or any server implementing the Subsonic API 1.16.1 with token authentication. Navidrome is what it has been tested against.',
+  },
+  {
+    title: 'A car running Android Automotive OS',
+    body: 'Built in to the car — Polestar, Volvo and friends. The app runs in the car itself, not from your phone.',
+  },
+  {
+    title: 'HTTPS, not optional',
+    body: 'Release builds refuse cleartext HTTP. A reverse proxy with a Let’s Encrypt certificate is enough. Plain HTTP works only in debug builds against local test servers.',
+  },
+];
+---
+
+<Base>
+  <section class="hero">
+    <div class="wrap">
+      {/* Wrapper, not a class on <Mark>: scoped styles can't reach its root SVG. */}
+      <div class="hero__mark"><Mark size={72} /></div>
+      <p class="pill">Android Automotive OS</p>
+      <h1>{TAGLINE}</h1>
+      <p class="hero__lede">
+        Norrklang is a music player for <a href="https://www.navidrome.org/">Navidrome</a> and Subsonic-compatible servers, built for Android Automotive OS. Self-hosted music, on the
+        dashboard, with nothing in between.
+      </p>
+      <div class="hero__cta">
+        <a class="btn btn--primary" href={PLAY_URL}>Get it on Google Play</a>
+        <a class="btn btn--ghost" href={GITHUB_URL}>View the source</a>
+      </div>
+      <p class="hero__note">Installs in the car, not on your phone.</p>
+    </div>
+  </section>
+
+  <section class="section" id="requirements">
+    <div class="wrap">
+      <h2>What you need</h2>
+      <ul class="cards">
+        {
+          requirements.map((r) => (
+            <li class="card">
+              <h3>{r.title}</h3>
+              <p>{r.body}</p>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </section>
+
+  <section class="section" id="open-source">
+    <div class="wrap">
+      <h2>Open source</h2>
+      <p class="section__prose">
+        Norrklang is free, open-source software licensed under <a href={LICENSE_URL}>GPL-3.0-or-later</a>,
+        developed and maintained by <a href={PUBLISHER_URL}>{PUBLISHER}</a>.
+        Everything is <a href={GITHUB_URL}>on GitHub</a> — the app, this
+        website, and the release tooling. Bug reports and contributions are
+        welcome.
+      </p>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .hero {
+    padding-block: clamp(3.5rem, 10vw, 7rem) clamp(3rem, 7vw, 5rem);
+    border-bottom: 1px solid var(--border);
+    background:
+      radial-gradient(
+        ellipse 70% 60% at 50% -10%,
+        rgba(79, 216, 196, 0.13),
+        transparent 70%
+      ),
+      var(--bg);
+  }
+
+  .hero__mark {
+    line-height: 0;
+    margin-bottom: 1.5rem;
+  }
+
+  /* Constrain the text, not .wrap: a narrower wrap would push the hero right
+     of the section below. */
+  .hero h1 {
+    max-width: 15ch;
+    font-size: clamp(2.25rem, 1.4rem + 3.6vw, 3.75rem);
+    margin-top: 1.25rem;
+  }
+
+  .hero__lede {
+    color: var(--text-muted);
+    font-size: clamp(1.0625rem, 1rem + 0.4vw, 1.25rem);
+    max-width: 40ch;
+    margin-top: 1.25rem;
+  }
+
+  .hero__cta {
+    margin-top: 2rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .hero__note {
+    margin: 1rem 0 0;
+    color: var(--text-muted);
+    font-size: 0.9375rem;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-radius: 999px;
+    padding: 0.75rem 1.5rem;
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .btn--primary {
+    background: var(--accent);
+    color: #06201c;
+  }
+
+  .btn--primary:hover {
+    background: var(--accent-bright);
+    color: #06201c;
+  }
+
+  .btn--ghost {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+  }
+
+  .btn--ghost:hover {
+    border-color: var(--accent);
+    color: var(--text);
+  }
+
+  .section {
+    padding-block: clamp(2.75rem, 6vw, 4.5rem);
+  }
+
+  .section h2 {
+    font-size: clamp(1.5rem, 1.2rem + 1.2vw, 2rem);
+    margin-bottom: 1.5rem;
+  }
+
+  .section__prose {
+    color: var(--text-muted);
+    max-width: 60ch;
+  }
+
+  .section__prose + .section__prose {
+    margin-top: 0.75rem;
+  }
+
+  .cards {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+  }
+
+  .card h3 {
+    font-size: 1.0625rem;
+    color: var(--text);
+  }
+
+  .card p {
+    margin: 0.6rem 0 0;
+    color: var(--text-muted);
+    font-size: 0.9375rem;
+  }
+</style>

@@ -1,0 +1,24 @@
+<!-- Play Store feature graphic, 1024x500.
+     Flat NightBackground, the launcher icon at its real crop, and Roboto —
+     the same face and hierarchy as the sign-in screen (displaySmall bold
+     title over bodyLarge secondary subtitle). -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 500" width="1024" height="500">
+  <rect width="1024" height="500" fill="#0B0D10"/>
+
+  <!-- app icon, center 72x72 crop of the adaptive-icon foreground -->
+  <g transform="translate(428,100) scale(2.3333) translate(-18,-18)">
+    <rect x="18" y="18" width="72" height="72" rx="16" fill="#14171C"/>
+    <g stroke-width="6" stroke-linecap="round" fill="none">
+      <path d="M36 46 L36 62" stroke="#4FD8C4"/>
+      <path d="M45 38 L45 70" stroke="#4FD8C4"/>
+      <path d="M54 30 L54 78" stroke="#6FE6D6"/>
+      <path d="M63 38 L63 70" stroke="#4FD8C4"/>
+      <path d="M72 46 L72 62" stroke="#4FD8C4"/>
+    </g>
+  </g>
+
+  <g font-family="Roboto" text-anchor="middle">
+    <text x="512" y="340" font-size="68" font-weight="700" fill="#F2F4F7">Norrklang</text>
+    <text x="512" y="392" font-size="30" fill="#A8B0BB">Connect to your Navidrome server</text>
+  </g>
+</svg>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="browse_tab_home">Home</string>
+  <string name="browse_tab_artists">Artists</string>
+  <string name="browse_tab_albums">Albums</string>
+  <string name="browse_tab_playlists">Playlists</string>
+  <string name="browse_home_new_albums">New albums</string>
+  <string name="browse_home_favorite_albums">Favourite albums</string>
+  <string name="browse_home_favorite_songs">Favourites</string>
+  <string name="browse_home_random_mix">Random mix</string>
+  <string name="browse_home_recently_played">Recently played</string>
+  <string name="browse_home_most_played">Most played</string>
+  <string name="browse_group_quick_play">Quick play</string>
+  <string name="browse_group_made_for_you">Made for you</string>
+  <string name="browse_group_genre_mixes">Genre mixes</string>
+  <string name="browse_group_decade_mixes">Decade mixes</string>
+  <string name="browse_group_browse">Browse</string>
+  <string name="browse_home_similar_to">Similar to %1$s</string>
+  <string name="browse_home_best_of">Best of %1$s</string>
+  <!-- Decade mix tile title, e.g. "1980s"; %1$d is the decade's first year. -->
+  <string name="browse_home_decade_mix">%1$ds</string>
+  <string name="error_sign_in_required">Sign in to your Navidrome server to start listening</string>
+  <string name="error_sign_in_action">Sign in</string>
+  <string name="error_sign_in_on_phone">Open Norrklang on your phone to sign in</string>
+  <string name="error_loading_library">Couldn\'t load your library. Check your connection and try again.</string>
+  <string name="command_shuffle_on">Enable shuffle</string>
+  <string name="command_shuffle_off">Disable shuffle</string>
+  <string name="command_add_favorite">Add to favourites</string>
+  <string name="command_remove_favorite">Remove from favourites</string>
+</resources>

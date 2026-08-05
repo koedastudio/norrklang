@@ -1,0 +1,59 @@
+---
+import Base from './Base.astro';
+
+/* Layout for Markdown pages in src/pages; Astro passes their frontmatter through. */
+interface Props {
+  frontmatter: {
+    title: string;
+    description?: string;
+    /** YAML gives us a Date for an unquoted `2026-07-18`, a string if quoted. */
+    effectiveDate?: string | Date;
+  };
+}
+
+const { frontmatter } = Astro.props;
+const effectiveDate = frontmatter.effectiveDate ? new Date(frontmatter.effectiveDate) : null;
+const effective = effectiveDate
+  ? {
+      iso: effectiveDate.toISOString().slice(0, 10),
+      label: effectiveDate.toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+        timeZone: 'UTC',
+      }),
+    }
+  : null;
+---
+
+<Base title={frontmatter.title} description={frontmatter.description}>
+  <article class="wrap legal">
+    <h1>{frontmatter.title}</h1>
+    {
+      effective && (
+        <p class="legal__effective">
+          Effective <time datetime={effective.iso}>{effective.label}</time>
+        </p>
+      )
+    }
+    <div class="prose">
+      <slot />
+    </div>
+  </article>
+</Base>
+
+<style>
+  .legal {
+    padding-block: clamp(2.5rem, 6vw, 4rem) 1rem;
+  }
+
+  .legal h1 {
+    font-size: clamp(1.9rem, 1.4rem + 2vw, 2.5rem);
+  }
+
+  .legal__effective {
+    color: var(--text-muted);
+    font-size: 0.9375rem;
+    margin-top: 0.75rem;
+  }
+</style>

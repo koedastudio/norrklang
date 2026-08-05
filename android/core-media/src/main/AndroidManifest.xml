@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <!-- PlaybackRecoveryListener watches the default network to retry after
+       connectivity loss; declared here so the module carries its own
+       requirement instead of leaning on the app manifests. -->
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+  <application>
+    <!-- Merged into both app-automotive and app-mobile. Answers both the
+         Media3 action and the legacy MediaBrowserService action used by
+         Android Auto / AAOS media hosts. -->
+    <service
+      android:name="studio.koeda.norrklang.media.NorrklangMediaLibraryService"
+      android:exported="true"
+      android:foregroundServiceType="mediaPlayback">
+      <intent-filter>
+        <action android:name="androidx.media3.session.MediaLibraryService" />
+        <action android:name="android.media.browse.MediaBrowserService" />
+      </intent-filter>
+    </service>
+
+    <!-- Cover art for the car media hosts. They only render content:// URIs
+         (never remote URLs), and they run in separate processes, so the
+         provider must be exported. It serves nothing but cover art bytes. -->
+    <provider
+      android:name="studio.koeda.norrklang.media.ArtworkProvider"
+      android:authorities="${applicationId}.artwork"
+      android:exported="true" />
+  </application>
+
+</manifest>

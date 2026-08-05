@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest
+  xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:tools="http://schemas.android.com/tools">
+
+  <uses-permission android:name="android.permission.INTERNET" />
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+  <!-- allowBackup=false: DataStore holds the (encrypted) server token —
+       credentials must never ride along in device backups or transfers.
+
+       Lint suppressions: MissingMediaBrowserServiceIntentFilter only reads
+       this file, but the service (with both browse actions) merges in from
+       core-media's manifest. MEDIA_PLAY_FROM_SEARCH is the phone-side
+       Assistant entry point — car voice search goes through the session
+       callback instead; add the filter only with a real implementation. -->
+  <application
+    tools:ignore="MissingMediaBrowserServiceIntentFilter,MissingIntentFilterForMediaSearch"
+    android:name=".NorrklangMobileApplication"
+    android:allowBackup="false"
+    android:appCategory="audio"
+    android:icon="@mipmap/ic_launcher"
+    android:label="@string/app_name"
+    android:networkSecurityConfig="@xml/network_security_config"
+    android:theme="@style/Theme.Norrklang">
+
+    <!-- Android Auto (projection) support; same media descriptor as the
+         automotive artifact. -->
+    <meta-data
+      android:name="com.google.android.gms.car.application"
+      android:resource="@xml/automotive_app_desc" />
+
+    <activity
+      android:name=".MainActivity"
+      android:exported="true"
+      android:launchMode="singleTask">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+      <!-- The sign-in action fired by the media session's error-resolution
+           intent. -->
+      <intent-filter>
+        <action android:name="studio.koeda.norrklang.action.SIGN_IN" />
+        <category android:name="android.intent.category.DEFAULT" />
+      </intent-filter>
+      <intent-filter>
+        <action android:name="android.intent.action.APPLICATION_PREFERENCES" />
+        <category android:name="android.intent.category.DEFAULT" />
+      </intent-filter>
+    </activity>
+  </application>
+
+</manifest>

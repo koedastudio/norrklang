@@ -1,0 +1,31 @@
+---
+import Base from '../layouts/Base.astro';
+---
+
+<Base title="Page not found" description="That page does not exist." noindex>
+  <section class="wrap notfound">
+    <p class="pill">404</p>
+    <h1>That page isn’t here.</h1>
+    <p>
+      The link may be out of date. Try the <a href="/">home page</a>, or the
+      <a href="/privacy">privacy policy</a>.
+    </p>
+  </section>
+</Base>
+
+<style>
+  .notfound {
+    padding-block: clamp(4rem, 12vw, 8rem);
+    max-width: 40rem;
+  }
+
+  .notfound h1 {
+    font-size: clamp(1.9rem, 1.4rem + 2vw, 2.5rem);
+    margin-top: 1.25rem;
+  }
+
+  .notfound p:last-child {
+    color: var(--text-muted);
+    margin-top: 1rem;
+  }
+</style>

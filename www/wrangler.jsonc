@@ -1,0 +1,20 @@
+{
+  // Assets-only Worker: no `main`, so dist/ is served from the edge without
+  // running Worker code. The custom domain is attached in the Cloudflare
+  // dashboard, keeping zone permissions off the CI API token (see README.md).
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "norrklang-www",
+  "compatibility_date": "2026-07-01",
+  "assets": {
+    "directory": "./dist",
+    // Matches Astro's `trailingSlash: 'never'`; "auto" would 307 every
+    // canonical URL on the site.
+    "html_handling": "drop-trailing-slash",
+    "not_found_handling": "404-page"
+  },
+  // Off on purpose: Workers Logs would retain visitor request metadata for
+  // days, and the privacy policy promises no visitor logs on our side.
+  "observability": {
+    "enabled": false
+  }
+}

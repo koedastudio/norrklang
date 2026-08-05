@@ -1,0 +1,35 @@
+# macOS
+.DS_Store
+
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Kotlin
+.kotlin/
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+captures/
+local.properties
+
+# Signing — never commit release keys
+keystore.properties
+*.keystore
+*.jks
+
+# Website (www/)
+node_modules/
+www/dist/
+www/.astro/
+www/.wrangler/
+
+# Claude Code — local settings carry machine paths and permission grants
+.claude/
+
+# Misc
+*.log
+.externalNativeBuild/
+.cxx/

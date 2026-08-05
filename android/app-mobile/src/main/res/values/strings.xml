@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="app_name">Norrklang</string>
+  <string name="home_connected_to">Signed in as %1$s · %2$s</string>
+  <string name="home_hint_android_auto">Connect your phone to an Android Auto car (or the Desktop Head Unit) and Norrklang appears among the media apps.</string>
+  <string name="home_sign_out">Sign out</string>
+</resources>

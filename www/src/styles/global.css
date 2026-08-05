@@ -1,0 +1,254 @@
+/*
+ * Norrklang is always dark — the app ships identical values/ and values-night/
+ * themes on purpose, and the site follows. There is deliberately no
+ * prefers-color-scheme light variant.
+ *
+ * Palette matches the app: #0B0D10 background (res/values/colors.xml,
+ * NightBackground), #4FD8C4 / #6FE6D6 accents (the launcher icon strokes).
+ */
+
+:root {
+  --bg: #0b0d10;
+  --surface: #11151a;
+  --surface-raised: #171c23;
+  --border: #232a33;
+  --text: #e8edf2;
+  --text-muted: #97a3b1;
+  --accent: #4fd8c4;
+  --accent-bright: #6fe6d6;
+  --accent-dim: rgba(79, 216, 196, 0.12);
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+  --measure: 68ch;
+  --page-max: 62rem;
+  --radius: 14px;
+
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--bg);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: clamp(1rem, 0.96rem + 0.2vw, 1.0625rem);
+  line-height: 1.65;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  font-weight: 650;
+  margin: 0;
+  text-wrap: balance;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+a {
+  color: var(--accent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+
+a:hover {
+  color: var(--accent-bright);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-bright);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0.1em 0.35em;
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 3rem 0;
+}
+
+/* --- Layout primitives ---------------------------------------------- */
+
+.wrap {
+  width: 100%;
+  max-width: var(--page-max);
+  margin-inline: auto;
+  padding-inline: clamp(1.25rem, 5vw, 2.5rem);
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  background: var(--accent);
+  color: var(--bg);
+  padding: 0.6rem 1rem;
+  border-radius: 0 0 var(--radius) 0;
+  font-weight: 600;
+  z-index: 10;
+}
+
+.skip-link:focus {
+  left: 0;
+}
+
+/* --- Site chrome ----------------------------------------------------- */
+
+.site-header {
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(10px);
+  z-index: 5;
+}
+
+.site-header__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 4rem;
+}
+
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  font-size: 1.0625rem;
+}
+
+.site-nav {
+  display: flex;
+  align-items: center;
+  gap: clamp(0.9rem, 3vw, 1.6rem);
+  font-size: 0.9375rem;
+}
+
+.site-nav a {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.site-nav a:hover {
+  color: var(--text);
+}
+
+/* The in-page anchor is the one to lose on a narrow viewport — on a phone you
+   just scroll — while Privacy has to stay reachable from every page because
+   the Play listing points at it. */
+@media (max-width: 34rem) {
+  .site-nav__section {
+    display: none;
+  }
+}
+
+.site-footer {
+  border-top: 1px solid var(--border);
+  margin-top: 5rem;
+  padding-block: 2.5rem 3rem;
+  color: var(--text-muted);
+  font-size: 0.9375rem;
+}
+
+.site-footer__inner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.75rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.site-footer__copy {
+  margin: 0;
+}
+
+.site-footer nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.5rem;
+}
+
+.site-footer a {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.site-footer a:hover {
+  color: var(--accent);
+}
+
+/* --- Shared bits ----------------------------------------------------- */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--accent-dim);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--accent-bright);
+  border-radius: 999px;
+  padding: 0.3rem 0.85rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.prose {
+  max-width: var(--measure);
+}
+
+.prose h2 {
+  font-size: 1.375rem;
+  margin-top: 2.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.prose p,
+.prose ul {
+  margin-block: 1rem;
+  color: var(--text-muted);
+}
+
+.prose li {
+  margin-block: 0.5rem;
+}
+
+.prose strong {
+  color: var(--text);
+  font-weight: 600;
+}

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <color name="ic_launcher_background">#0B0D10</color>
+  <!-- Matches NightBackground in NorrklangTheme.kt. -->
+  <color name="norrklang_background">#0B0D10</color>
+</resources>

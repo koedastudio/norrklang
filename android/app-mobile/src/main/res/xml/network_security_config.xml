@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Release: HTTPS only. Debug builds override this file to allow cleartext
+     for local Navidrome servers (see src/debug/res/xml/). -->
+<network-security-config>
+  <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

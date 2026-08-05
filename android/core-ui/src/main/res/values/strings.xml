@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="signin_title">Norrklang</string>
+  <string name="signin_subtitle">Connect to your Navidrome server</string>
+  <string name="signin_server_label">Server address</string>
+  <string name="signin_server_placeholder">https://music.example.com</string>
+  <string name="signin_username_label">Username</string>
+  <string name="signin_password_label">Password</string>
+  <string name="signin_connect">Connect</string>
+  <string name="signin_connecting">Connecting…</string>
+  <string name="signin_error_auth">Wrong username or password</string>
+  <string name="signin_error_network">Can\'t reach the server. Check the address and your connection.</string>
+  <string name="signin_error_generic">Something went wrong: %1$s</string>
+  <string name="signin_error_missing_fields">Fill in server, username and password</string>
+
+  <string name="action_back">Back</string>
+
+  <string name="settings_title">Settings</string>
+  <string name="settings_server">Server</string>
+  <string name="settings_account">Account</string>
+  <string name="settings_signout">Sign out</string>
+  <string name="settings_signed_out">Not signed in</string>
+  <string name="settings_signin">Sign in</string>
+  <string name="settings_stream_original">Stream original files</string>
+  <string name="settings_stream_original_on">Full quality, gapless playback</string>
+  <string name="settings_stream_original_off">Server decides quality — may use less data and break gapless</string>
+  <string name="settings_scrobble">Report plays</string>
+  <string name="settings_scrobble_on">Plays update server history and scrobble to services linked on the server</string>
+  <string name="settings_scrobble_off">Plays are never reported to the server</string>
+  <string name="settings_scrobble_artists">Excluded artists</string>
+  <string name="settings_scrobble_artists_hint">Plays by these artists are never reported</string>
+  <string name="settings_scrobble_playlists">Excluded playlists</string>
+  <string name="settings_scrobble_playlists_hint">Plays started from these playlists are never reported</string>
+  <string name="settings_picker_search_artists">Search artists</string>
+  <string name="settings_picker_excluded_group">Excluded (%1$d)</string>
+  <string name="settings_picker_no_artists">No artists in the library</string>
+  <string name="settings_picker_no_playlists">No playlists on the server</string>
+  <string name="settings_picker_error">Couldn\'t load from the server</string>
+  <string name="settings_picker_retry">Try again</string>
+  <string name="settings_privacy_policy">Privacy policy</string>
+  <string name="settings_app_version">App version %1$s</string>
+</resources>

@@ -1,0 +1,28 @@
+---
+/*
+ * The aurora soundwave mark — same geometry on the same 108-unit grid as the
+ * app's adaptive icon foreground
+ * (android/app-automotive/src/main/res/drawable/ic_launcher_foreground.xml).
+ */
+interface Props {
+  size?: number;
+}
+
+const { size = 40 } = Astro.props;
+---
+
+<svg
+  width={size}
+  height={size}
+  viewBox="0 0 108 108"
+  fill="none"
+  aria-hidden="true"
+>
+  <g stroke-width="6" stroke-linecap="round">
+    <path d="M36 46 L36 62" stroke="var(--accent)" />
+    <path d="M45 38 L45 70" stroke="var(--accent)" />
+    <path d="M54 30 L54 78" stroke="var(--accent-bright)" />
+    <path d="M63 38 L63 70" stroke="var(--accent)" />
+    <path d="M72 46 L72 62" stroke="var(--accent)" />
+  </g>
+</svg>

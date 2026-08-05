@@ -1,0 +1,10 @@
+# Served by Cloudflare Workers static assets.
+# `default-src 'none'` works because the site ships zero JavaScript. If a page
+# ever needs a script, loosen this deliberately — do not delete it.
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  X-Frame-Options: DENY
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Permissions-Policy: geolocation=(), camera=(), microphone=()
+  Content-Security-Policy: default-src 'none'; img-src 'self' data:; style-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'

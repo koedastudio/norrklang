@@ -1,0 +1,48 @@
+name: android
+
+# Runs the repo's merge gate — `./gradlew test lint` plus a debug assemble of
+# both APKs — so a broken change fails the PR before it can reach main. Debug
+# builds never touch keystore.properties, so this needs no secrets and also
+# runs on forks.
+#
+# Path-filtered on purpose: without this, every www commit would run it.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'android/**'
+      - '.github/workflows/android.yml'
+  pull_request:
+    paths:
+      - 'android/**'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: android
+
+jobs:
+  build:
+    name: Test + assemble
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # gradle-daemon-jvm.properties pins the daemon to JDK 21; providing it
+      # here beats downloading one through foojay on every run.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          validate-wrappers: true
+      - run: ./gradlew test lint
+      - run: ./gradlew :app-automotive:assembleDebug :app-mobile:assembleDebug

@@ -1,0 +1,375 @@
+package studio.koeda.norrklang.media
+
+import android.app.PendingIntent
+import android.content.Context
+import android.os.Bundle
+import androidx.annotation.OptIn
+import androidx.media3.common.MediaItem
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.session.LibraryResult
+import androidx.media3.session.MediaConstants
+import androidx.media3.session.MediaLibraryService.LibraryParams
+import androidx.media3.session.MediaLibraryService.MediaLibrarySession
+import androidx.media3.session.MediaSession
+import androidx.media3.session.MediaSession.ControllerInfo
+import androidx.media3.session.MediaSession.MediaItemsWithStartPosition
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionError
+import androidx.media3.session.SessionResult
+import com.google.common.collect.ImmutableList
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.guava.future
+import studio.koeda.norrklang.data.repo.MusicRepository
+import studio.koeda.norrklang.data.session.SessionManager
+import studio.koeda.norrklang.subsonic.SubsonicException
+
+/**
+ * All browse/playback resolution for the car UI.
+ *
+ * Auth errors carry the "error resolution" extras that make AAOS render a
+ * tappable "Sign in" affordance launching [signInIntent] (parked only).
+ */
+@OptIn(UnstableApi::class)
+internal class LibrarySessionCallback(
+    private val context: Context,
+    private val scope: CoroutineScope,
+    private val sessionManager: SessionManager,
+    private val repository: MusicRepository,
+    private val browseTree: BrowseTree,
+    private val resumption: ResumptionQueueLoader,
+    private val signInIntent: PendingIntent,
+) : MediaLibrarySession.Callback {
+
+    // Deliberately accepts every controller: the car media hosts ARE
+    // third-party controllers, and the custom commands exist precisely so
+    // they can render our buttons. Gating on package name would break the car.
+    override fun onConnect(
+        session: MediaSession,
+        controller: ControllerInfo,
+    ): MediaSession.ConnectionResult =
+        MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+            .setAvailableSessionCommands(
+                MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
+                    .buildUpon()
+                    .add(SessionCommand(ACTION_TOGGLE_SHUFFLE, Bundle.EMPTY))
+                    .add(SessionCommand(ACTION_TOGGLE_FAVORITE, Bundle.EMPTY))
+                    .add(SessionCommand(ACTION_FAVORITE_ALBUM_ADD, Bundle.EMPTY))
+                    .add(SessionCommand(ACTION_FAVORITE_ALBUM_REMOVE, Bundle.EMPTY))
+                    .build(),
+            )
+            .build()
+
+    override fun onCustomCommand(
+        session: MediaSession,
+        controller: ControllerInfo,
+        customCommand: SessionCommand,
+        args: Bundle,
+    ): ListenableFuture<SessionResult> = when (customCommand.customAction) {
+        ACTION_TOGGLE_SHUFFLE -> toggleShuffle(session)
+        ACTION_TOGGLE_FAVORITE -> toggleTrackFavorite(session)
+        ACTION_FAVORITE_ALBUM_ADD, ACTION_FAVORITE_ALBUM_REMOVE ->
+            setAlbumFavorite(
+                session,
+                args,
+                favorite = customCommand.customAction == ACTION_FAVORITE_ALBUM_ADD,
+            )
+        else -> super.onCustomCommand(session, controller, customCommand, args)
+    }
+
+    /**
+     * Playback-row shuffle toggle. Enabling reshuffles from the current track
+     * ([ShuffleFromCurrentPlayer]); the button refresh rides on
+     * onShuffleModeEnabledChanged ([PlaybackButtonsListener]).
+     */
+    private fun toggleShuffle(session: MediaSession): ListenableFuture<SessionResult> {
+        session.player.shuffleModeEnabled = !session.player.shuffleModeEnabled
+        return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+    }
+
+    /** Playback-row heart: toggles the *currently playing* track's favorite. */
+    private fun toggleTrackFavorite(session: MediaSession): ListenableFuture<SessionResult> {
+        val currentMediaId = session.player.currentMediaItem?.mediaId
+        return scope.future {
+            val trackId = (currentMediaId?.let(MediaId::parse) as? MediaId.Track)?.id
+                ?: return@future SessionResult(SessionError.ERROR_INVALID_STATE)
+            try {
+                // Toggle off the same cached state the button rendering used,
+                // so display and action can't disagree.
+                val favorite = !repository.isFavoriteTrack(trackId)
+                repository.setTrackFavorite(trackId, favorite)
+                // Only flip the button if the toggled track is still current —
+                // the user may have skipped meanwhile.
+                if (session.player.currentMediaItem?.mediaId == currentMediaId) {
+                    session.setMediaButtonPreferences(
+                        playbackButtons(
+                            context,
+                            shuffleOn = session.player.shuffleModeEnabled,
+                            favorite = favorite,
+                        ),
+                    )
+                }
+                // Have the car re-query the home tab's "Favourite songs" list.
+                (session as? MediaLibrarySession)
+                    ?.notifyChildrenChanged(MediaId.HomeFavoriteSongs.encode(), Int.MAX_VALUE, null)
+                SessionResult(SessionResult.RESULT_SUCCESS)
+            } catch (_: SubsonicException) {
+                SessionResult(SessionError.ERROR_IO)
+            }
+        }
+    }
+
+    /**
+     * Browse-view heart on album items (custom browse action). The tapped
+     * button encodes the direction ([MediaItemFactory.forAlbum] offers
+     * exactly one of the two), and the target album arrives in [args],
+     * independent of what is playing.
+     */
+    private fun setAlbumFavorite(
+        session: MediaSession,
+        args: Bundle,
+        favorite: Boolean,
+    ): ListenableFuture<SessionResult> = scope.future {
+        val encodedMediaId = args.getString(MediaConstants.EXTRA_KEY_MEDIA_ID)
+        val albumId = (encodedMediaId?.let(MediaId::parse) as? MediaId.Album)?.id
+            ?: return@future SessionResult(SessionError.ERROR_BAD_VALUE)
+        try {
+            // Resolve the album's artist before the toggle wipes the repository
+            // cache — the artist's album list renders the heart too.
+            val artistId = runCatching { repository.album(albumId).album.artistId }.getOrNull()
+            repository.setAlbumFavorite(albumId, favorite)
+            // Re-query every list that shows album hearts (and, for the
+            // favorites list, membership).
+            val library = session as? MediaLibrarySession
+            library?.notifyChildrenChanged(MediaId.HomeFavoriteAlbums.encode(), Int.MAX_VALUE, null)
+            library?.notifyChildrenChanged(MediaId.HomeRecentlyAdded.encode(), Int.MAX_VALUE, null)
+            library?.notifyChildrenChanged(MediaId.TabAlbums.encode(), Int.MAX_VALUE, null)
+            artistId?.let {
+                library?.notifyChildrenChanged(MediaId.Artist(it).encode(), Int.MAX_VALUE, null)
+            }
+            // Have the host re-fetch the tapped item right away, flipping the
+            // heart in place — without this it only updates on re-entry.
+            val refreshTappedItem = Bundle().apply {
+                putString(EXTRAS_KEY_BROWSE_ACTION_RESULT_REFRESH_ITEM, encodedMediaId)
+            }
+            SessionResult(SessionResult.RESULT_SUCCESS, refreshTappedItem)
+        } catch (_: SubsonicException) {
+            SessionResult(SessionError.ERROR_IO)
+        }
+    }
+
+    override fun onGetLibraryRoot(
+        session: MediaLibrarySession,
+        browser: ControllerInfo,
+        params: LibraryParams?,
+    ): ListenableFuture<LibraryResult<MediaItem>> = scope.future {
+        // Never error here: for legacy browsers (the car hosts) a root error
+        // becomes a *rejected connection* — blank screen. Signed-out is
+        // signaled via a player-level auth error (AuthGatePlayer) plus an
+        // empty tree.
+        LibraryResult.ofItem(browseTree.rootItem, rootParams())
+    }
+
+    override fun onGetChildren(
+        session: MediaLibrarySession,
+        browser: ControllerInfo,
+        parentId: String,
+        page: Int,
+        pageSize: Int,
+        params: LibraryParams?,
+    ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = scope.future {
+        val sessionState = awaitResolvedSession()
+        if (MediaId.parse(parentId) == MediaId.Root &&
+            sessionState is SessionManager.SessionState.SignedOut
+        ) {
+            // An auth error, not an empty success: an empty root renders as a
+            // dead "Media isn't available" pane once the sign-in dialog is
+            // dismissed. The error keeps the host in its error view, which
+            // offers the sign-in resolution from the player-level auth error
+            // (AuthGatePlayer).
+            return@future authenticationExpiredResult()
+        }
+        try {
+            val children = browseTree.children(parentId, page, pageSize)
+            if (children == null) {
+                LibraryResult.ofError(SessionError(SessionError.ERROR_BAD_VALUE, "Unknown id $parentId"))
+            } else {
+                LibraryResult.ofItemList(ImmutableList.copyOf(children), params)
+            }
+        } catch (e: SubsonicException) {
+            errorResult(e)
+        }
+    }
+
+    override fun onGetItem(
+        session: MediaLibrarySession,
+        browser: ControllerInfo,
+        mediaId: String,
+    ): ListenableFuture<LibraryResult<MediaItem>> = scope.future {
+        awaitResolvedSession()
+        try {
+            val item = browseTree.item(mediaId)
+            if (item == null) {
+                LibraryResult.ofError(SessionError(SessionError.ERROR_BAD_VALUE, "Unknown id $mediaId"))
+            } else {
+                LibraryResult.ofItem(item, null)
+            }
+        } catch (e: SubsonicException) {
+            errorResult(e)
+        }
+    }
+
+    override fun onAddMediaItems(
+        mediaSession: MediaSession,
+        controller: ControllerInfo,
+        mediaItems: List<MediaItem>,
+    ): ListenableFuture<List<MediaItem>> = scope.future {
+        awaitResolvedSession()
+        mediaItems.flatMap { resolve(it) }
+    }
+
+    override fun onSetMediaItems(
+        mediaSession: MediaSession,
+        controller: ControllerInfo,
+        mediaItems: List<MediaItem>,
+        startIndex: Int,
+        startPositionMs: Long,
+    ): ListenableFuture<MediaItemsWithStartPosition> = scope.future {
+        awaitResolvedSession()
+        // Tapping one track in an album/playlist sends a single item carrying a
+        // container context — rebuild the sibling queue around it.
+        val single = mediaItems.singleOrNull()?.let { MediaId.parse(it.mediaId) }
+        if (single is MediaId.Track && single.container != null) {
+            val queue = resumption.containerTracks(single.container)
+            val index = queue.indexOfFirst { it.id == single.id }.coerceAtLeast(0)
+            MediaItemsWithStartPosition(
+                queue.map { MediaItemFactory.playableTrack(it, single.container) },
+                index,
+                startPositionMs,
+            )
+        } else {
+            val resolved = mediaItems.flatMap { resolve(it) }
+            MediaItemsWithStartPosition(
+                resolved,
+                startIndex.coerceIn(0, (resolved.size - 1).coerceAtLeast(0)),
+                startPositionMs,
+            )
+        }
+    }
+
+    override fun onSearch(
+        session: MediaLibrarySession,
+        browser: ControllerInfo,
+        query: String,
+        params: LibraryParams?,
+    ): ListenableFuture<LibraryResult<Void>> = scope.future {
+        awaitResolvedSession()
+        try {
+            val results = searchItems(query)
+            session.notifySearchResultChanged(browser, query, results.size, params)
+            LibraryResult.ofVoid(params)
+        } catch (e: SubsonicException) {
+            errorResult(e)
+        }
+    }
+
+    override fun onGetSearchResult(
+        session: MediaLibrarySession,
+        browser: ControllerInfo,
+        query: String,
+        page: Int,
+        pageSize: Int,
+        params: LibraryParams?,
+    ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = scope.future {
+        awaitResolvedSession()
+        try {
+            val pageItems = Paging.slice(searchItems(query), page, pageSize)
+            LibraryResult.ofItemList(ImmutableList.copyOf(pageItems), params)
+        } catch (e: SubsonicException) {
+            errorResult(e)
+        }
+    }
+
+    override fun onPlaybackResumption(
+        mediaSession: MediaSession,
+        controller: ControllerInfo,
+    ): ListenableFuture<MediaItemsWithStartPosition> = scope.future {
+        awaitResolvedSession()
+        resumption.load() ?: throw IllegalStateException("Nothing to resume")
+    }
+
+    // --- helpers ---
+
+    /** Resolves any requested item into playable track items (containers expand). */
+    private suspend fun resolve(item: MediaItem): List<MediaItem> =
+        when (val id = MediaId.parse(item.mediaId)) {
+            is MediaId.Track ->
+                listOf(MediaItemFactory.playableTrack(repository.track(id.id), id.container))
+            is MediaId.Album ->
+                repository.album(id.id).tracks.map { MediaItemFactory.playableTrack(it, id) }
+            is MediaId.Playlist ->
+                repository.playlist(id.id).tracks.map { MediaItemFactory.playableTrack(it, id) }
+            else -> emptyList()
+        }
+
+    private suspend fun searchItems(query: String): List<MediaItem> {
+        val results = repository.search(query)
+        // Songs first (voice: "play X" should hit a playable item), then containers.
+        return results.tracks.map { MediaItemFactory.forTrack(it) } +
+            results.albums.map(MediaItemFactory::forAlbum) +
+            results.artists.map(MediaItemFactory::forArtist)
+    }
+
+    private fun rootParams(): LibraryParams {
+        val extras = Bundle().apply {
+            // Legacy key some head units still check before showing search UI.
+            putBoolean("android.media.browse.SEARCH_SUPPORTED", true)
+            putInt(
+                MediaConstants.EXTRAS_KEY_CONTENT_STYLE_BROWSABLE,
+                MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_CATEGORY_LIST_ITEM,
+            )
+        }
+        return LibraryParams.Builder().setExtras(extras).build()
+    }
+
+    private fun <T : Any> errorResult(e: SubsonicException): LibraryResult<T> =
+        when (e) {
+            is SubsonicException.AuthFailed -> authenticationExpiredResult()
+            else -> LibraryResult.ofError<T>(
+                SessionError(
+                    SessionError.ERROR_IO,
+                    context.getString(R.string.error_loading_library),
+                ),
+            )
+        }
+
+    /**
+     * Waits out the Initializing window at process start (credentials
+     * restoring from DataStore) — a car that binds immediately would
+     * otherwise flash a spurious "sign in required" error.
+     */
+    private suspend fun awaitResolvedSession(): SessionManager.SessionState =
+        sessionManager.state.first { it !is SessionManager.SessionState.Initializing }
+
+    private fun <T : Any> authenticationExpiredResult(): LibraryResult<T> =
+        LibraryResult.ofError<T>(
+            SessionError(
+                SessionError.ERROR_SESSION_AUTHENTICATION_EXPIRED,
+                context.getString(R.string.error_sign_in_required),
+            ),
+        )
+
+    companion object {
+        /**
+         * Legacy result key the car hosts read: the media id under it is
+         * re-fetched (onGetItem) so its heart updates in place. Media3 passes
+         * SessionResult.extras through but doesn't re-export the constant —
+         * value matches androidx.media.utils.MediaConstants
+         * .EXTRAS_KEY_CUSTOM_BROWSER_ACTION_RESULT_REFRESH_ITEM (media:1.7.0).
+         */
+        private const val EXTRAS_KEY_BROWSE_ACTION_RESULT_REFRESH_ITEM =
+            "androidx.media.utils.extras.KEY_CUSTOM_BROWSER_ACTION_RESULT_REFRESH_ITEM"
+    }
+}

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+  <!-- Norrklang is always dark. values-night/themes.xml carries the identical
+       definition so a day/night configuration change never restyles the window. -->
+  <style name="Theme.Norrklang" parent="android:style/Theme.DeviceDefault.NoActionBar" tools:targetApi="q">
+    <item name="android:windowBackground">@color/norrklang_background</item>
+    <item name="android:colorBackground">@color/norrklang_background</item>
+    <item name="android:statusBarColor">@color/norrklang_background</item>
+    <item name="android:navigationBarColor">@color/norrklang_background</item>
+    <item name="android:windowLightStatusBar">false</item>
+    <item name="android:forceDarkAllowed">false</item>
+  </style>
+</resources>

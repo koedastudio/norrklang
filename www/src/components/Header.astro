@@ -1,0 +1,18 @@
+---
+import Mark from './Mark.astro';
+import { GITHUB_URL, SITE_NAME } from '../config';
+---
+
+<header class="site-header">
+  <div class="wrap site-header__inner">
+    <a href="/" class="wordmark">
+      <Mark size={28} />
+      {SITE_NAME}
+    </a>
+    <nav class="site-nav" aria-label="Primary">
+      <a class="site-nav__section" href="/#requirements">Requirements</a>
+      <a href="/privacy">Privacy</a>
+      <a href={GITHUB_URL}>GitHub</a>
+    </nav>
+  </div>
+</header>

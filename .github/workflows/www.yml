@@ -1,0 +1,45 @@
+name: www
+
+# Build check only — deployment is handled by Cloudflare Workers Builds, which
+# watches this repo directly (root directory `www`, watch path `www/*`).
+# This job exists to fail a PR before a broken site can reach main; it needs no
+# secrets, so it also runs on forks.
+#
+# Path-filtered on purpose: without this, every Android commit would run it.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'www/**'
+      - '.github/workflows/www.yml'
+  pull_request:
+    paths:
+      - 'www/**'
+      - '.github/workflows/www.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: www-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: www
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: www/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build

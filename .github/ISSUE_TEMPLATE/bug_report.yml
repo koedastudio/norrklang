@@ -1,0 +1,44 @@
+name: Bug report
+description: Something broke in the app or on the site
+labels: [bug]
+body:
+  - type: input
+    id: app-version
+    attributes:
+      label: App version
+      description: Shown in the app's Settings, or on the Play listing.
+      placeholder: 1.0.0
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Car / device
+      description: >-
+        Car model and its OS version, or the emulator image. For Android Auto,
+        the phone model and Android version.
+      placeholder: Polestar 2, Android Automotive OS 13
+    validations:
+      required: true
+  - type: input
+    id: server
+    attributes:
+      label: Server
+      description: Navidrome (or other Subsonic-compatible server) and its version.
+      placeholder: Navidrome 0.58.0
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Steps to reproduce, what you expected, and what you got instead.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots
+      description: >-
+        Optional — adb logcat excerpts or photos of the car screen. Redact
+        server addresses you don't want public.
