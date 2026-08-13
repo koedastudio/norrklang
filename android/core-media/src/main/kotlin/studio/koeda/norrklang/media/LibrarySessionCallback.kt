@@ -316,10 +316,18 @@ internal class LibrarySessionCallback(
 
     private suspend fun searchItems(query: String): List<MediaItem> {
         val results = repository.search(query)
-        // Songs first (voice: "play X" should hit a playable item), then containers.
-        return results.tracks.map { MediaItemFactory.forTrack(it) } +
-            results.albums.map(MediaItemFactory::forAlbum) +
-            results.artists.map(MediaItemFactory::forArtist)
+        // Broad-to-specific sections; consecutive items sharing a group title
+        // render under one header. Capped per section so "Tracks" is reachable
+        // without scrolling past a wall of artists. Voice hosts that auto-play
+        // from search pick the first *playable* item, so the browsable
+        // artist/album sections ahead of the tracks don't confuse them.
+        return results.artists.take(SEARCH_SECTION_LIMIT).map {
+            MediaItemFactory.forArtist(it, context.getString(R.string.search_section_artists))
+        } + results.albums.take(SEARCH_SECTION_LIMIT).map {
+            MediaItemFactory.forAlbum(it, context.getString(R.string.search_section_albums))
+        } + results.tracks.take(SEARCH_SECTION_TRACK_LIMIT).map {
+            MediaItemFactory.forTrack(it, groupTitle = context.getString(R.string.search_section_tracks))
+        }
     }
 
     private fun rootParams(): LibraryParams {
@@ -362,6 +370,12 @@ internal class LibrarySessionCallback(
         )
 
     companion object {
+        // Search section caps: tracks get more room since a spoken "play X"
+        // resolves against them; the repository caches more per query, so
+        // raising these needs no server round-trip change.
+        private const val SEARCH_SECTION_LIMIT = 6
+        private const val SEARCH_SECTION_TRACK_LIMIT = 8
+
         /**
          * Legacy result key the car hosts read: the media id under it is
          * re-fetched (onGetItem) so its heart updates in place. Media3 passes

@@ -84,7 +84,10 @@ internal object MediaItemFactory {
         )
         .build()
 
-    fun forArtist(artist: Artist): MediaItem = browsable(
+    // groupTitle defaults to the server's index bucket, giving the artists
+    // tab its A–Z headers; search passes its section title instead. Null
+    // simply omits the hint.
+    fun forArtist(artist: Artist, groupTitle: String? = artist.sortGroup): MediaItem = browsable(
         mediaId = MediaId.Artist(artist.id),
         title = artist.name,
         subtitle = null,
@@ -92,12 +95,10 @@ internal object MediaItemFactory {
         mediaType = MediaMetadata.MEDIA_TYPE_ARTIST,
         // An artist opens their releases — show those as an artwork grid.
         childrenStyle = gridChildrenExtras(),
-        // The artists tab renders A–Z headers from the server's index buckets;
-        // null (detail/search artists) simply omits the hint.
-        groupTitle = artist.sortGroup,
+        groupTitle = groupTitle,
     )
 
-    fun forAlbum(album: Album): MediaItem = browsable(
+    fun forAlbum(album: Album, groupTitle: String? = null): MediaItem = browsable(
         mediaId = MediaId.Album(album.id),
         title = album.title,
         subtitle = listOfNotNull(album.artistName, album.year?.toString())
@@ -106,6 +107,7 @@ internal object MediaItemFactory {
         artworkUrl = album.artworkUrl,
         mediaType = MediaMetadata.MEDIA_TYPE_ALBUM,
         childrenStyle = listChildrenExtras(),
+        groupTitle = groupTitle,
         // Exactly one of the two album-favorite browse actions applies: the
         // one that flips the current state (see LibrarySessionCallback).
         supportedCommands = listOf(
@@ -130,10 +132,14 @@ internal object MediaItemFactory {
      * A track as shown in a browse list — no stream URI; the session callback
      * resolves that when playback is requested.
      */
-    fun forTrack(track: Track, container: MediaId.Container? = null): MediaItem =
+    fun forTrack(
+        track: Track,
+        container: MediaId.Container? = null,
+        groupTitle: String? = null,
+    ): MediaItem =
         MediaItem.Builder()
             .setMediaId(MediaId.Track(track.id, container).encode())
-            .setMediaMetadata(trackMetadata(track))
+            .setMediaMetadata(trackMetadata(track, groupTitle))
             .build()
 
     /** A fully-resolved, playable track handed to ExoPlayer. */
@@ -144,7 +150,7 @@ internal object MediaItemFactory {
             .setMediaMetadata(trackMetadata(track))
             .build()
 
-    private fun trackMetadata(track: Track): MediaMetadata =
+    private fun trackMetadata(track: Track, groupTitle: String? = null): MediaMetadata =
         MediaMetadata.Builder()
             .setTitle(track.title)
             .setArtist(track.artistName)
@@ -157,9 +163,12 @@ internal object MediaItemFactory {
             .setIsPlayable(true)
             .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
             .apply {
-                track.artistId?.let { artistId ->
-                    setExtras(Bundle().apply { putString(EXTRA_ARTIST_ID, artistId) })
+                val extras = Bundle()
+                track.artistId?.let { extras.putString(EXTRA_ARTIST_ID, it) }
+                groupTitle?.let {
+                    extras.putString(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_GROUP_TITLE, it)
                 }
+                if (!extras.isEmpty) setExtras(extras)
             }
             .build()
 }

@@ -19,6 +19,9 @@
   <string name="browse_home_best_of">Best of %1$s</string>
   <!-- Decade mix tile title, e.g. "1980s"; %1$d is the decade's first year. -->
   <string name="browse_home_decade_mix">%1$ds</string>
+  <string name="search_section_artists">Artists</string>
+  <string name="search_section_albums">Albums</string>
+  <string name="search_section_tracks">Tracks</string>
   <string name="error_sign_in_required">Sign in to your Navidrome server to start listening</string>
   <string name="error_sign_in_action">Sign in</string>
   <string name="error_sign_in_on_phone">Open Norrklang on your phone to sign in</string>
