@@ -9,22 +9,26 @@
 
 :root {
   --bg: #0b0d10;
+  --bg-deep: #07090b;
   --surface: #11151a;
   --surface-raised: #171c23;
   --border: #232a33;
-  --text: #e8edf2;
-  --text-muted: #97a3b1;
+  --border-soft: #1a2027;
+  --text: #eaeff4;
+  --text-muted: #96a2b0;
   --accent: #4fd8c4;
   --accent-bright: #6fe6d6;
   --accent-dim: rgba(79, 216, 196, 0.12);
+  --accent-glow: rgba(79, 216, 196, 0.28);
 
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
     'Helvetica Neue', Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 
   --measure: 68ch;
-  --page-max: 62rem;
-  --radius: 14px;
+  --page-max: 72rem;
+  --radius: 16px;
+  --radius-lg: 24px;
 
   color-scheme: dark;
 }
@@ -38,6 +42,13 @@
 html {
   background: var(--bg);
   -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
 }
 
 body {
@@ -54,15 +65,20 @@ body {
 h1,
 h2,
 h3 {
-  line-height: 1.2;
-  letter-spacing: -0.02em;
-  font-weight: 650;
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+  font-weight: 700;
   margin: 0;
   text-wrap: balance;
 }
 
 p {
   text-wrap: pretty;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
 }
 
 a {
@@ -121,15 +137,76 @@ hr {
   left: 0;
 }
 
+/* --- Buttons --------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 999px;
+  padding: 0.8rem 1.6rem;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  letter-spacing: 0.005em;
+  text-decoration: none;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn {
+    transition: none;
+  }
+
+  .btn:active {
+    transform: none;
+  }
+}
+
+.btn--primary {
+  background: linear-gradient(135deg, var(--accent-bright), var(--accent));
+  color: #06201c;
+  box-shadow: 0 0 0 1px rgba(111, 230, 214, 0.35) inset;
+}
+
+.btn--primary:hover {
+  background: linear-gradient(135deg, #86efe1, var(--accent-bright));
+  color: #06201c;
+  box-shadow:
+    0 0 0 1px rgba(111, 230, 214, 0.5) inset,
+    0 4px 28px var(--accent-glow);
+}
+
+.btn--ghost {
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  color: var(--text);
+}
+
+.btn--ghost:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  color: var(--text);
+  box-shadow: 0 4px 24px rgba(79, 216, 196, 0.1);
+}
+
 /* --- Site chrome ----------------------------------------------------- */
 
 .site-header {
-  border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
-  backdrop-filter: blur(10px);
   z-index: 5;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
 
 .site-header__inner {
@@ -137,7 +214,7 @@ hr {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  min-height: 4rem;
+  min-height: 4.25rem;
 }
 
 .wordmark {
@@ -154,34 +231,36 @@ hr {
 .site-nav {
   display: flex;
   align-items: center;
-  gap: clamp(0.9rem, 3vw, 1.6rem);
+  gap: clamp(0.9rem, 3vw, 1.75rem);
   font-size: 0.9375rem;
 }
 
 .site-nav a {
   color: var(--text-muted);
   text-decoration: none;
+  transition: color 140ms ease;
 }
 
 .site-nav a:hover {
   color: var(--text);
 }
 
-/* The in-page anchor is the one to lose on a narrow viewport — on a phone you
-   just scroll — while Privacy has to stay reachable from every page because
-   the Play listing points at it. */
-@media (max-width: 34rem) {
+/* The in-page anchors are the ones to lose on a narrow viewport — on a phone
+   you just scroll — while Privacy has to stay reachable from every page
+   because the Play listing points at it. */
+@media (max-width: 38rem) {
   .site-nav__section {
     display: none;
   }
 }
 
 .site-footer {
-  border-top: 1px solid var(--border);
-  margin-top: 5rem;
+  border-top: 1px solid var(--border-soft);
+  margin-top: 6rem;
   padding-block: 2.5rem 3rem;
   color: var(--text-muted);
   font-size: 0.9375rem;
+  background: var(--bg-deep);
 }
 
 .site-footer__inner {
@@ -224,7 +303,7 @@ hr {
   padding: 0.3rem 0.85rem;
   font-size: 0.8125rem;
   font-weight: 600;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 

@@ -1,52 +1,127 @@
 ---
+import { Image } from 'astro:assets';
 import Base from '../layouts/Base.astro';
 import Mark from '../components/Mark.astro';
 import { GITHUB_URL, LICENSE_URL, PLAY_URL, PUBLISHER, PUBLISHER_URL, TAGLINE } from '../config';
+import carDashboard from '../assets/car-dashboard.png';
+import screenAlbums from '../assets/screen-albums.webp';
+import screenPlayer from '../assets/screen-player.webp';
+
+const features = [
+  {
+    title: 'Home screen',
+    body: 'Quick play and generated playlists like Best of, Similar to etc.',
+    icon: 'home',
+  },
+  {
+    title: 'Playback',
+    body: 'Play, shuffle, seek, queue and see the artwork.',
+    icon: 'play',
+  },
+  {
+    title: 'Favourites',
+    body: 'Heart the current track from the player and, in some cars, heart albums.',
+    icon: 'heart',
+  },
+  {
+    title: 'Search',
+    body: 'Type it or say it — search artists, albums and tracks.',
+    icon: 'search',
+  },
+  {
+    title: 'Scrobbling',
+    body: 'Play counts go to your own server, not a third party. Or turn it off in the settings.',
+    icon: 'wave',
+  },
+  {
+    title: 'Keeps playing',
+    body: 'Picks up where you left off after the car restarts.',
+    icon: 'refresh',
+  },
+];
 
 const requirements = [
   {
+    n: '01',
     title: 'A Navidrome or Subsonic server',
-    body: 'Current stable Navidrome, or any server implementing the Subsonic API 1.16.1 with token authentication. Navidrome is what it has been tested against.',
+    body: 'Norrklang plays music from your own server. It’s built and tested against Navidrome, and works with other servers that speak the Subsonic API.',
   },
   {
+    n: '02',
     title: 'A car running Android Automotive OS',
-    body: 'Built in to the car — Polestar, Volvo and friends. The app runs in the car itself, not from your phone.',
+    body: 'The kind of car with Google Play built into the dashboard — Polestar, Volvo, Renault, Chevrolet, Honda and a growing list of others. The app runs in the car itself, not from your phone.',
   },
   {
-    title: 'HTTPS, not optional',
-    body: 'Release builds refuse cleartext HTTP. A reverse proxy with a Let’s Encrypt certificate is enough. Plain HTTP works only in debug builds against local test servers.',
+    n: '03',
+    title: 'A secure connection',
+    body: 'Your server needs to be reachable over HTTPS. If you already reach your Navidrome from outside your home network, you’re most likely all set.',
   },
 ];
+
+/* Stroke icons drawn on a 24-unit grid; rendered with the accent colour. */
+const iconPaths: Record<string, string> = {
+  home: 'M4 11.5 12 4.5l8 7M6 10.5V19a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-8.5',
+  play: 'M8 5.5v13l11-6.5z',
+  heart:
+    'M12 20s-7.5-4.9-7.5-10A4.3 4.3 0 0 1 12 7a4.3 4.3 0 0 1 7.5 3c0 5.1-7.5 10-7.5 10z',
+  search: 'M10.5 17a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM15.5 15.5 20 20',
+  wave: 'M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4',
+  refresh: 'M20 8A8.3 8.3 0 0 0 5.5 6.5M4 16a8.3 8.3 0 0 0 14.5 1.5M4.5 3.5v4h4M19.5 20.5v-4h-4',
+};
 ---
 
 <Base>
   <section class="hero">
-    <div class="wrap">
-      {/* Wrapper, not a class on <Mark>: scoped styles can't reach its root SVG. */}
-      <div class="hero__mark"><Mark size={72} /></div>
-      <p class="pill">Android Automotive OS</p>
-      <h1>{TAGLINE}</h1>
-      <p class="hero__lede">
-        Norrklang is a music player for <a href="https://www.navidrome.org/">Navidrome</a> and Subsonic-compatible servers, built for Android Automotive OS. Self-hosted music, on the
-        dashboard, with nothing in between.
-      </p>
-      <div class="hero__cta">
-        <a class="btn btn--primary" href={PLAY_URL}>Get it on Google Play</a>
-        <a class="btn btn--ghost" href={GITHUB_URL}>View the source</a>
+    <div class="hero__aurora" aria-hidden="true"></div>
+    <div class="wrap hero__grid">
+      <div class="hero__copy">
+        <p class="pill">Android Automotive OS</p>
+        <h1>{TAGLINE}</h1>
+        <p class="hero__lede">
+          Norrklang is a music player for <a href="https://www.navidrome.org/">Navidrome</a> and
+          Subsonic-compatible servers, made for cars running Android Automotive OS. It installs in
+          the car itself — not on your phone — and plays your own music, straight from your server.
+        </p>
+        <div class="hero__cta">
+          <a class="btn btn--primary" href={PLAY_URL}>Get it on Google Play</a>
+          <a class="btn btn--ghost" href={GITHUB_URL}>View the source</a>
+        </div>
+        <ul class="hero__facts" role="list">
+          <li>Gapless playback</li>
+          <li>No analytics, no third parties</li>
+          <li>GPL-3.0 open source</li>
+        </ul>
       </div>
-      <p class="hero__note">Installs in the car, not on your phone.</p>
+      <figure class="hero__photo">
+        {/* 1023 is the composite’s native width — the srcset can’t go larger. */}
+        <Image
+          src={carDashboard}
+          alt="Norrklang’s album grid on the centre display of a Polestar 2, seen past the steering wheel"
+          widths={[480, 720, 1023]}
+          sizes="(max-width: 56rem) 92vw, 34rem"
+          loading="eager"
+          fetchpriority="high"
+        />
+        <figcaption>Norrklang in a Polestar 2</figcaption>
+      </figure>
     </div>
   </section>
 
-  <section class="section" id="requirements">
+  <section class="section" id="features">
     <div class="wrap">
-      <h2>What you need</h2>
-      <ul class="cards">
+      <p class="kicker">From the driver’s seat</p>
+      <h2>What it does</h2>
+      <ul class="features" role="list">
         {
-          requirements.map((r) => (
-            <li class="card">
-              <h3>{r.title}</h3>
-              <p>{r.body}</p>
+          features.map((f) => (
+            <li class="feature">
+              <span class="feature__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d={iconPaths[f.icon]} />
+                </svg>
+              </span>
+              <h3>{f.title}</h3>
+              <p>{f.body}</p>
             </li>
           ))
         }
@@ -54,139 +129,433 @@ const requirements = [
     </div>
   </section>
 
-  <section class="section" id="open-source">
+  <section class="section section--band" id="screens">
     <div class="wrap">
-      <h2>Open source</h2>
+      <p class="kicker">On the car’s screen</p>
+      <h2>Feels at home in your car</h2>
       <p class="section__prose">
-        Norrklang is free, open-source software licensed under <a href={LICENSE_URL}>GPL-3.0-or-later</a>,
-        developed and maintained by <a href={PUBLISHER_URL}>{PUBLISHER}</a>.
-        Everything is <a href={GITHUB_URL}>on GitHub</a> — the app, this
-        website, and the release tooling. Bug reports and contributions are
-        welcome.
+        Browse artists, albums, playlists and mixes with the controls your car already has.
+        Norrklang follows Android Automotive’s media and safety conventions, so it looks and
+        behaves like it came with the car.
       </p>
+      <div class="screens">
+        <figure class="screen">
+          <Image
+            src={screenAlbums}
+            alt="Album grid in the car UI: cover art with titles, artists and years, tabs for Home, Artists, Albums and Playlists"
+            widths={[400, 800]}
+            sizes="(max-width: 56rem) 92vw, 30rem"
+            loading="lazy"
+          />
+          <figcaption>Browse artists, albums, playlists and mixes</figcaption>
+        </figure>
+        <figure class="screen">
+          <Image
+            src={screenPlayer}
+            alt="Now Playing screen in the car UI: cover art, track title, artist, seek bar and playback controls with a heart button"
+            widths={[400, 800]}
+            sizes="(max-width: 56rem) 92vw, 30rem"
+            loading="lazy"
+          />
+          <figcaption>Full playback with seek, shuffle and favourites</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="requirements">
+    <div class="wrap">
+      <p class="kicker">Getting started</p>
+      <h2>What you need</h2>
+      <ol class="reqs" role="list">
+        {
+          requirements.map((r) => (
+            <li class="req">
+              <span class="req__n" aria-hidden="true">{r.n}</span>
+              <div>
+                <h3>{r.title}</h3>
+                <p>{r.body}</p>
+              </div>
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+  </section>
+
+  <section class="section section--band" id="open-source">
+    <div class="wrap promise">
+      <div class="promise__col">
+        <p class="kicker">Private by design</p>
+        <h2>Your listening stays between your car and your server</h2>
+        <p class="section__prose">
+          No accounts, no analytics, no ads. The app talks to your server and nothing else.
+          When you sign in, only an encrypted token is kept in the car — your password is
+          never stored.
+        </p>
+      </div>
+      <div class="promise__col">
+        <p class="kicker">Open source</p>
+        <h2>Free, as in Navidrome</h2>
+        <p class="section__prose">
+          Norrklang is licensed under <a href={LICENSE_URL}>GPL-3.0-or-later</a> — the same license
+          as Navidrome — and developed by <a href={PUBLISHER_URL}>{PUBLISHER}</a>. The app, this
+          website and the release tooling are all <a href={GITHUB_URL}>on GitHub</a>. Bug reports
+          and contributions are very welcome.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <div class="cta">
+        <div class="cta__mark" aria-hidden="true"><Mark size={56} /></div>
+        <h2>Get Norrklang in your car</h2>
+        <p>
+          Open Google Play in your car and search for Norrklang, or install it remotely from the
+          listing below — it’s free. Sign in to your server, and your library is right there on
+          the dashboard.
+        </p>
+        <div class="cta__actions">
+          <a class="btn btn--primary" href={PLAY_URL}>Get it on Google Play</a>
+          <a class="btn btn--ghost" href={GITHUB_URL}>Star it on GitHub</a>
+        </div>
+      </div>
     </div>
   </section>
 </Base>
 
 <style>
+  /* --- Hero ----------------------------------------------------------- */
+
   .hero {
-    padding-block: clamp(3.5rem, 10vw, 7rem) clamp(3rem, 7vw, 5rem);
-    border-bottom: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+    border-bottom: 1px solid var(--border-soft);
+    padding-block: clamp(3.5rem, 8vw, 6.5rem) clamp(3rem, 7vw, 6rem);
+  }
+
+  .hero__aurora {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
     background:
-      radial-gradient(
-        ellipse 70% 60% at 50% -10%,
-        rgba(79, 216, 196, 0.13),
-        transparent 70%
-      ),
-      var(--bg);
+      radial-gradient(ellipse 55% 45% at 18% 0%, rgba(79, 216, 196, 0.14), transparent 70%),
+      radial-gradient(ellipse 45% 55% at 85% 20%, rgba(79, 216, 196, 0.07), transparent 70%);
   }
 
-  .hero__mark {
-    line-height: 0;
-    margin-bottom: 1.5rem;
+  .hero__grid {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    gap: clamp(2rem, 5vw, 4.5rem);
+    align-items: center;
   }
 
-  /* Constrain the text, not .wrap: a narrower wrap would push the hero right
-     of the section below. */
   .hero h1 {
-    max-width: 15ch;
-    font-size: clamp(2.25rem, 1.4rem + 3.6vw, 3.75rem);
-    margin-top: 1.25rem;
+    /* The cap breaks the tagline into three tidy lines, “Your Navidrome”
+       alone on the first; `pretty` overrides the global `balance`, which
+       would rebreak the phrase mid-line. */
+    font-size: clamp(2.25rem, 1.4rem + 3.2vw, 3.5rem);
+    margin-top: 1.5rem;
+    max-width: 13ch;
+    text-wrap: pretty;
   }
 
   .hero__lede {
     color: var(--text-muted);
     font-size: clamp(1.0625rem, 1rem + 0.4vw, 1.25rem);
-    max-width: 40ch;
-    margin-top: 1.25rem;
+    max-width: 44ch;
+    margin-top: 1.5rem;
   }
 
   .hero__cta {
-    margin-top: 2rem;
+    margin-top: 2.25rem;
     display: flex;
     flex-wrap: wrap;
     gap: 0.75rem;
   }
 
-  .hero__note {
-    margin: 1rem 0 0;
+  .hero__facts {
+    list-style: none;
+    margin: 2rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.5rem;
     color: var(--text-muted);
     font-size: 0.9375rem;
   }
 
-  .btn {
+  .hero__facts li {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    border-radius: 999px;
-    padding: 0.75rem 1.5rem;
-    font-weight: 600;
-    text-decoration: none;
   }
 
-  .btn--primary {
+  .hero__facts li::before {
+    content: '';
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
     background: var(--accent);
-    color: #06201c;
+    flex: none;
   }
 
-  .btn--primary:hover {
-    background: var(--accent-bright);
-    color: #06201c;
-  }
-
-  .btn--ghost {
+  .hero__photo {
+    margin: 0;
+    position: relative;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
     border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--text);
+    box-shadow:
+      0 30px 80px rgba(0, 0, 0, 0.55),
+      0 0 120px rgba(79, 216, 196, 0.07);
   }
 
-  .btn--ghost:hover {
-    border-color: var(--accent);
-    color: var(--text);
+  .hero__photo img {
+    display: block;
+    width: 100%;
+    height: auto;
   }
+
+  .hero__photo figcaption {
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    padding: 3.5rem 1.25rem 1rem;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    background: linear-gradient(
+      to top,
+      color-mix(in srgb, var(--bg-deep) 85%, transparent),
+      transparent
+    );
+  }
+
+  @media (max-width: 56rem) {
+    .hero__grid {
+      grid-template-columns: 1fr;
+    }
+
+    .hero__photo {
+      max-width: 30rem;
+    }
+  }
+
+  /* --- Sections ------------------------------------------------------- */
 
   .section {
-    padding-block: clamp(2.75rem, 6vw, 4.5rem);
+    padding-block: clamp(3.5rem, 8vw, 6.5rem);
+  }
+
+  .section--band {
+    background: var(--bg-deep);
+    border-block: 1px solid var(--border-soft);
+  }
+
+  .kicker {
+    color: var(--accent);
+    font-size: 0.8125rem;
+    font-weight: 650;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin: 0 0 1rem;
   }
 
   .section h2 {
-    font-size: clamp(1.5rem, 1.2rem + 1.2vw, 2rem);
-    margin-bottom: 1.5rem;
+    font-size: clamp(1.75rem, 1.3rem + 1.9vw, 2.75rem);
+    max-width: 24ch;
   }
 
   .section__prose {
     color: var(--text-muted);
-    max-width: 60ch;
+    max-width: 58ch;
+    margin-top: 1.25rem;
   }
 
-  .section__prose + .section__prose {
-    margin-top: 0.75rem;
-  }
+  /* --- Features ------------------------------------------------------- */
 
-  .cards {
+  .features {
     list-style: none;
-    margin: 0;
+    margin: 3rem 0 0;
     padding: 0;
     display: grid;
     gap: 1rem;
     grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
   }
 
-  .card {
-    background: var(--surface);
-    border: 1px solid var(--border);
+  .feature {
+    position: relative;
+    background: linear-gradient(180deg, var(--surface-raised), var(--surface));
+    border: 1px solid var(--border-soft);
     border-radius: var(--radius);
-    padding: 1.5rem;
+    padding: 1.75rem 1.5rem 1.5rem;
+    transition: border-color 160ms ease, transform 160ms ease;
   }
 
-  .card h3 {
+  .feature:hover {
+    border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+    transform: translateY(-2px);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .feature,
+    .feature:hover {
+      transition: none;
+      transform: none;
+    }
+  }
+
+  .feature__icon {
+    display: inline-flex;
+    width: 2.5rem;
+    height: 2.5rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    background: var(--accent-dim);
+    color: var(--accent-bright);
+    margin-bottom: 1.1rem;
+  }
+
+  .feature__icon svg {
+    width: 1.375rem;
+    height: 1.375rem;
+  }
+
+  .feature h3 {
     font-size: 1.0625rem;
-    color: var(--text);
+    letter-spacing: -0.01em;
   }
 
-  .card p {
+  .feature p {
     margin: 0.6rem 0 0;
     color: var(--text-muted);
     font-size: 0.9375rem;
+  }
+
+  /* --- Screens -------------------------------------------------------- */
+
+  .screens {
+    margin-top: 3rem;
+    display: grid;
+    gap: clamp(1.25rem, 3vw, 2.5rem);
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
+    align-items: start;
+  }
+
+  .screen {
+    margin: 0;
+  }
+
+  .screen img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  }
+
+  .screen figcaption {
+    margin-top: 1rem;
+    color: var(--text-muted);
+    font-size: 0.9375rem;
+    text-align: center;
+  }
+
+  /* --- Requirements --------------------------------------------------- */
+
+  .reqs {
+    list-style: none;
+    margin: 2.5rem 0 0;
+    padding: 0;
+    display: grid;
+    gap: 0;
+    border-top: 1px solid var(--border-soft);
+  }
+
+  .req {
+    display: grid;
+    grid-template-columns: 4.5rem 1fr;
+    gap: 1rem;
+    padding-block: 1.75rem;
+    border-bottom: 1px solid var(--border-soft);
+  }
+
+  .req__n {
+    font-family: var(--font-mono);
+    color: var(--accent);
+    font-size: 0.9375rem;
+    padding-top: 0.2rem;
+  }
+
+  .req h3 {
+    font-size: 1.125rem;
+    letter-spacing: -0.01em;
+  }
+
+  .req p {
+    margin: 0.5rem 0 0;
+    color: var(--text-muted);
+    max-width: 62ch;
+  }
+
+  @media (max-width: 34rem) {
+    .req {
+      grid-template-columns: 1fr;
+      gap: 0.35rem;
+    }
+  }
+
+  /* --- Privacy / open source ------------------------------------------ */
+
+  .promise {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+    gap: clamp(2rem, 5vw, 4rem);
+  }
+
+  .promise__col h2 {
+    font-size: clamp(1.5rem, 1.2rem + 1.2vw, 2rem);
+  }
+
+  /* --- Closing CTA ---------------------------------------------------- */
+
+  .cta {
+    position: relative;
+    overflow: hidden;
+    text-align: center;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: clamp(3rem, 7vw, 5rem) clamp(1.5rem, 5vw, 3rem);
+    background:
+      radial-gradient(ellipse 70% 90% at 50% -20%, rgba(79, 216, 196, 0.16), transparent 70%),
+      linear-gradient(180deg, var(--surface-raised), var(--bg-deep));
+  }
+
+  .cta__mark {
+    line-height: 0;
+    margin-bottom: 1.25rem;
+  }
+
+  .cta h2 {
+    font-size: clamp(1.75rem, 1.3rem + 1.9vw, 2.5rem);
+    margin-inline: auto;
+  }
+
+  .cta p {
+    color: var(--text-muted);
+    margin: 1rem 0 0;
+  }
+
+  .cta__actions {
+    margin-top: 2rem;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.75rem;
   }
 </style>
