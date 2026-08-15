@@ -27,7 +27,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import studio.koeda.norrklang.data.diagnostics.Diagnostics
 import studio.koeda.norrklang.data.repo.MusicRepository
 import studio.koeda.norrklang.data.session.SessionManager
-import studio.koeda.norrklang.subsonic.SubsonicException
+import studio.koeda.norrklang.data.repo.MusicException
 
 /**
  * All browse/playback resolution for the car UI.
@@ -208,7 +208,7 @@ internal class LibrarySessionCallback(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            // Broader than SubsonicException on purpose: the host retries a
+            // Broader than MusicException on purpose: the host retries a
             // graceful error result, but a failed future on a car host can
             // read as a dead service. Anything unexpected is still recorded.
             errorResult(e)
@@ -231,7 +231,7 @@ internal class LibrarySessionCallback(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            // Broader than SubsonicException on purpose: the host retries a
+            // Broader than MusicException on purpose: the host retries a
             // graceful error result, but a failed future on a car host can
             // read as a dead service. Anything unexpected is still recorded.
             errorResult(e)
@@ -290,7 +290,7 @@ internal class LibrarySessionCallback(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            // Broader than SubsonicException on purpose: the host retries a
+            // Broader than MusicException on purpose: the host retries a
             // graceful error result, but a failed future on a car host can
             // read as a dead service. Anything unexpected is still recorded.
             errorResult(e)
@@ -312,7 +312,7 @@ internal class LibrarySessionCallback(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            // Broader than SubsonicException on purpose: the host retries a
+            // Broader than MusicException on purpose: the host retries a
             // graceful error result, but a failed future on a car host can
             // read as a dead service. Anything unexpected is still recorded.
             errorResult(e)
@@ -322,6 +322,7 @@ internal class LibrarySessionCallback(
     override fun onPlaybackResumption(
         mediaSession: MediaSession,
         controller: ControllerInfo,
+        isForPlayback: Boolean,
     ): ListenableFuture<MediaItemsWithStartPosition> = scope.future {
         awaitResolvedSession()
         resumption.load() ?: throw IllegalStateException("Nothing to resume")
@@ -371,7 +372,7 @@ internal class LibrarySessionCallback(
 
     private fun <T : Any> errorResult(e: Exception): LibraryResult<T> =
         when (e) {
-            is SubsonicException.AuthFailed -> authenticationExpiredResult()
+            is MusicException.AuthFailed -> authenticationExpiredResult()
             else -> {
                 // Class + message only — a stream/cover URL would carry the
                 // auth token.

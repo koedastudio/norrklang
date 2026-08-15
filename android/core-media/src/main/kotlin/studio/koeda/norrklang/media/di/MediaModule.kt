@@ -31,7 +31,7 @@ internal object MediaModule {
         @ApplicationScope scope: CoroutineScope,
     ): RandomMixSession = RandomMixSession(repository).also { mix ->
         // The snapshot embeds authenticated stream URLs — never let it survive
-        // a sign-out or account switch (mirrors DefaultMusicRepository.init).
+        // a sign-out or account switch (mirrors SubsonicMusicRepository.init).
         scope.launch {
             sessionManager.state.collect { mix.clear() }
         }

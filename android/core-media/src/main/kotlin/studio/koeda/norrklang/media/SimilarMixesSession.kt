@@ -7,7 +7,7 @@ import kotlinx.coroutines.coroutineScope
 import studio.koeda.norrklang.data.model.Artist
 import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.repo.MusicRepository
-import studio.koeda.norrklang.subsonic.SubsonicException
+import studio.koeda.norrklang.data.repo.MusicException
 
 /**
  * The "Similar to <artist>" mixes in the "Made for you" home section: up to
@@ -148,14 +148,14 @@ internal class SimilarMixesSession(
     private suspend fun topUpFromAlbums(artist: Artist, buckets: Buckets) {
         val albums = try {
             repository.artist(artist.id).albums
-        } catch (_: SubsonicException.NotFound) {
+        } catch (_: MusicException.NotFound) {
             return
         }
         for (album in albums.shuffled(random).take(ALBUM_TOPUP_ALBUMS)) {
             if (!buckets.isShort(artist)) return
             val tracks = try {
                 repository.album(album.id).tracks
-            } catch (_: SubsonicException.NotFound) {
+            } catch (_: MusicException.NotFound) {
                 continue
             }
             for (track in tracks.shuffled(random)) {

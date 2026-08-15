@@ -10,6 +10,7 @@ android {
 
 dependencies {
     api(project(":core-subsonic"))
+    api(project(":core-plex"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.datastore.preferences)

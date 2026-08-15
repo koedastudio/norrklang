@@ -18,7 +18,7 @@ import studio.koeda.norrklang.data.repo.MusicRepository
  * │                     "Quick play" (Random mix, Favourites → track lists)
  * │                     "Made for you" (Best of <artist>, Similar to <artist>
  * │                     → track lists, present only when the server has
- * │                     Last.fm data)
+ * │                     similarity data)
  * │                     "Genre mixes" (biggest genres → track lists)
  * │                     "Decade mixes" (populated decades → track lists)
  * │                     "Browse" (Recently played, Most played, New albums,
@@ -239,15 +239,23 @@ internal class BrowseTree(
         madeForYouGroup,
     )
 
-    private fun genreMixButton(mix: CatalogMixesSession.GenreMix) =
-        trackListTile(MediaId.HomeGenre(mix.name), mix.name, mix.artworkUrl, genreMixesGroup)
+    // Collages served by ArtworkProvider — see HomeButtonArtwork.
+    private fun genreMixButton(mix: CatalogMixesSession.GenreMix) = trackListTile(
+        MediaId.HomeGenre(mix.name),
+        mix.name,
+        mixCollageUri(CatalogMixKind.GENRE, mix.name),
+        genreMixesGroup,
+    )
 
     private fun decadeMixButton(mix: CatalogMixesSession.DecadeMix) = trackListTile(
         MediaId.HomeDecade(mix.startYear),
         context.getString(R.string.browse_home_decade_mix, mix.startYear),
-        mix.artworkUrl,
+        mixCollageUri(CatalogMixKind.DECADE, mix.startYear.toString()),
         decadeMixesGroup,
     )
+
+    private fun mixCollageUri(kind: CatalogMixKind, key: String): String =
+        ArtworkContract.homeMixUri(context.packageName, kind.pathSegment, key)
 
     private fun homeTab() = MediaItemFactory.browsable(
         mediaId = MediaId.TabHome,

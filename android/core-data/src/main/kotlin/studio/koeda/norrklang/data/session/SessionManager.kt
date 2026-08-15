@@ -11,23 +11,31 @@ import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.launch
 import studio.koeda.norrklang.data.di.ApplicationScope
 import studio.koeda.norrklang.data.diagnostics.Diagnostics
+import studio.koeda.norrklang.data.repo.toMusicException
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
+import studio.koeda.norrklang.data.settings.StoredAccount
+import studio.koeda.norrklang.plex.PlexAccount
+import studio.koeda.norrklang.plex.PlexClientInfo
+import studio.koeda.norrklang.plex.PlexException
+import studio.koeda.norrklang.plex.PlexServerClient
 import studio.koeda.norrklang.subsonic.SubsonicClient
 import studio.koeda.norrklang.subsonic.SubsonicCredentials
-import studio.koeda.norrklang.subsonic.SubsonicUrlBuilder
+import studio.koeda.norrklang.subsonic.SubsonicException
 
 /**
- * Owns the signed-in state and the live [SubsonicClient].
+ * Owns the signed-in state and the live provider session.
  *
- * On process start, stored credentials are restored optimistically (no blocking
+ * On process start, the stored account is restored optimistically (no blocking
  * ping) so the car UI gets a browse tree immediately; auth failures surface
  * per-request and flip the state to [SessionState.SignedOut].
  */
 @Singleton
-class SessionManager internal constructor(
+class SessionManager(
     private val settings: ServerSettingsRepository,
     private val scope: CoroutineScope,
     private val clientFactory: (SubsonicCredentials) -> SubsonicClient,
+    private val plexClientFactory: (PlexAccount, PlexClientInfo) -> PlexServerClient =
+        { account, info -> PlexServerClient(account.serverUri, account.token, info) },
 ) {
 
     @Inject constructor(
@@ -38,11 +46,7 @@ class SessionManager internal constructor(
     sealed interface SessionState {
         data object Initializing : SessionState
         data object SignedOut : SessionState
-        data class Connected(
-            val client: SubsonicClient,
-            val urlBuilder: SubsonicUrlBuilder,
-            val credentials: SubsonicCredentials,
-        ) : SessionState
+        data class Connected(val session: ProviderSession) : SessionState
     }
 
     private val _state = MutableStateFlow<SessionState>(SessionState.Initializing)
@@ -51,9 +55,11 @@ class SessionManager internal constructor(
     init {
         scope.launch {
             val restored = try {
-                settings.currentCredentials()
-                    ?.let(::connectedState)
-                    ?: SessionState.SignedOut
+                when (val stored = settings.currentAccount()) {
+                    is StoredAccount.Subsonic -> connectedState(stored.credentials)
+                    is StoredAccount.Plex -> SessionState.Connected(plexSession(stored.account))
+                    null -> SessionState.SignedOut
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -67,7 +73,7 @@ class SessionManager internal constructor(
             // Only move out of Initializing if nothing else (e.g. a concurrent
             // sign-in) has already resolved the state.
             if (!_state.compareAndSet(SessionState.Initializing, restored)) {
-                (restored as? SessionState.Connected)?.client?.close()
+                (restored as? SessionState.Connected)?.session?.close()
             }
         }
     }
@@ -81,24 +87,54 @@ class SessionManager internal constructor(
         }
         val candidate = connectedState(credentials)
         return try {
-            candidate.client.ping()
+            (candidate.session as SubsonicSession).client.ping()
             settings.save(credentials)
             replaceState(candidate)
             Result.success(Unit)
+        } catch (e: SubsonicException) {
+            candidate.session.close()
+            Result.failure(e.toMusicException())
         } catch (e: CancellationException) {
-            candidate.client.close()
+            candidate.session.close()
             throw e
         } catch (e: Exception) {
             // Broader than SubsonicException: save() can fail in the Keystore
             // encrypt, and the sign-in form must render that as an error, not
             // crash the caller's scope.
-            candidate.client.close()
+            candidate.session.close()
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Validates the linked server + music section in one round-trip, then
+     * persists and connects. Replaces any previous provider's sign-in
+     * (single active server).
+     */
+    suspend fun signInPlex(account: PlexAccount): Result<Unit> {
+        val candidate = SessionState.Connected(plexSession(account))
+        return try {
+            (candidate.session as PlexSession).client.validateSection(account.sectionId)
+            settings.savePlex(account)
+            replaceState(candidate)
+            Result.success(Unit)
+        } catch (e: PlexException) {
+            candidate.session.close()
+            Result.failure(e.toMusicException())
+        } catch (e: CancellationException) {
+            candidate.session.close()
+            throw e
+        } catch (e: Exception) {
+            // Broader than PlexException: save() can fail in the Keystore
+            // encrypt, and the sign-in form must render that as an error, not
+            // crash the caller's scope.
+            candidate.session.close()
             Result.failure(e)
         }
     }
 
     suspend fun signOut() {
-        settings.clear()
+        settings.clearAccount()
         replaceState(SessionState.SignedOut)
     }
 
@@ -111,18 +147,19 @@ class SessionManager internal constructor(
 
     fun connectedOrNull(): SessionState.Connected? = _state.value as? SessionState.Connected
 
-    /** Swaps the state and closes the client the old state owned, if any. */
+    /** Swaps the state and closes the session the old state owned, if any. */
     private fun replaceState(newState: SessionState) {
         val previous = _state.getAndUpdate { newState }
         if (previous is SessionState.Connected && previous !== newState) {
-            previous.client.close()
+            previous.session.close()
         }
     }
 
     private fun connectedState(credentials: SubsonicCredentials) =
-        SessionState.Connected(
-            client = clientFactory(credentials),
-            urlBuilder = SubsonicUrlBuilder(credentials),
-            credentials = credentials,
-        )
+        SessionState.Connected(SubsonicSession(credentials, clientFactory(credentials)))
+
+    private suspend fun plexSession(account: PlexAccount): PlexSession {
+        val info = PlexClientInfo(settings.plexClientId(), PlexClientInfo.DEFAULT_VERSION)
+        return PlexSession(account, plexClientFactory(account, info))
+    }
 }

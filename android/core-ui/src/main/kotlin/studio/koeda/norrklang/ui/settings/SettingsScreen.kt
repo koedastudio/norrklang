@@ -30,6 +30,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import studio.koeda.norrklang.data.session.MusicProvider
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository.ScrobbleSettings
 import studio.koeda.norrklang.ui.R
@@ -111,30 +112,34 @@ fun SettingsScreen(
         when (val s = state) {
             is SessionManager.SessionState.Connected -> {
                 AccountHeader(
-                    title = s.credentials.username,
-                    subtitle = s.credentials.baseUrl,
+                    title = s.session.accountLabel,
+                    subtitle = s.session.serverLabel,
                 )
                 HorizontalDivider()
                 // Raw/gapless vs server-transcoded streaming (see
                 // ServerSettingsRepository.streamOriginal). Applies to the
-                // next queue — the playing queue keeps its URLs.
-                SettingsToggleRow(
-                    title = stringResource(R.string.settings_stream_original),
-                    subtitle = stringResource(
-                        if (streamOriginal) {
-                            R.string.settings_stream_original_on
-                        } else {
-                            R.string.settings_stream_original_off
-                        },
-                    ),
-                    checked = streamOriginal,
-                    onToggle = viewModel::setStreamOriginal,
-                )
-                HorizontalDivider()
-                // Master switch for the Subsonic `scrobble` call. Off: plays
+                // next queue — the playing queue keeps its URLs. Subsonic
+                // only: Plex is always direct play in this app.
+                if (s.session.provider == MusicProvider.SUBSONIC) {
+                    SettingsToggleRow(
+                        title = stringResource(R.string.settings_stream_original),
+                        subtitle = stringResource(
+                            if (streamOriginal) {
+                                R.string.settings_stream_original_on
+                            } else {
+                                R.string.settings_stream_original_off
+                            },
+                        ),
+                        checked = streamOriginal,
+                        onToggle = viewModel::setStreamOriginal,
+                    )
+                    HorizontalDivider()
+                }
+                // Master switch for all playback reporting — Subsonic
+                // scrobbles and Plex timeline/mark-played alike. Off: plays
                 // update neither server play history nor the server-linked
                 // Last.fm/ListenBrainz accounts; the app itself never talks to
-                // those services (see ScrobbleListener).
+                // those services (see PlaybackReporter).
                 SettingsToggleRow(
                     title = stringResource(R.string.settings_scrobble),
                     subtitle = stringResource(

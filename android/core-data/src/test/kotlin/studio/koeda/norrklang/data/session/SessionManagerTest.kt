@@ -21,6 +21,10 @@ import org.junit.Rule
 import org.junit.rules.TemporaryFolder
 import studio.koeda.norrklang.data.settings.CredentialCipher
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
+import studio.koeda.norrklang.data.settings.StoredAccount
+import studio.koeda.norrklang.plex.PlexAccount
+import studio.koeda.norrklang.plex.PlexClientInfo
+import studio.koeda.norrklang.plex.PlexServerClient
 import studio.koeda.norrklang.subsonic.SubsonicClient
 import studio.koeda.norrklang.subsonic.SubsonicCredentials
 
@@ -61,6 +65,36 @@ class SessionManagerTest {
     private fun settings(scope: CoroutineScope) =
         ServerSettingsRepository(dataStore(scope), PassthroughCipher())
 
+    private val plexAccount = PlexAccount(
+        serverUri = "https://vault.example.com:32400",
+        serverName = "Vault",
+        machineIdentifier = "m1",
+        token = "plex-token",
+        sectionId = "5",
+        username = "demo",
+    )
+
+    /** Every Plex server client answers all calls with [body]. */
+    private fun plexFactory(
+        body: String,
+        status: io.ktor.http.HttpStatusCode = io.ktor.http.HttpStatusCode.OK,
+    ): (PlexAccount, PlexClientInfo) -> PlexServerClient = { account, info ->
+        PlexServerClient(
+            account.serverUri,
+            account.token,
+            info,
+            MockEngine {
+                respond(
+                    content = body,
+                    status = status,
+                    headers = headersOf(HttpHeaders.ContentType, "application/json"),
+                )
+            },
+        )
+    }
+
+    private val sectionOkBody = """{"MediaContainer":{"Directory":[{"key":"5","type":"artist"}]}}"""
+
     private suspend fun SessionManager.resolvedState(): SessionManager.SessionState =
         state.first { it !is SessionManager.SessionState.Initializing }
 
@@ -78,8 +112,8 @@ class SessionManagerTest {
         val manager = SessionManager(settings, backgroundScope, clientFactory(okBody))
 
         val state = assertIs<SessionManager.SessionState.Connected>(manager.resolvedState())
-        assertEquals("https://music.example.com", state.credentials.baseUrl)
-        assertEquals("demo", state.credentials.username)
+        assertEquals("https://music.example.com", state.session.serverLabel)
+        assertEquals("demo", state.session.accountLabel)
     }
 
     @Test
@@ -118,8 +152,8 @@ class SessionManagerTest {
         manager.signIn("https://two.example.com", "bob", "hunter2")
 
         val state = assertIs<SessionManager.SessionState.Connected>(manager.state.value)
-        assertEquals("https://two.example.com", state.credentials.baseUrl)
-        assertEquals("bob", state.credentials.username)
+        assertEquals("https://two.example.com", state.session.serverLabel)
+        assertEquals("bob", state.session.accountLabel)
         assertEquals("https://two.example.com", settings.currentCredentials()?.baseUrl)
     }
 
@@ -133,6 +167,73 @@ class SessionManagerTest {
         manager.signOut()
 
         assertIs<SessionManager.SessionState.SignedOut>(manager.state.value)
+        assertNull(settings.currentCredentials())
+    }
+
+    @Test
+    fun `successful plex sign-in connects and persists`() = runTest {
+        val settings = settings(backgroundScope)
+        val manager = SessionManager(
+            settings, backgroundScope, clientFactory(okBody), plexFactory(sectionOkBody),
+        )
+        manager.resolvedState()
+
+        val result = manager.signInPlex(plexAccount)
+
+        assertTrue(result.isSuccess)
+        val state = assertIs<SessionManager.SessionState.Connected>(manager.state.value)
+        assertEquals("Vault", state.session.serverLabel)
+        assertEquals("demo", state.session.accountLabel)
+        assertIs<StoredAccount.Plex>(settings.currentAccount())
+    }
+
+    @Test
+    fun `rejected plex sign-in stays signed out and persists nothing`() = runTest {
+        val settings = settings(backgroundScope)
+        val manager = SessionManager(
+            settings,
+            backgroundScope,
+            clientFactory(okBody),
+            plexFactory("", io.ktor.http.HttpStatusCode.Unauthorized),
+        )
+        manager.resolvedState()
+
+        val result = manager.signInPlex(plexAccount)
+
+        assertTrue(result.isFailure)
+        assertIs<SessionManager.SessionState.SignedOut>(manager.state.value)
+        assertNull(settings.currentAccount())
+    }
+
+    @Test
+    fun `restores a stored plex account on start`() = runTest {
+        val settings = settings(backgroundScope)
+        settings.savePlex(plexAccount)
+
+        val manager = SessionManager(
+            settings, backgroundScope, clientFactory(okBody), plexFactory(sectionOkBody),
+        )
+
+        val state = assertIs<SessionManager.SessionState.Connected>(manager.resolvedState())
+        assertEquals("Vault", state.session.serverLabel)
+        assertEquals(plexAccount.cacheFingerprint, state.session.cacheFingerprint)
+    }
+
+    @Test
+    fun `plex sign-in replaces a subsonic session`() = runTest {
+        val settings = settings(backgroundScope)
+        val manager = SessionManager(
+            settings, backgroundScope, clientFactory(okBody), plexFactory(sectionOkBody),
+        )
+        manager.resolvedState()
+        manager.signIn("https://music.example.com", "alice", "secret")
+
+        manager.signInPlex(plexAccount)
+
+        val state = assertIs<SessionManager.SessionState.Connected>(manager.state.value)
+        assertEquals("Vault", state.session.serverLabel)
+        assertIs<StoredAccount.Plex>(settings.currentAccount())
+        // The Subsonic credentials are gone with the switch.
         assertNull(settings.currentCredentials())
     }
 

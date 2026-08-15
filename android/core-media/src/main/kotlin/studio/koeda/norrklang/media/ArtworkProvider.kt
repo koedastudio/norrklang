@@ -24,6 +24,7 @@ import kotlinx.coroutines.withTimeout
 import studio.koeda.norrklang.data.artwork.ArtworkContract
 import studio.koeda.norrklang.data.artwork.KnownCoverIds
 import studio.koeda.norrklang.data.repo.MusicRepository
+import studio.koeda.norrklang.data.session.ProviderSession
 import studio.koeda.norrklang.data.session.SessionManager
 
 /**
@@ -40,7 +41,7 @@ import studio.koeda.norrklang.data.session.SessionManager
  *  - downloads capped at [MAX_IMAGE_BYTES]; cache bounded
  *    ([MAX_CACHE_FILES]/[MAX_CACHE_BYTES], oldest-first eviction)
  *  - cache files live in a per-account directory
- *    ([SubsonicCredentials.cacheFingerprint]); other accounts' directories
+ *    ([ProviderSession.cacheFingerprint]); other accounts' directories
  *    are purged, so a later sign-in to a server reusing cover ids can never
  *    receive the previous account's images
  *
@@ -55,6 +56,7 @@ class ArtworkProvider : ContentProvider() {
         fun sessionManager(): SessionManager
         fun musicRepository(): MusicRepository
         fun randomMixSession(): RandomMixSession
+        fun catalogMixesSession(): CatalogMixesSession
     }
 
     override fun onCreate(): Boolean = true
@@ -63,9 +65,9 @@ class ArtworkProvider : ContentProvider() {
         val context = context ?: throw FileNotFoundException("Provider not attached")
         val dependencies = EntryPointAccessors
             .fromApplication(context.applicationContext, Dependencies::class.java)
-        val session = dependencies.sessionManager().connectedOrNull()
+        val session = dependencies.sessionManager().connectedOrNull()?.session
             ?: throw FileNotFoundException("Not signed in")
-        val accountDir = accountCacheDir(context, session.credentials.cacheFingerprint)
+        val accountDir = accountCacheDir(context, session.cacheFingerprint)
 
         val segments = uri.pathSegments
         val file = when {
@@ -80,6 +82,15 @@ class ArtworkProvider : ContentProvider() {
                     accountDir,
                     segments[1],
                 )
+            segments.size == 3 && segments[0] == ArtworkContract.PATH_HOME ->
+                catalogMixFile(
+                    context,
+                    dependencies.catalogMixesSession(),
+                    session,
+                    accountDir,
+                    kind = segments[1],
+                    key = segments[2],
+                )
             else -> throw FileNotFoundException("Unsupported artwork uri: $uri")
         }
         return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
@@ -87,7 +98,7 @@ class ArtworkProvider : ContentProvider() {
 
     /** The cached cover file for [coverArtId], downloading it on first use. */
     private fun coverFile(
-        session: SessionManager.SessionState.Connected,
+        session: ProviderSession,
         accountDir: File,
         coverArtId: String,
     ): File {
@@ -104,22 +115,78 @@ class ArtworkProvider : ContentProvider() {
         return file
     }
 
-    /**
-     * The composed home-button image for [key], re-rendered once the cached
-     * copy goes stale. Render failures fall back to a stale image when one
-     * exists — a slightly old collage beats a blank tile.
-     */
+    /** The composed image for a static home button (`home/<key>`). */
     private fun homeButtonFile(
         context: Context,
         repository: MusicRepository,
         randomMix: RandomMixSession,
-        session: SessionManager.SessionState.Connected,
+        session: ProviderSession,
         accountDir: File,
         key: String,
     ): File {
         val tile = HomeTile.forKey(key)
             ?: throw FileNotFoundException("Unknown home button: $key")
-        val file = File(accountDir, hashedFileName("home-button/$key"))
+        return composedTileFile(
+            context,
+            session,
+            accountDir,
+            cacheKey = "home-button/$key",
+            iconRes = tile.iconRes,
+            accentColor = tile.accentColor,
+        ) { HomeButtonArtwork.coverIds(tile, repository, randomMix) }
+    }
+
+    /**
+     * The composed image for a dynamic catalog mix tile (`home/<kind>/<key>`).
+     * The key is resolved against the current mix snapshot — an unknown key
+     * (no snapshot yet after a process restart, or a stale host URI) serves
+     * the cached image when one exists, like any render failure.
+     */
+    private fun catalogMixFile(
+        context: Context,
+        catalogMixes: CatalogMixesSession,
+        session: ProviderSession,
+        accountDir: File,
+        kind: String,
+        key: String,
+    ): File {
+        val mixKind = CatalogMixKind.forPath(kind)
+            ?: throw FileNotFoundException("Unknown mix kind: $kind")
+        return composedTileFile(
+            context,
+            session,
+            accountDir,
+            cacheKey = "home-button/$kind/$key",
+            iconRes = mixKind.iconRes,
+            accentColor = mixKind.accentColor,
+        ) {
+            val urls = when (mixKind) {
+                CatalogMixKind.GENRE ->
+                    catalogMixes.currentGenreMixes()
+                        .firstOrNull { it.name == key }?.artworkUrls
+                CatalogMixKind.DECADE ->
+                    catalogMixes.currentDecadeMixes()
+                        .firstOrNull { it.startYear.toString() == key }?.artworkUrls
+            } ?: throw FileNotFoundException("Unknown mix: $kind/$key")
+            HomeButtonArtwork.coverIds(urls)
+        }
+    }
+
+    /**
+     * The composed tile image for [cacheKey], re-rendered once the cached
+     * copy goes stale. Render failures fall back to a stale image when one
+     * exists — a slightly old collage beats a blank tile.
+     */
+    private fun composedTileFile(
+        context: Context,
+        session: ProviderSession,
+        accountDir: File,
+        cacheKey: String,
+        iconRes: Int,
+        accentColor: Int,
+        coverIds: suspend () -> List<String>,
+    ): File {
+        val file = File(accountDir, hashedFileName(cacheKey))
         val stale = file.length() == 0L ||
             System.currentTimeMillis() - file.lastModified() > HOME_BUTTON_TTL_MS
         if (stale) {
@@ -130,24 +197,23 @@ class ArtworkProvider : ContentProvider() {
                 // catch below serves the stale image like any render failure.
                 val covers = runBlocking {
                     withTimeout(HOME_BUTTON_RENDER_TIMEOUT_MS) {
-                        HomeButtonArtwork.coverIds(tile, repository, randomMix)
-                            .mapNotNull { id ->
-                                // Blocking downloads never suspend — check
-                                // the deadline between them.
-                                ensureActive()
-                                try {
-                                    coverFile(session, accountDir, id)
-                                } catch (_: FileNotFoundException) {
-                                    null
-                                }
+                        coverIds().mapNotNull { id ->
+                            // Blocking downloads never suspend — check
+                            // the deadline between them.
+                            ensureActive()
+                            try {
+                                coverFile(session, accountDir, id)
+                            } catch (_: FileNotFoundException) {
+                                null
                             }
+                        }
                     }
                 }
-                HomeButtonArtwork.render(context, tile, covers, file)
+                HomeButtonArtwork.render(context, iconRes, accentColor, covers, file)
                 evict(accountDir)
             } catch (e: Exception) {
                 if (file.length() == 0L) {
-                    throw FileNotFoundException("Could not render home button $key").apply {
+                    throw FileNotFoundException("Could not render tile $cacheKey").apply {
                         initCause(e)
                     }
                 }
@@ -157,12 +223,12 @@ class ArtworkProvider : ContentProvider() {
     }
 
     private fun download(
-        session: SessionManager.SessionState.Connected,
+        session: ProviderSession,
         coverArtId: String,
         target: File,
     ) {
         val connection =
-            URL(session.urlBuilder.coverArtUrl(coverArtId)).openConnection() as HttpURLConnection
+            URL(session.artworkUrl(coverArtId)).openConnection() as HttpURLConnection
         connection.connectTimeout = CONNECT_TIMEOUT_MS
         connection.readTimeout = READ_TIMEOUT_MS
         try {

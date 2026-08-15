@@ -19,14 +19,19 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import studio.koeda.norrklang.data.diagnostics.Diagnostics
-import studio.koeda.norrklang.data.repo.DefaultMusicRepository
 import studio.koeda.norrklang.data.repo.MusicRepository
+import studio.koeda.norrklang.data.repo.RoutingMusicRepository
 import studio.koeda.norrklang.data.settings.CredentialCipher
 import studio.koeda.norrklang.data.settings.KeystoreCredentialCipher
 
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
 annotation class ApplicationScope
+
+/** The app's package name — injectable so repositories stay JVM-testable. */
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class AppPackageName
 
 private val Context.norrklangDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "norrklang_settings",
@@ -58,6 +63,11 @@ object DataProvidesModule {
                 // the same failure, over and over.
                 CoroutineExceptionHandler { _, e -> Diagnostics.record("app-scope", e) },
         )
+
+    @Provides
+    @AppPackageName
+    fun providePackageName(@ApplicationContext context: Context): String =
+        context.packageName
 }
 
 @Module
@@ -65,7 +75,7 @@ object DataProvidesModule {
 interface DataBindsModule {
 
     @Binds
-    fun bindMusicRepository(impl: DefaultMusicRepository): MusicRepository
+    fun bindMusicRepository(impl: RoutingMusicRepository): MusicRepository
 
     @Binds
     fun bindCredentialCipher(impl: KeystoreCredentialCipher): CredentialCipher

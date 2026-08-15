@@ -9,7 +9,7 @@ import kotlinx.coroutines.test.runTest
 import studio.koeda.norrklang.data.model.Album
 import studio.koeda.norrklang.data.model.Genre
 import studio.koeda.norrklang.data.model.Track
-import studio.koeda.norrklang.subsonic.SubsonicException
+import studio.koeda.norrklang.data.repo.MusicException
 
 class CatalogMixesSessionTest {
 
@@ -27,7 +27,7 @@ class CatalogMixesSessionTest {
 
         override suspend fun genres(): List<Genre> {
             genreFetches++
-            if (failGenres) throw SubsonicException.NetworkError(IOException("tunnel"))
+            if (failGenres) throw MusicException.NetworkError(IOException("tunnel"))
             return genreList.toList()
         }
 
@@ -52,7 +52,7 @@ class CatalogMixesSessionTest {
         }
 
         override suspend fun track(id: String): Track =
-            knownTracks[id] ?: throw SubsonicException.NotFound("no $id")
+            knownTracks[id] ?: throw MusicException.NotFound("no $id")
     }
 
     private fun stubAlbum(id: String, artworkUrl: String? = "content://app.artwork/cover/$id") =
@@ -91,8 +91,26 @@ class CatalogMixesSessionTest {
         assertTrue(mixes.refresh("fp"))
         assertEquals(listOf("Rock", "Pop", "Jazz"), mixes.currentGenreMixes().map { it.name })
         assertEquals(
-            "content://app.artwork/cover/al-Rock",
-            mixes.currentGenreMixes().first().artworkUrl,
+            listOf("content://app.artwork/cover/al-Rock"),
+            mixes.currentGenreMixes().first().artworkUrls,
+        )
+    }
+
+    @Test
+    fun `collage covers are distinct, coverless albums skipped, capped at four`() = runTest {
+        val repository = repositoryWithCatalog()
+        repository.albumsByGenreName["Rock"] =
+            listOf(
+                stubAlbum("a1"),
+                stubAlbum("a1-again", artworkUrl = "content://app.artwork/cover/a1"),
+                stubAlbum("bare", artworkUrl = null),
+            ) + List(6) { stubAlbum("a${it + 2}") }
+        val mixes = session(repository)
+
+        mixes.refresh("fp")
+        assertEquals(
+            listOf("a1", "a2", "a3", "a4").map { "content://app.artwork/cover/$it" },
+            mixes.currentGenreMixes().first().artworkUrls,
         )
     }
 
@@ -120,9 +138,10 @@ class CatalogMixesSessionTest {
 
         mixes.refresh("fp")
         assertEquals(listOf(1980, 2000), mixes.currentDecadeMixes().map { it.startYear })
+        // Five 80s albums, distinct covers: a full four-tile collage.
         assertEquals(
-            "content://app.artwork/cover/al-80s-0",
-            mixes.currentDecadeMixes().first().artworkUrl,
+            (0..3).map { "content://app.artwork/cover/al-80s-$it" },
+            mixes.currentDecadeMixes().first().artworkUrls,
         )
     }
 

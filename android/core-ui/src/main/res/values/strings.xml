@@ -1,7 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
   <string name="signin_title">Norrklang</string>
-  <string name="signin_subtitle">Connect to your Navidrome server</string>
+  <string name="signin_subtitle">Connect to your Navidrome or Subsonic server</string>
+
+  <string name="signin_choose_provider_title">Choose your server</string>
+  <string name="signin_choose_provider_subtitle">Where does your music live?</string>
+  <string name="signin_provider_subsonic">Navidrome / Subsonic</string>
+  <string name="signin_provider_subsonic_desc">Connect to your own server with a URL, username and password</string>
+  <string name="signin_provider_plex">Plex</string>
+  <string name="signin_provider_plex_desc">Link this device with a code from your Plex account</string>
+
+  <string name="plex_link_title">Link your Plex account</string>
+  <string name="plex_link_instruction">On your phone or computer, go to plex.tv/link and enter this code — or scan the QR code</string>
+  <string name="plex_link_waiting">Waiting for you to link…</string>
+  <string name="plex_link_qr">QR code for plex.tv/link</string>
+  <string name="plex_pick_server_title">Choose a server</string>
+  <string name="plex_server_shared_badge">Shared</string>
+  <string name="plex_pick_connection_title">Choose a connection</string>
+  <string name="plex_connection_local">Home network</string>
+  <string name="plex_connection_remote">Remote access</string>
+  <string name="plex_connection_relay">Plex relay</string>
+  <string name="plex_connection_relay_warning">Relay is bandwidth-limited — lossless audio may stutter</string>
+  <string name="plex_connection_unreachable">Unreachable</string>
+  <string name="plex_connection_latency">%1$d ms</string>
+  <string name="plex_connection_probing">Checking connections…</string>
+  <string name="plex_validating">Checking your music library…</string>
+  <string name="plex_error_link_failed">Couldn\'t reach plex.tv — check your connection</string>
+  <string name="plex_error_no_servers">No Plex Media Server on this account</string>
+  <string name="plex_error_no_music_library">This server has no music library</string>
+  <string name="plex_error_validation">Couldn\'t connect to the server — try another connection</string>
+  <string name="plex_retry">Try again</string>
   <string name="signin_server_label">Server address</string>
   <string name="signin_server_placeholder">https://music.example.com</string>
   <string name="signin_username_label">Username</string>

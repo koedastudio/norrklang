@@ -7,7 +7,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.repo.MusicRepository
-import studio.koeda.norrklang.subsonic.SubsonicException
+import studio.koeda.norrklang.data.repo.MusicException
 
 /**
  * Shared shell for the generated home-tab mix sections: a tile snapshot of
@@ -51,7 +51,7 @@ internal abstract class HomeMixesSession<K : Any, S : Any>(
     /**
      * Generates the section snapshot for [fingerprint] unless it already
      * exists; true means the home tab's content changed (caller notifies).
-     * A [SubsonicException] mid-generation aborts without adopting — a
+     * A [MusicException] mid-generation aborts without adopting — a
      * transient network blip must not read as "no data" and hide the
      * section all session.
      */
@@ -67,7 +67,7 @@ internal abstract class HomeMixesSession<K : Any, S : Any>(
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            // Broader than SubsonicException: refresh runs in a bare launch on
+            // Broader than MusicException: refresh runs in a bare launch on
             // the service scope, where anything escaping kills the process.
             return false
         }
@@ -139,7 +139,7 @@ internal abstract class HomeMixesSession<K : Any, S : Any>(
     }
 
     /**
-     * Builds the tile snapshot from scratch. A thrown [SubsonicException]
+     * Builds the tile snapshot from scratch. A thrown [MusicException]
      * aborts the refresh without adopting anything; an "empty" snapshot (per
      * [isEmpty]) means "this library has no data" and hides the section.
      */
@@ -156,7 +156,7 @@ internal abstract class HomeMixesSession<K : Any, S : Any>(
 
     /**
      * Rebuilds one tile's mix for [queueTracks]/[resumeQueue]; failures may
-     * either throw [SubsonicException] or return empty — both serve empty.
+     * either throw [MusicException] or return empty — both serve empty.
      */
     protected abstract suspend fun buildTracksFor(key: K): List<Track>
 }

@@ -5,7 +5,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import dagger.hilt.android.AndroidEntryPoint
-import studio.koeda.norrklang.ui.signin.SignInScreen
+import studio.koeda.norrklang.ui.signin.PlexSignInViewModel
+import studio.koeda.norrklang.ui.signin.SignInFlow
 import studio.koeda.norrklang.ui.signin.SignInViewModel
 import studio.koeda.norrklang.ui.theme.NorrklangTheme
 
@@ -20,12 +21,18 @@ import studio.koeda.norrklang.ui.theme.NorrklangTheme
 class SignInActivity : ComponentActivity() {
 
     private val viewModel: SignInViewModel by viewModels()
+    private val plexViewModel: PlexSignInViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             NorrklangTheme {
-                SignInScreen(viewModel = viewModel, onSignedIn = ::finish, onBack = ::finish)
+                SignInFlow(
+                    subsonicViewModel = viewModel,
+                    plexViewModel = plexViewModel,
+                    onSignedIn = ::finish,
+                    onBack = ::finish,
+                )
             }
         }
     }

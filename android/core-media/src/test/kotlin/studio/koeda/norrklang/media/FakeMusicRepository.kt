@@ -53,7 +53,8 @@ internal open class FakeMusicRepository : MusicRepository {
     override suspend fun playlist(id: String): PlaylistDetail = error("unused")
     override suspend fun track(id: String): Track = error("unused")
     override suspend fun search(query: String): SearchResults = error("unused")
-    override suspend fun scrobble(trackId: String, submission: Boolean) = error("unused")
+    // Explicit Unit: an inferred Nothing return would block overriding.
+    override suspend fun scrobble(trackId: String, submission: Boolean): Unit = error("unused")
     override fun invalidateCache() = error("unused")
 }
 

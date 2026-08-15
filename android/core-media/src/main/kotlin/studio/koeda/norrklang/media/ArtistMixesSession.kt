@@ -5,7 +5,7 @@ import kotlinx.coroutines.coroutineScope
 import studio.koeda.norrklang.data.model.Artist
 import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.repo.MusicRepository
-import studio.koeda.norrklang.subsonic.SubsonicException
+import studio.koeda.norrklang.data.repo.MusicException
 
 /**
  * Base for the artist-keyed mixes in the "Made for you" home section
@@ -45,7 +45,7 @@ internal abstract class ArtistMixesSession(
         seed.artworkUrl?.let { return it }
         val fetched = try {
             repository.artist(seed.id).artist.artworkUrl
-        } catch (_: SubsonicException) {
+        } catch (_: MusicException) {
             null
         }
         return fetched ?: tracks.firstNotNullOfOrNull { it.artworkUrl }
