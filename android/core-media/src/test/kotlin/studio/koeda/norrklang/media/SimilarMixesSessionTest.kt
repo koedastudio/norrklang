@@ -13,7 +13,7 @@ import studio.koeda.norrklang.data.model.AlbumDetail
 import studio.koeda.norrklang.data.model.Artist
 import studio.koeda.norrklang.data.model.ArtistDetail
 import studio.koeda.norrklang.data.model.Track
-import studio.koeda.norrklang.subsonic.SubsonicException
+import studio.koeda.norrklang.data.repo.MusicException
 
 class SimilarMixesSessionTest {
 
@@ -48,7 +48,7 @@ class SimilarMixesSessionTest {
 
         override suspend fun similarTracks(artistId: String, count: Int): List<Track> {
             if (artistId == failSimilarTracksFor) {
-                throw SubsonicException.NetworkError(IOException("car left the garage"))
+                throw MusicException.NetworkError(IOException("car left the garage"))
             }
             probedArtists += artistId
             return similarTracksById[artistId].orEmpty().take(count)
@@ -58,11 +58,11 @@ class SimilarMixesSessionTest {
             topTracksByName[artistName].orEmpty().take(count)
 
         override suspend fun track(id: String): Track =
-            knownTracks[id] ?: throw SubsonicException.NotFound("Song $id not found")
+            knownTracks[id] ?: throw MusicException.NotFound("Song $id not found")
 
         override suspend fun artist(id: String): ArtistDetail =
             knownArtists[id]?.let { ArtistDetail(it, albums = albumsByArtist[id].orEmpty()) }
-                ?: throw SubsonicException.NotFound("Artist $id not found")
+                ?: throw MusicException.NotFound("Artist $id not found")
 
         override suspend fun album(id: String): AlbumDetail =
             AlbumDetail(

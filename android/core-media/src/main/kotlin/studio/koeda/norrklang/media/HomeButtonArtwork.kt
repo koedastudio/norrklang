@@ -15,35 +15,47 @@ import java.io.IOException
 import studio.koeda.norrklang.data.repo.MusicRepository
 
 /**
- * Renders the home tab's square button images: a collage of the covers
- * actually behind each button (2×2 when four distinct covers exist, a single
+ * Renders the home tab's square button images — the static [HomeTile] buttons
+ * and the dynamic catalog mix tiles alike: a collage of the covers actually
+ * behind each button (2×2 when four distinct covers exist, a single
  * full-bleed cover otherwise), under a bottom scrim and a dark icon badge
  * that says what the button contains. Sections with no content
  * fall back to an accent gradient with a large centered icon.
  *
- * Composed on demand by [ArtworkProvider] (path `home/<key>`) and cached
- * next to the plain cover files.
+ * Composed on demand by [ArtworkProvider] (paths `home/<key>` and
+ * `home/<kind>/<key>`) and cached next to the plain cover files.
  */
 internal object HomeButtonArtwork {
 
     /**
      * Cover-art ids for [tile]'s collage: the section's leading items, deduped
      * (several tracks can share one album cover), at most [COLLAGE_TILES].
-     * Ids are recovered from the domain models' provider URIs, so everything
-     * returned here is already registered as fetchable.
      */
     suspend fun coverIds(
         tile: HomeTile,
         repository: MusicRepository,
         randomMix: RandomMixSession,
-    ): List<String> =
-        tile.coverUrls(repository, randomMix)
+    ): List<String> = coverIds(tile.coverUrls(repository, randomMix))
+
+    /**
+     * Cover-art ids behind the given provider URIs, deduped, at most
+     * [COLLAGE_TILES]. Ids are recovered from the domain models' provider
+     * URIs, so everything returned here is already registered as fetchable.
+     */
+    fun coverIds(coverUrls: List<String>): List<String> =
+        coverUrls
             .mapNotNull { Uri.parse(it).lastPathSegment }
             .distinct()
             .take(COLLAGE_TILES)
 
     /** Composes the button image from the given cover files into [target] (PNG). */
-    fun render(context: Context, tile: HomeTile, covers: List<File>, target: File) {
+    fun render(
+        context: Context,
+        iconRes: Int,
+        accentColor: Int,
+        covers: List<File>,
+        target: File,
+    ) {
         val tiles = covers.mapNotNull { decode(it) }
         val bitmap = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
         try {
@@ -51,13 +63,13 @@ internal object HomeButtonArtwork {
             when {
                 tiles.size >= COLLAGE_TILES -> drawCollage(canvas, tiles)
                 tiles.isNotEmpty() -> drawCover(canvas, tiles.first(), Rect(0, 0, SIZE, SIZE))
-                else -> drawFallback(canvas, tile)
+                else -> drawFallback(canvas, accentColor)
             }
             if (tiles.isEmpty()) {
-                drawCenteredIcon(context, canvas, tile)
+                drawCenteredIcon(context, canvas, iconRes)
             } else {
                 drawScrim(canvas)
-                drawBadge(context, canvas, tile)
+                drawBadge(context, canvas, iconRes)
             }
             writeAtomically(bitmap, target)
         } finally {
@@ -83,15 +95,15 @@ internal object HomeButtonArtwork {
     }
 
     /** Diagonal accent gradient for sections that are still empty. */
-    private fun drawFallback(canvas: Canvas, tile: HomeTile) {
+    private fun drawFallback(canvas: Canvas, accentColor: Int) {
         val paint = Paint().apply {
             shader = LinearGradient(
                 0f,
                 0f,
                 SIZE.toFloat(),
                 SIZE.toFloat(),
-                tile.accentColor,
-                darken(tile.accentColor),
+                accentColor,
+                darken(accentColor),
                 Shader.TileMode.CLAMP,
             )
         }
@@ -114,7 +126,7 @@ internal object HomeButtonArtwork {
         canvas.drawRect(0f, SIZE * SCRIM_START, SIZE.toFloat(), SIZE.toFloat(), paint)
     }
 
-    private fun drawBadge(context: Context, canvas: Canvas, tile: HomeTile) {
+    private fun drawBadge(context: Context, canvas: Canvas, iconRes: Int) {
         val cx = BADGE_MARGIN + BADGE_RADIUS
         val cy = SIZE - BADGE_MARGIN - BADGE_RADIUS
         canvas.drawCircle(
@@ -123,11 +135,11 @@ internal object HomeButtonArtwork {
             BADGE_RADIUS.toFloat(),
             Paint(Paint.ANTI_ALIAS_FLAG).apply { color = BADGE_COLOR },
         )
-        drawIcon(context, canvas, tile.iconRes, cx, cy, (BADGE_RADIUS * 2 * BADGE_ICON_FRACTION).toInt())
+        drawIcon(context, canvas, iconRes, cx, cy, (BADGE_RADIUS * 2 * BADGE_ICON_FRACTION).toInt())
     }
 
-    private fun drawCenteredIcon(context: Context, canvas: Canvas, tile: HomeTile) {
-        drawIcon(context, canvas, tile.iconRes, SIZE / 2, SIZE / 2, EMPTY_ICON_SIZE)
+    private fun drawCenteredIcon(context: Context, canvas: Canvas, iconRes: Int) {
+        drawIcon(context, canvas, iconRes, SIZE / 2, SIZE / 2, EMPTY_ICON_SIZE)
     }
 
     private fun drawIcon(context: Context, canvas: Canvas, iconRes: Int, cx: Int, cy: Int, size: Int) {
@@ -170,7 +182,9 @@ internal object HomeButtonArtwork {
     private val coverPaint = Paint(Paint.FILTER_BITMAP_FLAG)
 
     private const val SIZE = 512
-    private const val COLLAGE_TILES = 4
+
+    /** Covers in a full collage; fewer means a single full-bleed cover. */
+    const val COLLAGE_TILES = 4
 
     private const val SCRIM_START = 0.45f
     private const val SCRIM_COLOR = 0xB3000000.toInt()

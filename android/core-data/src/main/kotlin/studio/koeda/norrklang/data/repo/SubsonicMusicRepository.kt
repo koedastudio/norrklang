@@ -1,7 +1,5 @@
 package studio.koeda.norrklang.data.repo
 
-import android.content.Context
-import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.cancellation.CancellationException
@@ -10,6 +8,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import studio.koeda.norrklang.data.artwork.ArtworkContract
+import studio.koeda.norrklang.data.di.AppPackageName
 import studio.koeda.norrklang.data.di.ApplicationScope
 import studio.koeda.norrklang.data.model.Album
 import studio.koeda.norrklang.data.model.AlbumDetail
@@ -21,6 +20,7 @@ import studio.koeda.norrklang.data.model.PlaylistDetail
 import studio.koeda.norrklang.data.model.SearchResults
 import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.session.SessionManager
+import studio.koeda.norrklang.data.session.SubsonicSession
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
 import studio.koeda.norrklang.subsonic.SubsonicClient
 import studio.koeda.norrklang.subsonic.SubsonicException
@@ -31,10 +31,10 @@ import studio.koeda.norrklang.subsonic.model.Child
 import studio.koeda.norrklang.subsonic.model.Playlist as PlaylistDto
 
 @Singleton
-class DefaultMusicRepository @Inject constructor(
+class SubsonicMusicRepository @Inject constructor(
     private val sessionManager: SessionManager,
     private val settings: ServerSettingsRepository,
-    @ApplicationContext private val context: Context,
+    @AppPackageName private val packageName: String,
     @ApplicationScope scope: CoroutineScope,
 ) : MusicRepository {
 
@@ -154,14 +154,19 @@ class DefaultMusicRepository @Inject constructor(
     override suspend fun recentlyPlayedArtists(size: Int): List<Artist> =
         playedArtists("recent-artists/$size", SubsonicClient.AlbumListType.RECENT, size)
 
+    // Fetches a canonical batch and trims outside the cache, like the Plex
+    // side: one entry serves every count, and the in-library filter below
+    // has headroom to still fill the request.
     override suspend fun similarArtists(artistId: String, count: Int): List<Artist> =
-        cached("similar-artists/$artistId/$count") { client, _ ->
-            emptyWhenMissing { client.getArtistInfo2(artistId, count).similarArtist }
+        cached("similar-artists/$artistId") { client, _ ->
+            emptyWhenMissing {
+                client.getArtistInfo2(artistId, SIMILAR_ARTISTS_FETCH).similarArtist
+            }
                 // Similar artists not in the library come back with a synthetic
                 // id and no albums — useless as mix sources, drop them.
                 .filter { it.albumCount > 0 }
                 .map { it.toDomain() }
-        }
+        }.take(count)
 
     // Uncached like randomTracks: getSimilarSongs2 has a random component and
     // SimilarMixesSession owns list stability.
@@ -267,27 +272,30 @@ class DefaultMusicRepository @Inject constructor(
         // Per result type (artists/albums/songs); generous enough that paged
         // search hosts have something to page through.
         const val SEARCH_COUNT_PER_TYPE = 50
+
+        /** Similar-artists batch fetched per seed; callers take what they need. */
+        const val SIMILAR_ARTISTS_FETCH = 50
     }
+
+    private fun subsonicSession(): SubsonicSession =
+        sessionManager.connectedOrNull()?.session as? SubsonicSession
+            ?: throw MusicException.AuthFailed("Not signed in")
 
     private suspend fun <T : Any> cached(
         key: String,
         loader: suspend (SubsonicClient, SubsonicUrlBuilder) -> T,
     ): T {
-        val session = sessionManager.connectedOrNull()
-            ?: throw SubsonicException.AuthFailed("Not signed in")
+        val session = subsonicSession()
         // Stream URLs depend on the raw/transcode setting — keying by it makes
         // a toggle take effect immediately instead of after the TTL expires.
         val raw = streamOriginal()
-        val scopedKey = "${session.credentials.cacheFingerprint}/raw=$raw/$key"
+        val scopedKey = "${session.cacheFingerprint}/raw=$raw/$key"
         // The loader uses the SAME session snapshot the key was computed from:
         // a re-read could store one account's data under another's fingerprint
         // if an account switch lands between the two reads.
         return cache.getOrLoad(scopedKey) {
-            try {
+            translatingErrors {
                 loader(session.client, session.urlBuilder.withStreamOriginal(raw))
-            } catch (e: SubsonicException.AuthFailed) {
-                sessionManager.onAuthRejected()
-                throw e
             }
         }
     }
@@ -295,15 +303,23 @@ class DefaultMusicRepository @Inject constructor(
     private suspend fun <T> withSession(
         block: suspend (SubsonicClient, SubsonicUrlBuilder) -> T,
     ): T {
-        val session = sessionManager.connectedOrNull()
-            ?: throw SubsonicException.AuthFailed("Not signed in")
-        return try {
+        val session = subsonicSession()
+        return translatingErrors {
             block(session.client, session.urlBuilder.withStreamOriginal(streamOriginal()))
-        } catch (e: SubsonicException.AuthFailed) {
-            sessionManager.onAuthRejected()
-            throw e
         }
     }
+
+    /**
+     * The [MusicException] boundary: nothing above core-data sees a
+     * [SubsonicException]. Auth rejections also flip the session state.
+     */
+    private suspend fun <T> translatingErrors(block: suspend () -> T): T =
+        try {
+            block()
+        } catch (e: SubsonicException) {
+            if (e is SubsonicException.AuthFailed) sessionManager.onAuthRejected()
+            throw e.toMusicException()
+        }
 
     // The try honors this class's contract (callers catch SubsonicException
     // only): a failed settings read must fall back to the default, not leak
@@ -356,7 +372,7 @@ class DefaultMusicRepository @Inject constructor(
      * [ArtworkContract]).
      */
     private fun artworkUri(coverArtId: String): String =
-        ArtworkContract.coverUri(context.packageName, coverArtId)
+        ArtworkContract.coverUri(packageName, coverArtId)
 
     private fun ArtistID3.toDomain(sortGroup: String? = null) = Artist(
         id = id,

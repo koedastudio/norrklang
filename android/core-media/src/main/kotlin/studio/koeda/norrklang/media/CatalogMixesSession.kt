@@ -4,6 +4,7 @@ import java.util.Calendar
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import studio.koeda.norrklang.data.model.Album
 import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.repo.MusicRepository
 
@@ -25,9 +26,10 @@ internal class CatalogMixesSession(
     private val currentYear: () -> Int = { Calendar.getInstance().get(Calendar.YEAR) },
 ) : HomeMixesSession<MediaId.CatalogMix, CatalogMixesSession.Snapshot>(repository) {
 
-    data class GenreMix(val name: String, val artworkUrl: String?)
+    /** [artworkUrls]: the tile collage's covers, distinct, at most [HomeButtonArtwork.COLLAGE_TILES]. */
+    data class GenreMix(val name: String, val artworkUrls: List<String>)
 
-    data class DecadeMix(val startYear: Int, val artworkUrl: String?)
+    data class DecadeMix(val startYear: Int, val artworkUrls: List<String>)
 
     class Snapshot(val genres: List<GenreMix>, val decades: List<DecadeMix>)
 
@@ -57,7 +59,7 @@ internal class CatalogMixesSession(
         Snapshot(genres.await(), decades.await())
     }
 
-    /** The biggest genres, artwork from the first covered album in each. */
+    /** The biggest genres, collage covers from each one's leading albums. */
     private suspend fun genreMixes(): List<GenreMix> {
         val top = repository.genres()
             .filter { it.songCount >= MIN_GENRE_SONGS }
@@ -66,9 +68,8 @@ internal class CatalogMixesSession(
         return coroutineScope {
             top.map { genre ->
                 async {
-                    val artwork = repository.albumsByGenre(genre.name, ARTWORK_CANDIDATES)
-                        .firstNotNullOfOrNull { it.artworkUrl }
-                    GenreMix(genre.name, artwork)
+                    val albums = repository.albumsByGenre(genre.name, ARTWORK_CANDIDATES)
+                    GenreMix(genre.name, collageUrls(albums))
                 }
             }.awaitAll()
         }
@@ -76,7 +77,7 @@ internal class CatalogMixesSession(
 
     /**
      * Every decade with enough albums, oldest first; the album-count answer
-     * doubles as the artwork source.
+     * doubles as the collage source.
      */
     private suspend fun decadeMixes(): List<DecadeMix> = coroutineScope {
         (FIRST_DECADE..currentYear() step 10).map { startYear ->
@@ -84,13 +85,18 @@ internal class CatalogMixesSession(
                 val albums =
                     repository.albumsByYearRange(startYear, startYear + 9, ARTWORK_CANDIDATES)
                 if (albums.size >= MIN_DECADE_ALBUMS) {
-                    DecadeMix(startYear, albums.firstNotNullOfOrNull { it.artworkUrl })
+                    DecadeMix(startYear, collageUrls(albums))
                 } else {
                     null
                 }
             }
         }.awaitAll().filterNotNull()
     }
+
+    private fun collageUrls(albums: List<Album>): List<String> =
+        albums.mapNotNull { it.artworkUrl }
+            .distinct()
+            .take(HomeButtonArtwork.COLLAGE_TILES)
 
     companion object {
         const val MAX_GENRES = 6
@@ -108,7 +114,7 @@ internal class CatalogMixesSession(
         /** Decades before this are folded away — car libraries rarely reach them. */
         const val FIRST_DECADE = 1950
 
-        /** Albums fetched per tile: enough to find a cover and count content. */
+        /** Albums fetched per tile: enough to fill a collage and count content. */
         const val ARTWORK_CANDIDATES = 10
     }
 }

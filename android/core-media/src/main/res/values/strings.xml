@@ -22,7 +22,7 @@
   <string name="search_section_artists">Artists</string>
   <string name="search_section_albums">Albums</string>
   <string name="search_section_tracks">Tracks</string>
-  <string name="error_sign_in_required">Sign in to your Navidrome server to start listening</string>
+  <string name="error_sign_in_required">Sign in to your music server to start listening</string>
   <string name="error_sign_in_action">Sign in</string>
   <string name="error_sign_in_on_phone">Open Norrklang on your phone to sign in</string>
   <string name="error_loading_library">Couldn\'t load your library. Check your connection and try again.</string>

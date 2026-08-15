@@ -64,7 +64,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
         super.onCreate()
 
         val player = buildPlayer()
-        player.addListener(ScrobbleListener(serviceScope, repository, settings, player))
+        player.addListener(PlaybackReporter(serviceScope, repository, settings, player))
         player.addListener(RandomMixPlaySourceListener(randomMix))
         playbackRecovery = PlaybackRecoveryListener(this, serviceScope, player)
             .also(player::addListener)
@@ -111,7 +111,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
             // Fetches https artwork in-process and hands bitmaps to the
             // platform session — without this, covers stay blank on Android
             // Auto head units.
-            .setBitmapLoader(CacheBitmapLoader(DataSourceBitmapLoader(this)))
+            .setBitmapLoader(CacheBitmapLoader(DataSourceBitmapLoader.Builder(this).build()))
             .build()
             .also { session ->
                 // The Builder's extras never reach the platform session legacy
@@ -198,7 +198,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
                             listOf(similarMixes, bestOfMixes, catalogMixes)
                         for (mixes in mixSessions) {
                             serviceScope.launch {
-                                if (mixes.refresh(state.credentials.cacheFingerprint)) {
+                                if (mixes.refresh(state.session.cacheFingerprint)) {
                                     session.notifyChildrenChanged(
                                         MediaId.TabHome.encode(),
                                         Int.MAX_VALUE,

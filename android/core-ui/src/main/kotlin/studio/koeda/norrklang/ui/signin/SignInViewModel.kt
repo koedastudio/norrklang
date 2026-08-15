@@ -8,8 +8,8 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.launch
+import studio.koeda.norrklang.data.repo.MusicException
 import studio.koeda.norrklang.data.session.SessionManager
-import studio.koeda.norrklang.subsonic.SubsonicException
 
 @HiltViewModel
 class SignInViewModel @Inject constructor(
@@ -65,9 +65,9 @@ class SignInViewModel @Inject constructor(
                 },
                 onFailure = { e ->
                     when (e) {
-                        is SubsonicException.AuthFailed ->
+                        is MusicException.AuthFailed ->
                             UiState.Error(ErrorKind.AUTH, e.message)
-                        is SubsonicException.NetworkError ->
+                        is MusicException.NetworkError ->
                             UiState.Error(ErrorKind.NETWORK, e.message)
                         else ->
                             UiState.Error(ErrorKind.GENERIC, e.message)

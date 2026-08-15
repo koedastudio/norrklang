@@ -6,7 +6,7 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import studio.koeda.norrklang.data.model.Track
-import studio.koeda.norrklang.subsonic.SubsonicException
+import studio.koeda.norrklang.data.repo.MusicException
 
 class RandomMixSessionTest {
 
@@ -21,7 +21,7 @@ class RandomMixSessionTest {
         }
 
         override suspend fun track(id: String): Track =
-            knownTracks[id] ?: throw SubsonicException.NotFound("Song $id not found")
+            knownTracks[id] ?: throw MusicException.NotFound("Song $id not found")
     }
 
     private val repository = FakeRepository()

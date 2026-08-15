@@ -12,7 +12,7 @@ import androidx.media3.session.MediaConstants
 internal object SessionErrors {
 
     /**
-     * Persistent "Sign in to Navidrome" state, applied via
+     * Persistent "Sign in to your music server" state, applied via
      * [AuthGatePlayer.setAuthError] while signed out (cleared with `null`
      * after sign-in). Player-level so it sticks as a lasting STATE_ERROR in
      * the legacy PlaybackStateCompat (see [AuthGatePlayer]); the `_COMPAT`

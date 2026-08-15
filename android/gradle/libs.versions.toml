@@ -55,7 +55,8 @@ coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version
 
 guava = { module = "com.google.guava:guava", version.ref = "guava" }
 
-# QR generation for the diagnostics report hand-off (pure Java, no transitive deps).
+# QR generation (Plex PIN sign-in and the diagnostics report hand-off; pure
+# Java, no transitive deps).
 zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 
 junit = { module = "junit:junit", version.ref = "junit" }

@@ -105,3 +105,32 @@ internal enum class HomeTile(
         fun forMediaId(id: MediaId): HomeTile? = entries.firstOrNull { it.mediaId == id }
     }
 }
+
+/**
+ * The [HomeTile] counterpart for the dynamic "Genre mixes"/"Decade mixes"
+ * tiles: collage badge icon and empty-fallback accent per kind. [pathSegment]
+ * is the middle segment of the tile's `home/<kind>/<key>` artwork path —
+ * the key (genre name / decade start year) comes from the mix snapshot.
+ */
+internal enum class CatalogMixKind(
+    val pathSegment: String,
+    val iconRes: Int,
+    val accentColor: Int,
+) {
+    GENRE(
+        pathSegment = "genre",
+        iconRes = R.drawable.ic_home_genre_mix,
+        accentColor = 0xFF56CCF2.toInt(),
+    ),
+    DECADE(
+        pathSegment = "decade",
+        iconRes = R.drawable.ic_home_decade_mix,
+        accentColor = 0xFFF2C94C.toInt(),
+    ),
+    ;
+
+    companion object {
+        fun forPath(segment: String): CatalogMixKind? =
+            entries.firstOrNull { it.pathSegment == segment }
+    }
+}

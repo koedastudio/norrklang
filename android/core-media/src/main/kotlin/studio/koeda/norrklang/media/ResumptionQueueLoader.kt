@@ -63,7 +63,7 @@ internal class ResumptionQueueLoader(
         } catch (e: Exception) {
             // Offline, signed out, or unreadable persisted state — resume
             // silently becomes "nothing to resume". Deliberately broader than
-            // SubsonicException: this runs inside the service scope at every
+            // MusicException: this runs inside the service scope at every
             // signed-in start, where the same bad persisted state would
             // otherwise replay a failure on every bind.
             null

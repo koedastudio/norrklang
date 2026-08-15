@@ -13,8 +13,11 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
+import studio.koeda.norrklang.plex.PlexAccount
 import studio.koeda.norrklang.subsonic.SubsonicCredentials
 
 /** Reversible stand-in for the Android Keystore cipher (unavailable on JVM). */
@@ -109,16 +112,101 @@ class ServerSettingsRepositoryTest {
     }
 
     @Test
-    fun `clear removes everything`() = runTest {
+    fun `clearAccount removes credentials, resumption and exclusions`() = runTest {
         val store = dataStore(backgroundScope)
         val repo = ServerSettingsRepository(store, FakeCipher())
         repo.save(credentials)
         repo.saveResumptionState("track/1", 1234L)
+        repo.setArtistScrobbleExcluded("artist/1", true)
+        repo.setPlaylistScrobbleExcluded("playlist/1", true)
 
-        repo.clear()
+        repo.clearAccount()
 
         assertNull(repo.currentCredentials())
         assertNull(repo.resumptionState())
+        val scrobble = repo.scrobbleSettings.first()
+        assertTrue(scrobble.excludedArtistIds.isEmpty())
+        assertTrue(scrobble.excludedPlaylistIds.isEmpty())
+    }
+
+    @Test
+    fun `clearAccount keeps device-wide preferences`() = runTest {
+        val store = dataStore(backgroundScope)
+        val repo = ServerSettingsRepository(store, FakeCipher())
+        repo.save(credentials)
+        repo.setStreamOriginal(false)
+        repo.setScrobblingEnabled(false)
+
+        repo.clearAccount()
+
+        assertEquals(false, repo.streamOriginal.first())
+        assertEquals(false, repo.scrobbleSettings.first().enabled)
+    }
+
+    private val plexAccount = PlexAccount(
+        serverUri = "https://vault.example.com:32400",
+        serverName = "Vault",
+        machineIdentifier = "m1",
+        token = "plex-token",
+        sectionId = "5",
+        username = "demo",
+    )
+
+    @Test
+    fun `plex account round-trips with an encrypted token`() = runTest {
+        val store = dataStore(backgroundScope)
+        val repo = ServerSettingsRepository(store, FakeCipher())
+
+        repo.savePlex(plexAccount)
+
+        val stored = assertIs<StoredAccount.Plex>(repo.currentAccount())
+        assertEquals(plexAccount, stored.account)
+        // The token never lands in the store as plaintext.
+        val rawToken = store.data.first()[stringPreferencesKey("plex_token")]
+        assertEquals(FakeCipher.PREFIX + "plex-token".reversed(), rawToken)
+    }
+
+    @Test
+    fun `provider-less prefs with subsonic keys read as a subsonic account`() = runTest {
+        val store = dataStore(backgroundScope)
+        val repo = ServerSettingsRepository(store, FakeCipher())
+        repo.save(credentials)
+        // Simulate a pre-Plex install: no provider discriminator on disk.
+        store.edit { it.remove(stringPreferencesKey("provider")) }
+
+        val stored = assertIs<StoredAccount.Subsonic>(repo.currentAccount())
+        assertEquals(credentials, stored.credentials)
+    }
+
+    @Test
+    fun `saving one provider removes the other`() = runTest {
+        val store = dataStore(backgroundScope)
+        val repo = ServerSettingsRepository(store, FakeCipher())
+
+        repo.save(credentials)
+        repo.savePlex(plexAccount)
+        assertIs<StoredAccount.Plex>(repo.currentAccount())
+        assertNull(repo.currentCredentials())
+
+        repo.save(credentials)
+        assertIs<StoredAccount.Subsonic>(repo.currentAccount())
+        assertNull(store.data.first()[stringPreferencesKey("plex_token")])
+    }
+
+    @Test
+    fun `plex client id is minted once and survives clearAccount`() = runTest {
+        val store = dataStore(backgroundScope)
+        val repo = ServerSettingsRepository(store, FakeCipher())
+
+        val first = repo.plexClientId()
+        assertEquals(first, repo.plexClientId())
+
+        repo.savePlex(plexAccount)
+        repo.clearAccount()
+
+        assertNull(repo.currentAccount())
+        assertEquals(first, repo.plexClientId())
+        assertNotEquals("", first)
     }
 
     @Test

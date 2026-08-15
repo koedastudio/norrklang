@@ -9,7 +9,7 @@ import kotlinx.coroutines.test.runTest
 import studio.koeda.norrklang.data.model.Artist
 import studio.koeda.norrklang.data.model.ArtistDetail
 import studio.koeda.norrklang.data.model.Track
-import studio.koeda.norrklang.subsonic.SubsonicException
+import studio.koeda.norrklang.data.repo.MusicException
 
 class BestOfMixesSessionTest {
 
@@ -27,7 +27,7 @@ class BestOfMixesSessionTest {
 
         override suspend fun mostPlayedArtists(size: Int): List<Artist> {
             poolFetches++
-            if (failPools) throw SubsonicException.NetworkError(IOException("tunnel"))
+            if (failPools) throw MusicException.NetworkError(IOException("tunnel"))
             return frequentPool.toList()
         }
 
@@ -40,10 +40,10 @@ class BestOfMixesSessionTest {
 
         override suspend fun artist(id: String): ArtistDetail =
             knownArtists[id]?.let { ArtistDetail(it, albums = emptyList()) }
-                ?: throw SubsonicException.NotFound("Artist $id not found")
+                ?: throw MusicException.NotFound("Artist $id not found")
 
         override suspend fun track(id: String): Track =
-            knownTracks[id] ?: throw SubsonicException.NotFound("Song $id not found")
+            knownTracks[id] ?: throw MusicException.NotFound("Song $id not found")
     }
 
     private val repository = FakeRepository()

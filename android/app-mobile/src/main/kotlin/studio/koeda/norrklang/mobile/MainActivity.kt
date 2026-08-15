@@ -19,7 +19,8 @@ import dagger.hilt.android.AndroidEntryPoint
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.media.NorrklangMediaLibraryService
 import studio.koeda.norrklang.ui.settings.SettingsViewModel
-import studio.koeda.norrklang.ui.signin.SignInScreen
+import studio.koeda.norrklang.ui.signin.PlexSignInViewModel
+import studio.koeda.norrklang.ui.signin.SignInFlow
 import studio.koeda.norrklang.ui.signin.SignInViewModel
 import studio.koeda.norrklang.ui.theme.NorrklangTheme
 
@@ -32,6 +33,7 @@ import studio.koeda.norrklang.ui.theme.NorrklangTheme
 class MainActivity : ComponentActivity() {
 
     private val signInViewModel: SignInViewModel by viewModels()
+    private val plexSignInViewModel: PlexSignInViewModel by viewModels()
     private val settingsViewModel: SettingsViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,7 +44,13 @@ class MainActivity : ComponentActivity() {
 
                 when (sessionState) {
                     is SessionManager.SessionState.Connected -> HomeWithController()
-                    else -> SignInScreen(viewModel = signInViewModel, onSignedIn = {})
+                    // The screen swap is reactive (session state), so
+                    // onSignedIn stays a no-op like before.
+                    else -> SignInFlow(
+                        subsonicViewModel = signInViewModel,
+                        plexViewModel = plexSignInViewModel,
+                        onSignedIn = {},
+                    )
                 }
             }
         }

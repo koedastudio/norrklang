@@ -65,8 +65,8 @@ internal fun HomeScreen(
             Text(
                 text = stringResource(
                     R.string.home_connected_to,
-                    it.credentials.username,
-                    it.credentials.baseUrl,
+                    it.session.accountLabel,
+                    it.session.serverLabel,
                 ),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

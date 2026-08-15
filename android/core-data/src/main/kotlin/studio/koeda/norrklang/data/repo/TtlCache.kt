@@ -31,7 +31,7 @@ class TtlCache(
             val loaded = loader()
             entries[key] = Entry(loaded, clock())
             loaded
-        } as T
+        }
     }
 
     private fun fresh(key: String): Any? {

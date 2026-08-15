@@ -16,9 +16,11 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import java.util.UUID
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import studio.koeda.norrklang.data.diagnostics.Diagnostics
+import studio.koeda.norrklang.plex.PlexAccount
 import studio.koeda.norrklang.subsonic.SubsonicCredentials
 import studio.koeda.norrklang.subsonic.SubsonicTokenAuth
 
@@ -38,10 +40,30 @@ class ServerSettingsRepository @Inject constructor(
 ) {
 
     private object Keys {
+        /**
+         * "subsonic" | "plex". Absent on pre-Plex installs — [SERVER_URL]
+         * present then implies Subsonic, so existing users stay signed in
+         * without a migration write.
+         */
+        val PROVIDER = stringPreferencesKey("provider")
+
         val SERVER_URL = stringPreferencesKey("server_url")
         val USERNAME = stringPreferencesKey("username")
         val AUTH_SALT = stringPreferencesKey("auth_salt")
         val AUTH_TOKEN = stringPreferencesKey("auth_token")
+
+        /**
+         * X-Plex-Client-Identifier — Plex's device identity for this install.
+         * Minted once and NEVER cleared, even on sign-out: re-linking with a
+         * new identifier would register a duplicate device on the account.
+         */
+        val PLEX_CLIENT_ID = stringPreferencesKey("plex_client_id")
+        val PLEX_TOKEN = stringPreferencesKey("plex_token")
+        val PLEX_SERVER_URI = stringPreferencesKey("plex_server_uri")
+        val PLEX_SERVER_NAME = stringPreferencesKey("plex_server_name")
+        val PLEX_MACHINE_ID = stringPreferencesKey("plex_machine_id")
+        val PLEX_SECTION_ID = stringPreferencesKey("plex_section_id")
+        val PLEX_USERNAME = stringPreferencesKey("plex_username")
         val LAST_MEDIA_ID = stringPreferencesKey("last_media_id")
         val LAST_POSITION_MS = longPreferencesKey("last_position_ms")
         val STREAM_ORIGINAL = booleanPreferencesKey("stream_original")
@@ -89,14 +111,69 @@ class ServerSettingsRepository @Inject constructor(
         return credentials.first()
     }
 
+    /** The persisted sign-in, whichever provider it belongs to. */
+    suspend fun currentAccount(): StoredAccount? {
+        val prefs = dataStore.data.first()
+        if (prefs[Keys.PROVIDER] == PROVIDER_PLEX) {
+            return decodePlex(prefs)?.let { StoredAccount.Plex(it) }
+        }
+        // No provider key (pre-Plex install) or "subsonic": Subsonic path,
+        // including its legacy migrations.
+        return currentCredentials()?.let { StoredAccount.Subsonic(it) }
+    }
+
+    private fun decodePlex(prefs: Preferences): PlexAccount? {
+        val uri = prefs[Keys.PLEX_SERVER_URI] ?: return null
+        val sectionId = prefs[Keys.PLEX_SECTION_ID] ?: return null
+        // null (undecryptable — Keystore key gone) means signed out.
+        val token = prefs[Keys.PLEX_TOKEN]?.let(cipher::decrypt) ?: return null
+        return PlexAccount(
+            serverUri = uri,
+            serverName = prefs[Keys.PLEX_SERVER_NAME] ?: uri,
+            machineIdentifier = prefs[Keys.PLEX_MACHINE_ID] ?: "",
+            token = token,
+            sectionId = sectionId,
+            username = prefs[Keys.PLEX_USERNAME] ?: "",
+        )
+    }
+
     suspend fun save(credentials: SubsonicCredentials) {
         dataStore.edit { prefs ->
+            prefs[Keys.PROVIDER] = PROVIDER_SUBSONIC
             prefs[Keys.SERVER_URL] = credentials.baseUrl
             prefs[Keys.USERNAME] = credentials.username
             prefs[Keys.AUTH_SALT] = cipher.encrypt(credentials.auth.salt)
             prefs[Keys.AUTH_TOKEN] = cipher.encrypt(credentials.auth.token)
             prefs.remove(Keys.LEGACY_PASSWORD)
+            removePlexAccount(prefs)
         }
+    }
+
+    suspend fun savePlex(account: PlexAccount) {
+        dataStore.edit { prefs ->
+            prefs[Keys.PROVIDER] = PROVIDER_PLEX
+            prefs[Keys.PLEX_TOKEN] = cipher.encrypt(account.token)
+            prefs[Keys.PLEX_SERVER_URI] = account.serverUri
+            prefs[Keys.PLEX_SERVER_NAME] = account.serverName
+            prefs[Keys.PLEX_MACHINE_ID] = account.machineIdentifier
+            prefs[Keys.PLEX_SECTION_ID] = account.sectionId
+            prefs[Keys.PLEX_USERNAME] = account.username
+            removeSubsonicAccount(prefs)
+        }
+    }
+
+    /**
+     * This install's X-Plex-Client-Identifier, minted on first use. The edit
+     * re-checks under DataStore's own serialization so concurrent first calls
+     * agree on one id.
+     */
+    suspend fun plexClientId(): String {
+        dataStore.data.first()[Keys.PLEX_CLIENT_ID]?.let { return it }
+        val minted = UUID.randomUUID().toString()
+        val prefs = dataStore.edit { prefs ->
+            if (prefs[Keys.PLEX_CLIENT_ID] == null) prefs[Keys.PLEX_CLIENT_ID] = minted
+        }
+        return prefs[Keys.PLEX_CLIENT_ID] ?: minted
     }
 
     /**
@@ -124,8 +201,41 @@ class ServerSettingsRepository @Inject constructor(
         decode(prefs)?.let { save(it) }
     }
 
-    suspend fun clear() {
-        dataStore.edit { it.clear() }
+    /**
+     * Removes everything tied to the signed-in account: credentials, the
+     * resumption pointer, and the scrobble exclusion sets (both hold ids
+     * minted by the old server). Device-wide state — [streamOriginal], the
+     * scrobble master toggle, and the Plex client id — survives a sign-out
+     * or server switch.
+     */
+    suspend fun clearAccount() {
+        dataStore.edit { prefs ->
+            prefs.remove(Keys.PROVIDER)
+            removeSubsonicAccount(prefs)
+            removePlexAccount(prefs)
+            prefs.remove(Keys.LAST_MEDIA_ID)
+            prefs.remove(Keys.LAST_POSITION_MS)
+            prefs.remove(Keys.SCROBBLE_EXCLUDED_ARTISTS)
+            prefs.remove(Keys.SCROBBLE_EXCLUDED_PLAYLISTS)
+        }
+    }
+
+    private fun removeSubsonicAccount(prefs: MutablePreferences) {
+        prefs.remove(Keys.SERVER_URL)
+        prefs.remove(Keys.USERNAME)
+        prefs.remove(Keys.AUTH_SALT)
+        prefs.remove(Keys.AUTH_TOKEN)
+        prefs.remove(Keys.LEGACY_PASSWORD)
+    }
+
+    /** Keeps [Keys.PLEX_CLIENT_ID] — the device identity outlives sign-ins. */
+    private fun removePlexAccount(prefs: MutablePreferences) {
+        prefs.remove(Keys.PLEX_TOKEN)
+        prefs.remove(Keys.PLEX_SERVER_URI)
+        prefs.remove(Keys.PLEX_SERVER_NAME)
+        prefs.remove(Keys.PLEX_MACHINE_ID)
+        prefs.remove(Keys.PLEX_SECTION_ID)
+        prefs.remove(Keys.PLEX_USERNAME)
     }
 
     // --- Playback quality ---
@@ -219,5 +329,8 @@ class ServerSettingsRepository @Inject constructor(
          * wrong state.
          */
         const val DEFAULT_STREAM_ORIGINAL = true
+
+        private const val PROVIDER_SUBSONIC = "subsonic"
+        private const val PROVIDER_PLEX = "plex"
     }
 }
