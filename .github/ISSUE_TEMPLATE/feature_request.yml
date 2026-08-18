@@ -1,0 +1,30 @@
+name: Feature request
+description: An idea for the app or the site
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: >-
+        The situation or annoyance behind the idea — what you want to do
+        that you currently can't, or can't do comfortably.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you'd like
+      description: >-
+        How you imagine it working. Rough is fine — the car renders its own
+        UI from the browse tree, so we may need to adapt the idea to what
+        the AAOS media template allows.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: >-
+        Optional — workarounds you've tried, how other apps do it,
+        screenshots, or the car/server setup this matters for.
