@@ -18,6 +18,8 @@ import java.io.OutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
+import java.util.concurrent.Semaphore
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -40,6 +42,11 @@ import studio.koeda.norrklang.data.session.SessionManager
  *    already-cached files are served regardless
  *  - downloads capped at [MAX_IMAGE_BYTES]; cache bounded
  *    ([MAX_CACHE_FILES]/[MAX_CACHE_BYTES], oldest-first eviction)
+ *  - concurrent downloads capped at [MAX_CONCURRENT_DOWNLOADS] — openFile
+ *    runs on the process's small shared binder-thread pool, and a fast
+ *    scroll through a large uncached library must not pin every binder
+ *    thread on slow server responses (the system kills a process whose
+ *    provider stops answering)
  *  - cache files live in a per-account directory
  *    ([ProviderSession.cacheFingerprint]); other accounts' directories
  *    are purged, so a later sign-in to a server reusing cover ids can never
@@ -49,6 +56,12 @@ import studio.koeda.norrklang.data.session.SessionManager
  * in-process — never logged or echoed in error messages.
  */
 class ArtworkProvider : ContentProvider() {
+
+    /**
+     * Bounds concurrent network fetches. Fair, so requests for the items the
+     * user settled on are served in arrival order after a scroll burst.
+     */
+    private val downloadSlots = Semaphore(MAX_CONCURRENT_DOWNLOADS, true)
 
     @EntryPoint
     @InstallIn(SingletonComponent::class)
@@ -109,10 +122,36 @@ class ArtworkProvider : ContentProvider() {
                 // authenticated fetches for ids we never referenced.
                 throw FileNotFoundException("Unknown cover id")
             }
-            download(session, coverArtId, file)
+            withDownloadSlot {
+                // Re-check under the slot: a concurrent request for the same
+                // id may have finished the download while this one waited.
+                if (file.length() == 0L) download(session, coverArtId, file)
+            }
             evict(accountDir)
         }
         return file
+    }
+
+    /**
+     * Runs [block] holding one of the [MAX_CONCURRENT_DOWNLOADS] download
+     * slots. When none frees up within [DOWNLOAD_SLOT_WAIT_MS] the request
+     * fails fast instead of pinning its binder thread — the host shows a
+     * placeholder and re-requests the URI when the item is next bound
+     * (typically once scrolling settles).
+     */
+    private fun <T> withDownloadSlot(block: () -> T): T {
+        val acquired = try {
+            downloadSlots.tryAcquire(DOWNLOAD_SLOT_WAIT_MS, TimeUnit.MILLISECONDS)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            false
+        }
+        if (!acquired) throw FileNotFoundException("Artwork downloads saturated")
+        try {
+            return block()
+        } finally {
+            downloadSlots.release()
+        }
     }
 
     /** The composed image for a static home button (`home/<key>`). */
@@ -337,12 +376,35 @@ class ArtworkProvider : ContentProvider() {
 
     private companion object {
         const val CACHE_DIR = "artwork"
-        const val CONNECT_TIMEOUT_MS = 10_000
-        const val READ_TIMEOUT_MS = 15_000
+
+        // Tighter than typical API timeouts on purpose: artwork is
+        // best-effort decoration, and every download holds a scarce
+        // download slot (and its binder thread) for its full duration.
+        const val CONNECT_TIMEOUT_MS = 5_000
+        const val READ_TIMEOUT_MS = 10_000
+
+        /**
+         * Concurrent network fetches. The binder pool is ~15 threads; even
+         * fully saturated, artwork leaves most of them free for browse and
+         * playback traffic.
+         */
+        const val MAX_CONCURRENT_DOWNLOADS = 4
+
+        /**
+         * Longest a saturated request waits for a slot. Long enough to ride
+         * out a burst once scrolling settles; short enough that even a pile-up
+         * across the whole binder pool stays far below the system's
+         * unresponsive-provider threshold.
+         */
+        const val DOWNLOAD_SLOT_WAIT_MS = 2_000L
 
         const val MAX_IMAGE_BYTES = 10L * 1024 * 1024
-        const val MAX_CACHE_FILES = 512
-        const val MAX_CACHE_BYTES = 128L * 1024 * 1024
+
+        // 512px covers run ~30–100 KB; sized so a several-thousand-album
+        // library's covers stay resident instead of eviction-thrashing (and
+        // re-downloading) on every pass through the grid.
+        const val MAX_CACHE_FILES = 4096
+        const val MAX_CACHE_BYTES = 256L * 1024 * 1024
 
         // Matches the repository's TTL cache, so a fresh browse after a
         // library change picks up a re-rendered image.
