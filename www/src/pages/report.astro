@@ -1,0 +1,160 @@
+---
+import Base from '../layouts/Base.astro';
+import { ISSUES_URL } from '../config';
+
+/*
+ * Landing page for the "Report a problem" QR code on the app's diagnostics
+ * screen. The trimmed log rides in the URL *fragment* (#1.<base64url of raw
+ * deflate>), which the browser never sends to any server — everything below
+ * runs client-side, and data only leaves the phone if the user submits the
+ * prefilled GitHub issue. Format contract lives in the app's ReportPayload
+ * (android/core-data/.../diagnostics/ReportPayload.kt); version-prefix "1.".
+ */
+---
+
+<Base title="Problem report" description="Diagnostic report scanned from the Norrklang app." noindex>
+  <article class="wrap report">
+    <h1>Problem report</h1>
+
+    <section id="empty" hidden>
+      <p>
+        This page displays diagnostic reports scanned from the QR code on
+        Norrklang's in-car <strong>Settings → Diagnostics</strong> screen —
+        but this link doesn't carry any report data. Scan the code again with
+        your phone camera and open the link it offers.
+      </p>
+    </section>
+
+    <section id="failed" hidden>
+      <p>
+        The report in this link couldn't be decoded. Your browser may be too
+        old for this page — try updating it — or the QR scan may have been
+        incomplete; scanning again usually fixes it.
+      </p>
+    </section>
+
+    <section id="report" hidden>
+      <p>
+        This report was decoded from the link itself — nothing was uploaded by
+        the car or by this page. Review it below; it contains no account or
+        server details. Submitting the pre-filled issue sends it to the
+        Norrklang developers on GitHub.
+      </p>
+      <pre id="log" class="report__log"></pre>
+      <p class="report__actions">
+        <a id="github" class="btn btn--primary" target="_blank" rel="noopener">Report on GitHub</a>
+        <button id="copy" class="btn btn--ghost" type="button">Copy log</button>
+      </p>
+    </section>
+  </article>
+</Base>
+
+<script define:vars={{ issuesUrl: ISSUES_URL }}>
+  const FORMAT_VERSION = '1';
+
+  function show(id) {
+    for (const section of ['empty', 'failed', 'report']) {
+      document.getElementById(section).hidden = section !== id;
+    }
+  }
+
+  /** Unpadded base64url (RFC 4648 §5) to bytes — mirrors ReportPayload. */
+  function decodeBase64Url(text) {
+    const base64 = text.replaceAll('-', '+').replaceAll('_', '/');
+    const binary = atob(base64);
+    return Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  }
+
+  /** Raw-deflate bytes to text — the counterpart of Java Deflater(nowrap). */
+  async function inflateRaw(bytes) {
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    return await new Response(stream).text();
+  }
+
+  function render(text) {
+    document.getElementById('log').textContent = text;
+
+    // First payload line is "Norrklang <version> · API <n> · <device>".
+    const summary = text.split('\n', 1)[0];
+    const title = `Problem report: ${summary}`;
+    const body = `Scanned from the in-car diagnostics screen.\n\n\`\`\`text\n${text}\n\`\`\`\n`;
+    document.getElementById('github').href =
+      `${issuesUrl}/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`;
+
+    document.getElementById('copy').textContent = 'Copy log';
+    show('report');
+  }
+
+  document.getElementById('copy').addEventListener('click', async () => {
+    await navigator.clipboard.writeText(document.getElementById('log').textContent);
+    document.getElementById('copy').textContent = 'Copied';
+  });
+
+  async function main() {
+    const fragment = window.location.hash.replace(/^#/, '');
+    if (!fragment) {
+      show('empty');
+      return;
+    }
+    const [version, payload] = fragment.split('.', 2);
+    if (version !== FORMAT_VERSION || !payload) {
+      show('failed');
+      return;
+    }
+    try {
+      render(await inflateRaw(decodeBase64Url(payload)));
+    } catch {
+      show('failed');
+    }
+  }
+
+  main();
+  // Fragment-only navigations (scanning a second report into an open tab)
+  // don't reload the page — re-decode on hash changes.
+  window.addEventListener('hashchange', main);
+</script>
+
+<style>
+  .report {
+    padding-block: clamp(2.5rem, 6vw, 4rem) 2rem;
+  }
+
+  .report h1 {
+    font-size: clamp(1.9rem, 1.4rem + 2vw, 2.5rem);
+  }
+
+  .report p {
+    margin-top: 1rem;
+    max-width: 60ch;
+  }
+
+  .report__log {
+    margin-top: 1.5rem;
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  .report__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  /* .btn assumes anchors; the copy button needs its chrome reset too. */
+  .report__actions button.btn {
+    border: none;
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  .report__actions button.btn--ghost {
+    border: 1px solid var(--border);
+  }
+</style>

@@ -50,7 +50,9 @@ class SubsonicUrlBuilder(
         url("getCoverArt", "id" to coverArtId, "size" to size.toString())
 
     private fun urlEncode(value: String): String =
-        URLEncoder.encode(value, Charsets.UTF_8)
+        // The (String, String) overload: the Charset one is API 33+ on
+        // Android and throws NoSuchMethodError on every older car.
+        URLEncoder.encode(value, "UTF-8")
 
     companion object {
         const val DEFAULT_ART_SIZE = 512

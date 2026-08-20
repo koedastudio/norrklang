@@ -17,6 +17,7 @@ dependencies {
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.zxing.core)
 
     val composeBom = platform(libs.compose.bom)
     implementation(composeBom)

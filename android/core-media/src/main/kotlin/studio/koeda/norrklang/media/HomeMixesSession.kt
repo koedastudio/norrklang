@@ -1,5 +1,6 @@
 package studio.koeda.norrklang.media
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -63,7 +64,11 @@ internal abstract class HomeMixesSession<K : Any, S : Any>(
             // The caller launches from the service's main-thread scope; list
             // building and response parsing have no main-thread affinity.
             withContext(Dispatchers.Default) { generate() }
-        } catch (_: SubsonicException) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Broader than SubsonicException: refresh runs in a bare launch on
+            // the service scope, where anything escaping kills the process.
             return false
         }
         return stateMutex.withLock {
@@ -96,7 +101,9 @@ internal abstract class HomeMixesSession<K : Any, S : Any>(
             val startEpoch = stateMutex.withLock { epoch }
             val built = try {
                 withContext(Dispatchers.Default) { buildTracksFor(key) }
-            } catch (_: SubsonicException) {
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
                 emptyList()
             }
             if (built.isNotEmpty()) {

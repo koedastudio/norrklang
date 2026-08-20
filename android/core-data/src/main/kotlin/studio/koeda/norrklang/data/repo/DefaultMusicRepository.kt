@@ -4,6 +4,7 @@ import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
@@ -304,7 +305,16 @@ class DefaultMusicRepository @Inject constructor(
         }
     }
 
-    private suspend fun streamOriginal(): Boolean = settings.streamOriginal.first()
+    // The try honors this class's contract (callers catch SubsonicException
+    // only): a failed settings read must fall back to the default, not leak
+    // an IOException through every repository method.
+    private suspend fun streamOriginal(): Boolean = try {
+        settings.streamOriginal.first()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        ServerSettingsRepository.DEFAULT_STREAM_ORIGINAL
+    }
 
     /**
      * Last.fm-backed endpoints report "no data for this artist" as either an

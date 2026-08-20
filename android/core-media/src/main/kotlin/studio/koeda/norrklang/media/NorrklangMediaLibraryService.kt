@@ -21,11 +21,13 @@ import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession.ControllerInfo
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import studio.koeda.norrklang.data.diagnostics.Diagnostics
 import studio.koeda.norrklang.data.repo.MusicRepository
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
@@ -50,7 +52,13 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
     private var mediaSession: MediaLibrarySession? = null
     private var resumptionPersister: ResumptionPersister? = null
     private var playbackRecovery: PlaybackRecoveryListener? = null
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    // The handler is load-bearing: an uncaught throw here kills the process,
+    // the car host rebinds into the same state, and the app "flash-loops"
+    // until the host gives up ("Norrklang isn't working at the moment").
+    private val serviceScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Main.immediate +
+            CoroutineExceptionHandler { _, e -> Diagnostics.record("media-service", e) },
+    )
 
     override fun onCreate() {
         super.onCreate()

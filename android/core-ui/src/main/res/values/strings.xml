@@ -38,5 +38,11 @@
   <string name="settings_picker_error">Couldn\'t load from the server</string>
   <string name="settings_picker_retry">Try again</string>
   <string name="settings_privacy_policy">Privacy policy</string>
+  <string name="settings_diagnostics">Diagnostics</string>
+  <string name="settings_diagnostics_hint">Recent errors, for troubleshooting</string>
+  <string name="settings_diagnostics_empty">No errors recorded. If something goes wrong, details show up here.</string>
+  <string name="settings_diagnostics_clear">Clear log</string>
+  <string name="settings_diagnostics_report_title">Report a problem</string>
+  <string name="settings_diagnostics_report_hint">Scan with your phone camera to open a pre-filled problem report. Nothing is sent from the car — the log travels inside the scanned link.</string>
   <string name="settings_app_version">App version %1$s</string>
 </resources>

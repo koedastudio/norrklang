@@ -1,8 +1,10 @@
 package studio.koeda.norrklang.ui.settings
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -10,6 +12,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import studio.koeda.norrklang.data.diagnostics.Diagnostics
+import studio.koeda.norrklang.data.diagnostics.ReportMetadata
+import studio.koeda.norrklang.data.diagnostics.ReportPayload
 import studio.koeda.norrklang.data.repo.MusicRepository
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
@@ -20,6 +25,7 @@ class SettingsViewModel @Inject constructor(
     private val sessionManager: SessionManager,
     private val settings: ServerSettingsRepository,
     private val repository: MusicRepository,
+    @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
     val sessionState: StateFlow<SessionManager.SessionState> = sessionManager.state
@@ -100,5 +106,30 @@ class SettingsViewModel @Inject constructor(
      */
     fun signOut() {
         viewModelScope.launch { sessionManager.signOut() }
+    }
+
+    // --- Diagnostics (see Diagnostics: cars offer users no logcat) ---
+
+    private val _diagnostics = MutableStateFlow("")
+    val diagnostics: StateFlow<String> = _diagnostics.asStateFlow()
+
+    /** The report QR's URL (see [ReportPayload]); null when the log is empty. */
+    private val _reportUrl = MutableStateFlow<String?>(null)
+    val reportUrl: StateFlow<String?> = _reportUrl.asStateFlow()
+
+    /** (Re)reads the log; call on entering the diagnostics page. */
+    fun loadDiagnostics() {
+        _diagnostics.value = Diagnostics.snapshot()
+        _reportUrl.value = ReportPayload.buildUrl(
+            ReportMetadata.from(context),
+            Diagnostics.lastCrash(),
+            Diagnostics.recentEvents(),
+        )
+    }
+
+    fun clearDiagnostics() {
+        Diagnostics.clear()
+        _diagnostics.value = ""
+        _reportUrl.value = null
     }
 }

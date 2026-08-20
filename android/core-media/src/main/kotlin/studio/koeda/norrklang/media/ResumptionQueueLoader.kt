@@ -3,10 +3,10 @@ package studio.koeda.norrklang.media
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession.MediaItemsWithStartPosition
+import kotlin.coroutines.cancellation.CancellationException
 import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.repo.MusicRepository
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
-import studio.koeda.norrklang.subsonic.SubsonicException
 
 /**
  * Rebuilds the persisted "last playing" queue (see [ResumptionPersister]) —
@@ -25,9 +25,9 @@ internal class ResumptionQueueLoader(
 
     /** The restored queue, or null when there is nothing (or no way) to restore. */
     suspend fun load(): MediaItemsWithStartPosition? {
-        val state = settings.resumptionState() ?: return null
-        val id = MediaId.parse(state.mediaId) as? MediaId.Track ?: return null
         return try {
+            val state = settings.resumptionState() ?: return null
+            val id = MediaId.parse(state.mediaId) as? MediaId.Track ?: return null
             val container = id.container
             if (container != null) {
                 // Mix containers resume as [saved] + fresh mix (resumeQueue
@@ -58,8 +58,14 @@ internal class ResumptionQueueLoader(
                     state.positionMs,
                 )
             }
-        } catch (e: SubsonicException) {
-            // Offline or signed out — resume silently becomes "nothing to resume".
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Offline, signed out, or unreadable persisted state — resume
+            // silently becomes "nothing to resume". Deliberately broader than
+            // SubsonicException: this runs inside the service scope at every
+            // signed-in start, where the same bad persisted state would
+            // otherwise replay a failure on every bind.
             null
         }
     }

@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import studio.koeda.norrklang.data.diagnostics.Diagnostics
 import studio.koeda.norrklang.subsonic.SubsonicCredentials
 import studio.koeda.norrklang.subsonic.SubsonicTokenAuth
 
@@ -72,8 +74,17 @@ class ServerSettingsRepository @Inject constructor(
 
     suspend fun currentCredentials(): SubsonicCredentials? {
         migrationMutex.withLock {
-            migrateLegacyPassword()
-            encryptLegacyPlaintext()
+            // A failed migration (Keystore hiccup mid-encrypt, disk error)
+            // must not take down credential restore — the stored values still
+            // decode below, and the migration retries on the next call.
+            try {
+                migrateLegacyPassword()
+                encryptLegacyPlaintext()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Diagnostics.record("credential-migration", e)
+            }
         }
         return credentials.first()
     }

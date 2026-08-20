@@ -2,7 +2,6 @@ package studio.koeda.norrklang.data.settings
 
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
-import java.security.GeneralSecurityException
 import java.security.KeyStore
 import java.util.Base64
 import javax.crypto.Cipher
@@ -10,6 +9,7 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import javax.inject.Inject
+import studio.koeda.norrklang.data.diagnostics.Diagnostics
 
 /**
  * Encrypts credential values at rest. [encrypt] output carries a prefix;
@@ -57,9 +57,14 @@ class KeystoreCredentialCipher @Inject constructor() : CredentialCipher {
                 cipher.doFinal(payload, IV_LENGTH_BYTES, payload.size - IV_LENGTH_BYTES),
                 Charsets.UTF_8,
             )
-        } catch (e: GeneralSecurityException) {
-            null
-        } catch (e: IllegalArgumentException) {
+        } catch (e: Exception) {
+            // Broader than GeneralSecurityException on purpose: vendor keymint
+            // HALs surface failures as RuntimeExceptions (ProviderException,
+            // android.security.KeyStoreException), KeyStore.load throws
+            // IOException, and bad Base64 is IllegalArgumentException. Every
+            // one of them must read as "signed out" — this runs on process
+            // start, where a throw becomes a bind/crash loop in the car.
+            Diagnostics.record("keystore-decrypt", e)
             null
         }
     }

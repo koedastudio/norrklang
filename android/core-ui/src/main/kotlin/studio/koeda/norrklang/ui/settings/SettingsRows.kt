@@ -158,6 +158,38 @@ internal fun ExclusionRow(
     }
 }
 
+/** Navigation row into the on-device error log (see DiagnosticsPage). */
+@Composable
+internal fun DiagnosticsRow(onClick: () -> Unit) {
+    val dimens = LocalFormDimens.current
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = dimens.itemSpacing),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.settings_diagnostics),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            Text(
+                text = stringResource(R.string.settings_diagnostics_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 /**
  * Play requires an in-app privacy-policy link. Opens in the device browser;
  * cars without one still show the URL text so the user can find it elsewhere.

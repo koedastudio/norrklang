@@ -6,6 +6,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -40,9 +41,16 @@ internal class PlaybackButtonsListener(
         refreshJob = scope.launch {
             // Signed out or offline resolves to false: the outline heart is
             // the right default, and tapping it will surface the real error.
-            val favorite = trackId != null && runCatching {
+            // CancellationException must propagate (runCatching would swallow
+            // it): during service teardown the session below is already
+            // released, and touching it then throws.
+            val favorite = trackId != null && try {
                 repository.isFavoriteTrack(trackId)
-            }.getOrDefault(false)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                false
+            }
             session.setMediaButtonPreferences(
                 playbackButtons(
                     context,

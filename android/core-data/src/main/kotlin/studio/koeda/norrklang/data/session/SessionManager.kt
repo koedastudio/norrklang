@@ -2,6 +2,7 @@ package studio.koeda.norrklang.data.session
 
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -9,10 +10,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.launch
 import studio.koeda.norrklang.data.di.ApplicationScope
+import studio.koeda.norrklang.data.diagnostics.Diagnostics
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
 import studio.koeda.norrklang.subsonic.SubsonicClient
 import studio.koeda.norrklang.subsonic.SubsonicCredentials
-import studio.koeda.norrklang.subsonic.SubsonicException
 import studio.koeda.norrklang.subsonic.SubsonicUrlBuilder
 
 /**
@@ -49,8 +50,20 @@ class SessionManager internal constructor(
 
     init {
         scope.launch {
-            val stored = settings.currentCredentials()
-            val restored = if (stored != null) connectedState(stored) else SessionState.SignedOut
+            val restored = try {
+                settings.currentCredentials()
+                    ?.let(::connectedState)
+                    ?: SessionState.SignedOut
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // A restore failure degrades to signed out (the car then shows
+                // the sign-in affordance). It must neither crash the process
+                // nor die leaving the state Initializing — every browse call
+                // awaits that state resolving.
+                Diagnostics.record("session-restore", e)
+                SessionState.SignedOut
+            }
             // Only move out of Initializing if nothing else (e.g. a concurrent
             // sign-in) has already resolved the state.
             if (!_state.compareAndSet(SessionState.Initializing, restored)) {
@@ -72,7 +85,13 @@ class SessionManager internal constructor(
             settings.save(credentials)
             replaceState(candidate)
             Result.success(Unit)
-        } catch (e: SubsonicException) {
+        } catch (e: CancellationException) {
+            candidate.client.close()
+            throw e
+        } catch (e: Exception) {
+            // Broader than SubsonicException: save() can fail in the Keystore
+            // encrypt, and the sign-in form must render that as an error, not
+            // crash the caller's scope.
             candidate.client.close()
             Result.failure(e)
         }

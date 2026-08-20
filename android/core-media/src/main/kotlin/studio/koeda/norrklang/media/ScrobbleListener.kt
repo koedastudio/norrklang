@@ -4,6 +4,7 @@ import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -89,7 +90,16 @@ internal class ScrobbleListener(
         val mediaId = MediaId.parse(item.mediaId) as? MediaId.Track ?: return
         val artistId = item.mediaMetadata.extras?.getString(MediaItemFactory.EXTRA_ARTIST_ID)
         scope.launch {
-            val allowed = settings.scrobbleSettings.first().allowsScrobble(mediaId, artistId)
+            // The settings read can fail with an IOException (it is not a
+            // repository call) — treat that as "don't scrobble" rather than
+            // letting it escape this bare launch.
+            val allowed = try {
+                settings.scrobbleSettings.first().allowsScrobble(mediaId, artistId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                false
+            }
             if (!allowed) return@launch
             runCatching { repository.scrobble(mediaId.id, submission) }
         }

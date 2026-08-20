@@ -6,6 +6,11 @@ import kotlinx.serialization.Serializable
 /*
  * DTOs for the Subsonic API v1.16.1 (as implemented by Navidrome / OpenSubsonic).
  * Subsonic omits empty arrays entirely, so every list defaults to emptyList().
+ *
+ * Display-name fields default to "" (with coerceInputValues in the client's
+ * Json, an explicit null coerces too): an untagged file must render blank,
+ * not fail the parse of every response that includes it. Ids stay required —
+ * an item without one is unusable anyway.
  */
 
 @Serializable
@@ -41,12 +46,12 @@ data class SubsonicError(val code: Int, val message: String? = null)
 data class ArtistsID3(val index: List<IndexID3> = emptyList())
 
 @Serializable
-data class IndexID3(val name: String, val artist: List<ArtistID3> = emptyList())
+data class IndexID3(val name: String = "", val artist: List<ArtistID3> = emptyList())
 
 @Serializable
 data class ArtistID3(
     val id: String,
-    val name: String,
+    val name: String = "",
     val coverArt: String? = null,
     val albumCount: Int = 0,
     val artistImageUrl: String? = null,
@@ -55,7 +60,7 @@ data class ArtistID3(
 @Serializable
 data class ArtistWithAlbumsID3(
     val id: String,
-    val name: String,
+    val name: String = "",
     val coverArt: String? = null,
     val albumCount: Int = 0,
     val artistImageUrl: String? = null,
@@ -68,7 +73,7 @@ data class AlbumList2(val album: List<AlbumID3> = emptyList())
 @Serializable
 data class AlbumID3(
     val id: String,
-    val name: String,
+    val name: String = "",
     val artist: String? = null,
     val artistId: String? = null,
     val coverArt: String? = null,
@@ -84,7 +89,7 @@ data class AlbumID3(
 @Serializable
 data class AlbumWithSongsID3(
     val id: String,
-    val name: String,
+    val name: String = "",
     val artist: String? = null,
     val artistId: String? = null,
     val coverArt: String? = null,
@@ -101,7 +106,7 @@ data class AlbumWithSongsID3(
 @Serializable
 data class Child(
     val id: String,
-    val title: String,
+    val title: String = "",
     val album: String? = null,
     val artist: String? = null,
     val albumId: String? = null,
@@ -126,7 +131,7 @@ data class Genres(val genre: List<Genre> = emptyList())
 /** A genre as aggregated by the server; [value] is the display name. */
 @Serializable
 data class Genre(
-    val value: String,
+    val value: String = "",
     val songCount: Int = 0,
     val albumCount: Int = 0,
 )
@@ -149,7 +154,7 @@ data class Playlists(val playlist: List<Playlist> = emptyList())
 @Serializable
 data class Playlist(
     val id: String,
-    val name: String,
+    val name: String = "",
     val comment: String? = null,
     val owner: String? = null,
     val public: Boolean? = null,
@@ -163,7 +168,7 @@ data class Playlist(
 @Serializable
 data class PlaylistWithSongs(
     val id: String,
-    val name: String,
+    val name: String = "",
     val comment: String? = null,
     val owner: String? = null,
     val songCount: Int = 0,

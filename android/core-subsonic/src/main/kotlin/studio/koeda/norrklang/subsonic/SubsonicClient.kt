@@ -40,7 +40,15 @@ class SubsonicClient(
     engine: HttpClientEngine = sharedEngine,
 ) : AutoCloseable {
 
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = Json {
+        ignoreUnknownKeys = true
+        // Real-world libraries hit odd server output (explicit nulls for
+        // untagged fields, numbers as strings). One such value must degrade
+        // to a default, not fail the whole response — a failed parse takes
+        // every list containing that item down with it.
+        coerceInputValues = true
+        isLenient = true
+    }
 
     private val http = HttpClient(engine) {
         expectSuccess = false

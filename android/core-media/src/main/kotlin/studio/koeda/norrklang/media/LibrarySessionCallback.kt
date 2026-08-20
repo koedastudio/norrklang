@@ -19,9 +19,12 @@ import androidx.media3.session.SessionResult
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.guava.future
+import kotlinx.coroutines.withTimeoutOrNull
+import studio.koeda.norrklang.data.diagnostics.Diagnostics
 import studio.koeda.norrklang.data.repo.MusicRepository
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.subsonic.SubsonicException
@@ -115,7 +118,9 @@ internal class LibrarySessionCallback(
                 (session as? MediaLibrarySession)
                     ?.notifyChildrenChanged(MediaId.HomeFavoriteSongs.encode(), Int.MAX_VALUE, null)
                 SessionResult(SessionResult.RESULT_SUCCESS)
-            } catch (_: SubsonicException) {
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
                 SessionResult(SessionError.ERROR_IO)
             }
         }
@@ -155,7 +160,9 @@ internal class LibrarySessionCallback(
                 putString(EXTRAS_KEY_BROWSE_ACTION_RESULT_REFRESH_ITEM, encodedMediaId)
             }
             SessionResult(SessionResult.RESULT_SUCCESS, refreshTappedItem)
-        } catch (_: SubsonicException) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
             SessionResult(SessionError.ERROR_IO)
         }
     }
@@ -198,7 +205,12 @@ internal class LibrarySessionCallback(
             } else {
                 LibraryResult.ofItemList(ImmutableList.copyOf(children), params)
             }
-        } catch (e: SubsonicException) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Broader than SubsonicException on purpose: the host retries a
+            // graceful error result, but a failed future on a car host can
+            // read as a dead service. Anything unexpected is still recorded.
             errorResult(e)
         }
     }
@@ -216,7 +228,12 @@ internal class LibrarySessionCallback(
             } else {
                 LibraryResult.ofItem(item, null)
             }
-        } catch (e: SubsonicException) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Broader than SubsonicException on purpose: the host retries a
+            // graceful error result, but a failed future on a car host can
+            // read as a dead service. Anything unexpected is still recorded.
             errorResult(e)
         }
     }
@@ -270,7 +287,12 @@ internal class LibrarySessionCallback(
             val results = searchItems(query)
             session.notifySearchResultChanged(browser, query, results.size, params)
             LibraryResult.ofVoid(params)
-        } catch (e: SubsonicException) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Broader than SubsonicException on purpose: the host retries a
+            // graceful error result, but a failed future on a car host can
+            // read as a dead service. Anything unexpected is still recorded.
             errorResult(e)
         }
     }
@@ -287,7 +309,12 @@ internal class LibrarySessionCallback(
         try {
             val pageItems = Paging.slice(searchItems(query), page, pageSize)
             LibraryResult.ofItemList(ImmutableList.copyOf(pageItems), params)
-        } catch (e: SubsonicException) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Broader than SubsonicException on purpose: the host retries a
+            // graceful error result, but a failed future on a car host can
+            // read as a dead service. Anything unexpected is still recorded.
             errorResult(e)
         }
     }
@@ -342,24 +369,38 @@ internal class LibrarySessionCallback(
         return LibraryParams.Builder().setExtras(extras).build()
     }
 
-    private fun <T : Any> errorResult(e: SubsonicException): LibraryResult<T> =
+    private fun <T : Any> errorResult(e: Exception): LibraryResult<T> =
         when (e) {
             is SubsonicException.AuthFailed -> authenticationExpiredResult()
-            else -> LibraryResult.ofError<T>(
-                SessionError(
-                    SessionError.ERROR_IO,
-                    context.getString(R.string.error_loading_library),
-                ),
-            )
+            else -> {
+                // Class + message only — a stream/cover URL would carry the
+                // auth token.
+                Diagnostics.record("browse", e)
+                LibraryResult.ofError<T>(
+                    SessionError(
+                        SessionError.ERROR_IO,
+                        context.getString(R.string.error_loading_library),
+                    ),
+                )
+            }
         }
 
     /**
      * Waits out the Initializing window at process start (credentials
      * restoring from DataStore) — a car that binds immediately would
      * otherwise flash a spurious "sign in required" error.
+     *
+     * Bounded: if the restore wedges (Keystore IPC can stall on some
+     * vendors' keymint), degrade to SignedOut so the car shows a sign-in
+     * error instead of spinning on browse futures that never complete. A
+     * restore that completes later notifies the root and the host recovers.
      */
     private suspend fun awaitResolvedSession(): SessionManager.SessionState =
-        sessionManager.state.first { it !is SessionManager.SessionState.Initializing }
+        withTimeoutOrNull(SESSION_RESOLVE_TIMEOUT_MS) {
+            sessionManager.state.first { it !is SessionManager.SessionState.Initializing }
+        } ?: SessionManager.SessionState.SignedOut.also {
+            Diagnostics.record("browse", "session state unresolved after ${SESSION_RESOLVE_TIMEOUT_MS}ms")
+        }
 
     private fun <T : Any> authenticationExpiredResult(): LibraryResult<T> =
         LibraryResult.ofError<T>(
@@ -370,6 +411,13 @@ internal class LibrarySessionCallback(
         )
 
     companion object {
+        /**
+         * Generous next to a normal restore (a DataStore read + one Keystore
+         * decrypt, well under a second) — only a genuinely stuck restore hits
+         * it, and cold-boot Keystore contention deserves some slack first.
+         */
+        private const val SESSION_RESOLVE_TIMEOUT_MS = 15_000L
+
         // Search section caps: tracks get more room since a spoken "play X"
         // resolves against them; the repository caches more per query, so
         // raising these needs no server round-trip change.
