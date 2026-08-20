@@ -5,6 +5,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import studio.koeda.norrklang.data.artwork.ArtworkContract
 import studio.koeda.norrklang.data.model.Album
+import studio.koeda.norrklang.data.model.Artist
 import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.repo.MusicRepository
 
@@ -27,6 +28,12 @@ import studio.koeda.norrklang.data.repo.MusicRepository
  * ├── tab/albums      → album grid  → tracks
  * └── tab/playlists   → playlist list → tracks
  * ```
+ *
+ * When a non-paging host browses an artists/albums tab whose flat list
+ * would be truncated by media3's legacy bridge, a level of A–Z [Buckets]
+ * folders is inserted under the tab (see [artistListing]/[albumListing]) —
+ * for artists that pushes the deepest level (tracks) one past the "depth 5"
+ * the AAOS guidance suggests, which hosts so far tolerate.
  */
 internal class BrowseTree(
     private val context: Context,
@@ -63,8 +70,9 @@ internal class BrowseTree(
      * Children for [parentId], or null when the id is not browsable.
      *
      * Unpaged hosts send `pageSize == Int.MAX_VALUE` and get the complete
-     * list — for albums that means walking the server's 500-item pages, so
-     * large libraries stay fully browsable.
+     * list — for albums that means walking the server's 500-item pages.
+     * Artists/albums lists too long for one unpaged reply are served as
+     * [Buckets] folders instead, so large libraries stay fully browsable.
      */
     suspend fun children(
         parentId: String,
@@ -91,24 +99,93 @@ internal class BrowseTree(
             is MediaId.HomeBestOf ->
                 trackItems(bestOfMixes.queueTracks(id.artistId), id, page, pageSize)
             is MediaId.CatalogMix -> trackItems(catalogMixes.queueTracks(id), id, page, pageSize)
-            MediaId.TabArtists ->
-                Paging.slice(repository.artists(), page, pageSize).map(MediaItemFactory::forArtist)
-            MediaId.TabAlbums -> albumsPage(page, pageSize).map(MediaItemFactory::forAlbum)
+            MediaId.TabArtists -> artistListing(page, pageSize)
+            MediaId.TabAlbums -> albumListing(page, pageSize)
             MediaId.TabPlaylists ->
                 Paging.slice(repository.playlists(), page, pageSize).map(MediaItemFactory::forPlaylist)
+            is MediaId.ArtistBucket ->
+                Paging.slice(artistBucketMembers(id.key), page, pageSize)
+                    // The folder's letter already says what a per-item A–Z
+                    // header would — omit the redundant header.
+                    .map { MediaItemFactory.forArtist(it, groupTitle = null) }
+            is MediaId.AlbumBucket ->
+                Paging.slice(albumBucketMembers(id.key), page, pageSize)
+                    .map(MediaItemFactory::forAlbum)
             is MediaId.Artist -> albumItems(repository.artist(id.id).albums, page, pageSize)
             is MediaId.Album -> trackItems(repository.album(id.id).tracks, id, page, pageSize)
             is MediaId.Playlist -> trackItems(repository.playlist(id.id).tracks, id, page, pageSize)
             is MediaId.Track, null -> null
         }
 
-    private suspend fun albumsPage(page: Int, pageSize: Int) =
+    /**
+     * The artists tab. Paging hosts (none of the car hosts — they never pass
+     * paging options) page the flat list; non-paging hosts get the flat list
+     * only while it fits one reply, and [Buckets] folders beyond that.
+     */
+    private suspend fun artistListing(page: Int, pageSize: Int): List<MediaItem> {
+        val artists = repository.artists()
+        return when {
+            Paging.isPaged(pageSize) ->
+                Paging.slice(artists, page, pageSize).map(MediaItemFactory::forArtist)
+            Buckets.needed(artists.size) -> artistBucketItems(artists)
+            else -> artists.map(MediaItemFactory::forArtist)
+        }
+    }
+
+    /** The albums tab; bucket policy as in [artistListing]. */
+    private suspend fun albumListing(page: Int, pageSize: Int): List<MediaItem> {
         if (Paging.isPaged(pageSize)) {
             val offset = (page.toLong() * pageSize).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-            Paging.window(offset, pageSize, SERVER_PAGE_SIZE, repository::albums)
-        } else {
-            Paging.window(offset = 0, size = null, chunkSize = SERVER_PAGE_SIZE, repository::albums)
+            return Paging.window(offset, pageSize, SERVER_PAGE_SIZE, repository::albums)
+                .map(MediaItemFactory::forAlbum)
         }
+        val albums = allAlbums()
+        return if (Buckets.needed(albums.size)) {
+            albumBucketItems(albums)
+        } else {
+            albums.map(MediaItemFactory::forAlbum)
+        }
+    }
+
+    /** The complete album list, walked in server pages (TTL-cached per page). */
+    private suspend fun allAlbums(): List<Album> =
+        Paging.window(offset = 0, size = null, chunkSize = SERVER_PAGE_SIZE, repository::albums)
+
+    /**
+     * The artist's letter group: the server-provided index bucket when it is
+     * a plain letter (Subsonic index name, Plex titleSort initial), else
+     * derived from the name — so folders match the server's collation.
+     */
+    private fun artistLetter(artist: Artist): String =
+        artist.sortGroup?.takeIf { it.length == 1 } ?: Buckets.letterKey(artist.name)
+
+    private fun artistBucketItems(artists: List<Artist>): List<MediaItem> =
+        Buckets.partition(artists, ::artistLetter, Artist::name).map { bucket ->
+            MediaItemFactory.browsable(
+                mediaId = MediaId.ArtistBucket(bucket.key),
+                title = bucket.label,
+                artworkUrl = bucket.items.firstNotNullOfOrNull { it.artworkUrl },
+                mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_ARTISTS,
+                childrenStyle = MediaItemFactory.listChildrenExtras(),
+            )
+        }
+
+    private suspend fun artistBucketMembers(key: String): List<Artist> =
+        Buckets.select(repository.artists(), key, ::artistLetter, Artist::name)
+
+    private fun albumBucketItems(albums: List<Album>): List<MediaItem> =
+        Buckets.partition(albums, { Buckets.letterKey(it.title) }, Album::title).map { bucket ->
+            MediaItemFactory.browsable(
+                mediaId = MediaId.AlbumBucket(bucket.key),
+                title = bucket.label,
+                artworkUrl = bucket.items.firstNotNullOfOrNull { it.artworkUrl },
+                mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_ALBUMS,
+                childrenStyle = MediaItemFactory.gridChildrenExtras(),
+            )
+        }
+
+    private suspend fun albumBucketMembers(key: String): List<Album> =
+        Buckets.select(allAlbums(), key, { Buckets.letterKey(it.title) }, Album::title)
 
     /** One host page of [tracks] as browse items carrying [container] as queue context. */
     private fun trackItems(
@@ -151,6 +228,26 @@ internal class BrowseTree(
             MediaId.TabArtists -> artistsTab()
             MediaId.TabAlbums -> albumsTab()
             MediaId.TabPlaylists -> playlistsTab()
+            is MediaId.ArtistBucket -> Buckets.labelFor(id.key)?.let { label ->
+                MediaItemFactory.browsable(
+                    mediaId = id,
+                    title = label,
+                    artworkUrl = artistBucketMembers(id.key)
+                        .firstNotNullOfOrNull { it.artworkUrl },
+                    mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_ARTISTS,
+                    childrenStyle = MediaItemFactory.listChildrenExtras(),
+                )
+            }
+            is MediaId.AlbumBucket -> Buckets.labelFor(id.key)?.let { label ->
+                MediaItemFactory.browsable(
+                    mediaId = id,
+                    title = label,
+                    artworkUrl = albumBucketMembers(id.key)
+                        .firstNotNullOfOrNull { it.artworkUrl },
+                    mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_ALBUMS,
+                    childrenStyle = MediaItemFactory.gridChildrenExtras(),
+                )
+            }
             is MediaId.Artist -> MediaItemFactory.forArtist(repository.artist(id.id).artist)
             is MediaId.Album -> MediaItemFactory.forAlbum(repository.album(id.id).album)
             is MediaId.Playlist -> MediaItemFactory.forPlaylist(repository.playlist(id.id).playlist)
