@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
   <string name="browse_tab_home">Home</string>
-  <string name="browse_tab_artists">Artists</string>
-  <string name="browse_tab_albums">Albums</string>
   <string name="browse_tab_playlists">Playlists</string>
-  <string name="browse_home_new_albums">New albums</string>
-  <string name="browse_home_favorite_albums">Favourite albums</string>
+  <string name="browse_tab_library">Library</string>
+  <string name="browse_library_all_artists">All artists</string>
+  <string name="browse_library_all_albums">All albums</string>
+  <!-- Titled without "albums": they sit under the Library tab's "Albums" header. -->
+  <string name="browse_home_new_albums">New</string>
+  <string name="browse_home_favorite_albums">Favourites</string>
   <string name="browse_home_favorite_songs">Favourites</string>
   <string name="browse_home_random_mix">Random mix</string>
   <string name="browse_home_recently_played">Recently played</string>
@@ -14,7 +16,8 @@
   <string name="browse_group_made_for_you">Made for you</string>
   <string name="browse_group_genre_mixes">Genre mixes</string>
   <string name="browse_group_decade_mixes">Decade mixes</string>
-  <string name="browse_group_browse">Browse</string>
+  <string name="browse_group_albums">Albums</string>
+  <string name="browse_group_artists">Artists</string>
   <string name="browse_home_similar_to">Similar to %1$s</string>
   <string name="browse_home_best_of">Best of %1$s</string>
   <!-- Decade mix tile title, e.g. "1980s"; %1$d is the decade's first year. -->

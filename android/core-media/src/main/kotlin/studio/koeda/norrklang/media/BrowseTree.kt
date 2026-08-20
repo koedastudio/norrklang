@@ -12,7 +12,7 @@ import studio.koeda.norrklang.data.repo.MusicRepository
 /**
  * Maps browse requests from the car UI onto the Navidrome library.
  *
- * Tree shape (max depth 5 allowed by AAOS; we use 5):
+ * Tree shape (AAOS guidance suggests max depth 5):
  * ```
  * root
  * ├── tab/home        → grid of square buttons in headed sections:
@@ -22,18 +22,21 @@ import studio.koeda.norrklang.data.repo.MusicRepository
  * │                     similarity data)
  * │                     "Genre mixes" (biggest genres → track lists)
  * │                     "Decade mixes" (populated decades → track lists)
- * │                     "Browse" (Recently played, Most played, New albums,
- * │                     Favourite albums → album grids)
- * ├── tab/artists     → artist list (A–Z headers) → artist's albums → tracks
- * ├── tab/albums      → album grid  → tracks
- * └── tab/playlists   → playlist list → tracks
+ * ├── tab/playlists   → playlist list → tracks
+ * └── tab/library     → list in headed sections:
+ *                       "Albums" (Recently played, Favourites, New,
+ *                       Most played → album grids;
+ *                       All albums → album grid → tracks)
+ *                       "Artists" (All artists → artist list (A–Z headers)
+ *                       → artist's albums → tracks)
  * ```
  *
- * When a non-paging host browses an artists/albums tab whose flat list
+ * When a non-paging host browses an artists/albums node whose flat list
  * would be truncated by media3's legacy bridge, a level of A–Z [Buckets]
- * folders is inserted under the tab (see [artistListing]/[albumListing]) —
- * for artists that pushes the deepest level (tracks) one past the "depth 5"
- * the AAOS guidance suggests, which hosts so far tolerate.
+ * folders is inserted under the node (see [artistListing]/[albumListing]) —
+ * for artists that pushes the deepest level (tracks) two past the "depth 5"
+ * the AAOS guidance suggests (one for the Library nesting, one for the
+ * bucket folder), which hosts so far tolerate.
  */
 internal class BrowseTree(
     private val context: Context,
@@ -48,16 +51,14 @@ internal class BrowseTree(
     private val madeForYouGroup = context.getString(R.string.browse_group_made_for_you)
     private val genreMixesGroup = context.getString(R.string.browse_group_genre_mixes)
     private val decadeMixesGroup = context.getString(R.string.browse_group_decade_mixes)
-    private val browseGroup = context.getString(R.string.browse_group_browse)
-
+    private val albumsGroup = context.getString(R.string.browse_group_albums)
+    private val artistsGroup = context.getString(R.string.browse_group_artists)
     private val tabHomeTitle = context.getString(R.string.browse_tab_home)
-    private val tabArtistsTitle = context.getString(R.string.browse_tab_artists)
-    private val tabAlbumsTitle = context.getString(R.string.browse_tab_albums)
+    private val tabLibraryTitle = context.getString(R.string.browse_tab_library)
     private val tabPlaylistsTitle = context.getString(R.string.browse_tab_playlists)
 
     private val tabHomeIcon = context.resourceUri(R.drawable.ic_browse_home).toString()
-    private val tabArtistsIcon = context.resourceUri(R.drawable.ic_browse_artists).toString()
-    private val tabAlbumsIcon = context.resourceUri(R.drawable.ic_browse_albums).toString()
+    private val tabLibraryIcon = context.resourceUri(R.drawable.ic_browse_library).toString()
     private val tabPlaylistsIcon = context.resourceUri(R.drawable.ic_browse_playlists).toString()
 
     val rootItem: MediaItem = MediaItemFactory.browsable(
@@ -82,6 +83,7 @@ internal class BrowseTree(
         when (val id = MediaId.parse(parentId)) {
             MediaId.Root -> rootTabs()
             MediaId.TabHome -> homeButtons()
+            MediaId.TabLibrary -> libraryChildren()
             MediaId.HomeRecentlyAdded ->
                 albumItems(repository.recentlyAdded(SERVER_PAGE_SIZE), page, pageSize)
             MediaId.HomeFavoriteAlbums ->
@@ -118,7 +120,7 @@ internal class BrowseTree(
         }
 
     /**
-     * The artists tab. Paging hosts (none of the car hosts — they never pass
+     * The All artists listing. Paging hosts (none of the car hosts — they never pass
      * paging options) page the flat list; non-paging hosts get the flat list
      * only while it fits one reply, and [Buckets] folders beyond that.
      */
@@ -132,7 +134,7 @@ internal class BrowseTree(
         }
     }
 
-    /** The albums tab; bucket policy as in [artistListing]. */
+    /** The All albums listing; bucket policy as in [artistListing]. */
     private suspend fun albumListing(page: Int, pageSize: Int): List<MediaItem> {
         if (Paging.isPaged(pageSize)) {
             val offset = (page.toLong() * pageSize).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
@@ -180,7 +182,9 @@ internal class BrowseTree(
                 title = bucket.label,
                 artworkUrl = bucket.items.firstNotNullOfOrNull { it.artworkUrl },
                 mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_ALBUMS,
-                childrenStyle = MediaItemFactory.gridChildrenExtras(),
+                // The A–Z folders render as list rows; each folder's albums
+                // stay an artwork grid.
+                childrenStyle = MediaItemFactory.asListItem(MediaItemFactory.gridChildrenExtras()),
             )
         }
 
@@ -225,8 +229,9 @@ internal class BrowseTree(
                 catalogMixes.currentDecadeMixes()
                     .firstOrNull { it.startYear == id.startYear }
                     ?.let(::decadeMixButton)
-            MediaId.TabArtists -> artistsTab()
-            MediaId.TabAlbums -> albumsTab()
+            MediaId.TabLibrary -> libraryTab()
+            MediaId.TabArtists -> staticTile(HomeTile.ALL_ARTISTS)
+            MediaId.TabAlbums -> staticTile(HomeTile.ALL_ALBUMS)
             MediaId.TabPlaylists -> playlistsTab()
             is MediaId.ArtistBucket -> Buckets.labelFor(id.key)?.let { label ->
                 MediaItemFactory.browsable(
@@ -245,7 +250,9 @@ internal class BrowseTree(
                     artworkUrl = albumBucketMembers(id.key)
                         .firstNotNullOfOrNull { it.artworkUrl },
                     mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_ALBUMS,
-                    childrenStyle = MediaItemFactory.gridChildrenExtras(),
+                    childrenStyle = MediaItemFactory.asListItem(
+                        MediaItemFactory.gridChildrenExtras(),
+                    ),
                 )
             }
             is MediaId.Artist -> MediaItemFactory.forArtist(repository.artist(id.id).artist)
@@ -256,7 +263,15 @@ internal class BrowseTree(
         }
 
     private fun rootTabs(): List<MediaItem> =
-        listOf(homeTab(), artistsTab(), albumsTab(), playlistsTab())
+        listOf(homeTab(), playlistsTab(), libraryTab())
+
+    /**
+     * The Library tab's list in headed sections: the album collections and
+     * the full album catalog under "Albums", the artist catalog under
+     * "Artists".
+     */
+    private fun libraryChildren(): List<MediaItem> =
+        staticTiles(HomeTile.Section.ALBUMS) + staticTiles(HomeTile.Section.ARTISTS)
 
     /**
      * The home tab's grid of square buttons in headed sections. Items sharing
@@ -277,14 +292,13 @@ internal class BrowseTree(
                 .take(SimilarMixesSession.MAX_MIXES)
                 .map(::similarMixButton) +
             catalogMixes.currentGenreMixes().map(::genreMixButton) +
-            catalogMixes.currentDecadeMixes().map(::decadeMixButton) +
-            staticTiles(HomeTile.Section.BROWSE)
+            catalogMixes.currentDecadeMixes().map(::decadeMixButton)
 
     /** [section]'s static tiles in [HomeTile]'s declaration (= display) order. */
     private fun staticTiles(section: HomeTile.Section): List<MediaItem> =
         HomeTile.entries.filter { it.section == section }.map(::staticTile)
 
-    /** The browse item for one static home tile (generated collage artwork). */
+    /** The browse item for one static tile (generated collage artwork). */
     private fun staticTile(tile: HomeTile): MediaItem {
         val title = context.getString(tile.titleRes)
         // Collage served by ArtworkProvider — see HomeButtonArtwork.
@@ -292,7 +306,8 @@ internal class BrowseTree(
         return when (tile.section) {
             HomeTile.Section.QUICK_PLAY ->
                 trackListTile(tile.mediaId, title, artwork, quickPlayGroup)
-            HomeTile.Section.BROWSE -> albumGridTile(tile.mediaId, title, artwork)
+            HomeTile.Section.ALBUMS -> albumGridTile(tile.mediaId, title, artwork)
+            HomeTile.Section.ARTISTS -> artistListTile(tile.mediaId, title, artwork)
         }
     }
 
@@ -311,7 +326,7 @@ internal class BrowseTree(
         groupTitle = group,
     )
 
-    /** A home tile in the "Browse" section opening an album grid. */
+    /** A Library tile in the "Albums" section opening an album grid. */
     private fun albumGridTile(mediaId: MediaId, title: String, artworkUrl: String): MediaItem =
         MediaItemFactory.browsable(
             mediaId = mediaId,
@@ -319,7 +334,18 @@ internal class BrowseTree(
             artworkUrl = artworkUrl,
             mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_ALBUMS,
             childrenStyle = MediaItemFactory.gridChildrenExtras(),
-            groupTitle = browseGroup,
+            groupTitle = albumsGroup,
+        )
+
+    /** A Library tile in the "Artists" section opening the artist list. */
+    private fun artistListTile(mediaId: MediaId, title: String, artworkUrl: String): MediaItem =
+        MediaItemFactory.browsable(
+            mediaId = mediaId,
+            title = title,
+            artworkUrl = artworkUrl,
+            mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_ARTISTS,
+            childrenStyle = MediaItemFactory.listChildrenExtras(),
+            groupTitle = artistsGroup,
         )
 
     private fun similarMixButton(mix: ArtistMixesSession.Mix) = trackListTile(
@@ -362,20 +388,12 @@ internal class BrowseTree(
         childrenStyle = MediaItemFactory.gridChildrenExtras(),
     )
 
-    private fun artistsTab() = MediaItemFactory.browsable(
-        mediaId = MediaId.TabArtists,
-        title = tabArtistsTitle,
-        artworkUrl = tabArtistsIcon,
-        mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_ARTISTS,
+    private fun libraryTab() = MediaItemFactory.browsable(
+        mediaId = MediaId.TabLibrary,
+        title = tabLibraryTitle,
+        artworkUrl = tabLibraryIcon,
+        mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_MIXED,
         childrenStyle = MediaItemFactory.listChildrenExtras(),
-    )
-
-    private fun albumsTab() = MediaItemFactory.browsable(
-        mediaId = MediaId.TabAlbums,
-        title = tabAlbumsTitle,
-        artworkUrl = tabAlbumsIcon,
-        mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_ALBUMS,
-        childrenStyle = MediaItemFactory.gridChildrenExtras(),
     )
 
     private fun playlistsTab() = MediaItemFactory.browsable(

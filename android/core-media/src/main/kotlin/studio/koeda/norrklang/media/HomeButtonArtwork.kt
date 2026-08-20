@@ -15,12 +15,13 @@ import java.io.IOException
 import studio.koeda.norrklang.data.repo.MusicRepository
 
 /**
- * Renders the home tab's square button images — the static [HomeTile] buttons
- * and the dynamic catalog mix tiles alike: a collage of the covers actually
+ * Renders the Home and Library tabs' square button images — the static
+ * [HomeTile] buttons and the dynamic catalog mix tiles alike: a collage of the covers actually
  * behind each button (2×2 when four distinct covers exist, a single
  * full-bleed cover otherwise), under a bottom scrim and a dark icon badge
- * that says what the button contains. Sections with no content
- * fall back to an accent gradient with a large centered icon.
+ * that says what the button contains. Buttons with no covers — icon-only
+ * [HomeTile]s (the Library tab) and collage sections with no content yet —
+ * get an accent gradient with a large centered icon instead.
  *
  * Composed on demand by [ArtworkProvider] (paths `home/<key>` and
  * `home/<kind>/<key>`) and cached next to the plain cover files.

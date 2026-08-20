@@ -188,7 +188,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
                 when (state) {
                     is SessionManager.SessionState.Connected -> {
                         player.setAuthError(null)
-                        session.notifyChildrenChanged(MediaId.Root.encode(), 4, null)
+                        session.notifyChildrenChanged(MediaId.Root.encode(), 3, null)
                         // Generate the mix sections off the browse path (up
                         // to dozens of requests each), each popping into the
                         // home tab when ready. Separate launches so a slow

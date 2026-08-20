@@ -11,7 +11,7 @@ import java.net.URLEncoder
  * Encodings:
  * ```
  * root
- * tab/home | tab/artists | tab/albums | tab/playlists
+ * tab/home | tab/library | tab/artists | tab/albums | tab/playlists
  * home/recently-added | home/favorite-albums | home/favorite-songs
  * home/random-mix | home/recently-played | home/most-played
  * similar/{artistId}              ("Similar to <artist>" home mix)
@@ -49,6 +49,7 @@ sealed interface MediaId {
 
     data object Root : MediaId
     data object TabHome : MediaId
+    data object TabLibrary : MediaId
     data object TabArtists : MediaId
     data object TabAlbums : MediaId
     data object TabPlaylists : MediaId
@@ -72,10 +73,10 @@ sealed interface MediaId {
     /** A generated decade mix on the home tab, e.g. `startYear = 1980` for the 80s. */
     data class HomeDecade(val startYear: Int) : CatalogMix
 
-    /** One A–Z folder of the artists tab, for hosts that don't page ([Buckets]). */
+    /** One A–Z folder of the All artists listing, for hosts that don't page ([Buckets]). */
     data class ArtistBucket(val key: String) : MediaId
 
-    /** One A–Z folder of the albums tab, for hosts that don't page ([Buckets]). */
+    /** One A–Z folder of the All albums listing, for hosts that don't page ([Buckets]). */
     data class AlbumBucket(val key: String) : MediaId
 
     data class Artist(val id: String) : MediaId
@@ -88,6 +89,7 @@ sealed interface MediaId {
     fun encode(): String = when (this) {
         Root -> "root"
         TabHome -> "tab/home"
+        TabLibrary -> "tab/library"
         TabArtists -> "tab/artists"
         TabAlbums -> "tab/albums"
         TabPlaylists -> "tab/playlists"
@@ -121,6 +123,7 @@ sealed interface MediaId {
             when (encoded) {
                 "root" -> return Root
                 "tab/home" -> return TabHome
+                "tab/library" -> return TabLibrary
                 "tab/artists" -> return TabArtists
                 "tab/albums" -> return TabAlbums
                 "tab/playlists" -> return TabPlaylists
