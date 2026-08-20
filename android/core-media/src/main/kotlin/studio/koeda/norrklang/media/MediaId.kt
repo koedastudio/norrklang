@@ -18,6 +18,8 @@ import java.net.URLEncoder
  * bestof/{artistId}               ("Best of <artist>" home mix)
  * genre/{urlEncodedName}          (genre home mix)
  * decade/{startYear}              (decade home mix)
+ * artist-bucket/{key}            (A–Z folder of an oversized artists tab)
+ * album-bucket/{key}             (A–Z folder of an oversized albums tab)
  * artist/{id}
  * album/{id}
  * playlist/{id}
@@ -70,6 +72,12 @@ sealed interface MediaId {
     /** A generated decade mix on the home tab, e.g. `startYear = 1980` for the 80s. */
     data class HomeDecade(val startYear: Int) : CatalogMix
 
+    /** One A–Z folder of the artists tab, for hosts that don't page ([Buckets]). */
+    data class ArtistBucket(val key: String) : MediaId
+
+    /** One A–Z folder of the albums tab, for hosts that don't page ([Buckets]). */
+    data class AlbumBucket(val key: String) : MediaId
+
     data class Artist(val id: String) : MediaId
     data class Album(val id: String) : Container
     data class Playlist(val id: String) : Container
@@ -95,6 +103,8 @@ sealed interface MediaId {
         // with the context separator (server ids elsewhere are opaque-safe).
         is HomeGenre -> "genre/${URLEncoder.encode(name, "UTF-8")}"
         is HomeDecade -> "decade/$startYear"
+        is ArtistBucket -> "artist-bucket/$key"
+        is AlbumBucket -> "album-bucket/$key"
         is Artist -> "artist/$id"
         is Album -> "album/$id"
         is Playlist -> "playlist/$id"
@@ -136,6 +146,10 @@ sealed interface MediaId {
                 "genre" ->
                     runCatching { URLDecoder.decode(id, "UTF-8") }.getOrNull()?.let(::HomeGenre)
                 "decade" -> id.toIntOrNull()?.let(::HomeDecade)
+                // Any key parses; a stale or garbage key selects an empty
+                // folder (Buckets.select), not an error.
+                "artist-bucket" -> ArtistBucket(id)
+                "album-bucket" -> AlbumBucket(id)
                 "artist" -> Artist(id)
                 "album" -> Album(id)
                 "playlist" -> Playlist(id)

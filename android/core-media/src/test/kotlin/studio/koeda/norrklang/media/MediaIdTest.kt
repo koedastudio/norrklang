@@ -27,6 +27,9 @@ class MediaIdTest {
             MediaId.Track("tr-77", MediaId.HomeBestOf("ar-12")),
             MediaId.Track("tr-77", MediaId.HomeGenre("Rock")),
             MediaId.Track("tr-77", MediaId.HomeDecade(1980)),
+            MediaId.ArtistBucket("a"),
+            MediaId.ArtistBucket("#"),
+            MediaId.AlbumBucket("s:sa:sk"),
             MediaId.Artist("ar-12"),
             MediaId.Album("al-9"),
             MediaId.Playlist("pl-3"),
@@ -77,6 +80,7 @@ class MediaIdTest {
         assertNull(MediaId.parse("home/unknown"))
         assertNull(MediaId.parse("artist/"))
         assertNull(MediaId.parse("frog/123"))
+        assertNull(MediaId.parse("album-bucket/"))
     }
 
     @Test
