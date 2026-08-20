@@ -11,6 +11,7 @@ class MediaIdTest {
         val ids = listOf(
             MediaId.Root,
             MediaId.TabHome,
+            MediaId.TabLibrary,
             MediaId.TabArtists,
             MediaId.TabAlbums,
             MediaId.TabPlaylists,
@@ -100,6 +101,7 @@ class MediaIdTest {
     @Test
     fun `encoded forms are stable`() {
         assertEquals("root", MediaId.Root.encode())
+        assertEquals("tab/library", MediaId.TabLibrary.encode())
         assertEquals("tab/albums", MediaId.TabAlbums.encode())
         assertEquals("home/recently-added", MediaId.HomeRecentlyAdded.encode())
         assertEquals("home/favorite-albums", MediaId.HomeFavoriteAlbums.encode())

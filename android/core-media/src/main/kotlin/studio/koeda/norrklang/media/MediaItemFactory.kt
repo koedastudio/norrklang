@@ -34,6 +34,18 @@ internal object MediaItemFactory {
         )
     }
 
+    /**
+     * Marks [style] so the item itself renders as a list row even when its
+     * parent declares grid children — e.g. an A–Z folder inside the album
+     * grid, whose own children stay a grid.
+     */
+    fun asListItem(style: Bundle): Bundle = style.apply {
+        putInt(
+            MediaConstants.EXTRAS_KEY_CONTENT_STYLE_SINGLE_ITEM,
+            MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_LIST_ITEM,
+        )
+    }
+
     /** Extras that make a browsable node render its children as a list. */
     fun listChildrenExtras(): Bundle = Bundle().apply {
         putInt(
