@@ -34,7 +34,11 @@ class PlexUrlBuilder(
             "&X-Plex-Token=${urlEncode(token)}"
 
     private fun urlEncode(value: String): String =
-        URLEncoder.encode(value, Charsets.UTF_8)
+        // The (String, String) overload: the Charset one is API 33+ on Android
+        // and throws NoSuchMethodError on every older car. This module is pure
+        // JVM, so neither the compiler nor Android lint will warn — same
+        // incident as SubsonicUrlBuilder (fixed in 8a53195); keep it stringly.
+        URLEncoder.encode(value, "UTF-8")
 
     companion object {
         /** Matches the Subsonic side (SubsonicUrlBuilder.DEFAULT_ART_SIZE). */
