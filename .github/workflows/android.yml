@@ -46,3 +46,7 @@ jobs:
           validate-wrappers: true
       - run: ./gradlew test lint
       - run: ./gradlew :app-automotive:assembleDebug :app-mobile:assembleDebug
+      # Android lint can't see the pure-JVM modules (core-subsonic, core-plex),
+      # where JDK-17-only calls compile fine and NoSuchMethodError-crash older
+      # cars at runtime — scan the built dex for such references instead.
+      - run: scripts/check-dex-api.sh debug
