@@ -150,7 +150,7 @@ internal fun defaultSettingsRepository(): ServerSettingsRepository {
  * fails as "unused" (same convention as [FakeMusicRepository]).
  */
 @OptIn(UnstableApi::class)
-internal class FakePlayer : Player {
+internal open class FakePlayer : Player {
 
     var currentItem: MediaItem? = null
     var state: Int = Player.STATE_IDLE
@@ -176,7 +176,8 @@ internal class FakePlayer : Player {
     override fun setMediaItem(mediaItem: MediaItem, resetPosition: Boolean) = error("unused")
     override fun addMediaItem(mediaItem: MediaItem) = error("unused")
     override fun addMediaItem(index: Int, mediaItem: MediaItem) = error("unused")
-    override fun addMediaItems(mediaItems: MutableList<MediaItem>) = error("unused")
+    // Explicit Unit: an inferred Nothing return would block overriding.
+    override fun addMediaItems(mediaItems: MutableList<MediaItem>): Unit = error("unused")
     override fun addMediaItems(index: Int, mediaItems: MutableList<MediaItem>) = error("unused")
     override fun moveMediaItem(currentIndex: Int, newIndex: Int) = error("unused")
     override fun moveMediaItems(fromIndex: Int, toIndex: Int, newIndex: Int) = error("unused")
@@ -208,7 +209,7 @@ internal class FakePlayer : Player {
     override fun seekToDefaultPosition() = error("unused")
     override fun seekToDefaultPosition(mediaItemIndex: Int) = error("unused")
     override fun seekTo(positionMs: Long) = error("unused")
-    override fun seekTo(mediaItemIndex: Int, positionMs: Long) = error("unused")
+    override fun seekTo(mediaItemIndex: Int, positionMs: Long): Unit = error("unused")
     override fun getSeekBackIncrement(): Long = error("unused")
     override fun seekBack() = error("unused")
     override fun getSeekForwardIncrement(): Long = error("unused")

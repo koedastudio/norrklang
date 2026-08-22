@@ -40,6 +40,8 @@ class MediaIdTest {
             MediaId.Track("tr-77", MediaId.HomeFavoriteSongs),
             MediaId.Track("tr-77", MediaId.HomeRandomMix),
             MediaId.Track("tr-77", MediaId.HomeSimilar("ar-12")),
+            MediaId.SongRadio("ar-12"),
+            MediaId.Track("tr-77", MediaId.SongRadio("ar-12")),
         )
         for (id in ids) {
             assertEquals(id, MediaId.parse(id.encode()), "round-trip failed for $id")
@@ -130,6 +132,11 @@ class MediaIdTest {
         assertEquals(
             "track/tr-1|decade/1980",
             MediaId.Track("tr-1", MediaId.HomeDecade(1980)).encode(),
+        )
+        assertEquals("radio/ar-1", MediaId.SongRadio("ar-1").encode())
+        assertEquals(
+            "track/tr-1|radio/ar-1",
+            MediaId.Track("tr-1", MediaId.SongRadio("ar-1")).encode(),
         )
     }
 }

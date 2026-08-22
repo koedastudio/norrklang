@@ -52,6 +52,9 @@
   <string name="settings_stream_original">Stream original files</string>
   <string name="settings_stream_original_on">Full quality, gapless playback</string>
   <string name="settings_stream_original_off">Server decides quality — may use less data and break gapless</string>
+  <string name="settings_autoplay_similar">Autoplay similar music</string>
+  <string name="settings_autoplay_similar_on">When the queue ends, similar songs keep playing</string>
+  <string name="settings_autoplay_similar_off">Playback stops at the end of the queue</string>
   <string name="settings_scrobble">Report plays</string>
   <string name="settings_scrobble_on">Plays update server history and scrobble to services linked on the server</string>
   <string name="settings_scrobble_off">Plays are never reported to the server</string>

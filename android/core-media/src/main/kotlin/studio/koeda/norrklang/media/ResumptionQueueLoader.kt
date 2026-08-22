@@ -30,20 +30,7 @@ internal class ResumptionQueueLoader(
             val id = MediaId.parse(state.mediaId) as? MediaId.Track ?: return null
             val container = id.container
             if (container != null) {
-                // Mix containers resume as [saved] + fresh mix (resumeQueue
-                // adopts it, keeping later browsing consistent). Exhaustive
-                // on purpose: a new Container type must decide its resume
-                // semantics here.
-                val queue = when (container) {
-                    MediaId.HomeRandomMix -> randomMix.resumeQueue(id.id)
-                    is MediaId.HomeSimilar ->
-                        similarMixes.resumeQueue(container.artistId, id.id)
-                    is MediaId.HomeBestOf ->
-                        bestOfMixes.resumeQueue(container.artistId, id.id)
-                    is MediaId.CatalogMix -> catalogMixes.resumeQueue(container, id.id)
-                    is MediaId.Album, is MediaId.Playlist, MediaId.HomeFavoriteSongs ->
-                        containerTracks(container)
-                }
+                val queue = resumeTracks(container, id.id)
                 if (queue.isEmpty()) return null
                 val index = queue.indexOfFirst { it.id == id.id }.coerceAtLeast(0)
                 MediaItemsWithStartPosition(
@@ -70,6 +57,29 @@ internal class ResumptionQueueLoader(
         }
     }
 
+    /**
+     * Mix containers resume as [saved] + fresh mix (resumeQueue adopts it,
+     * keeping later browsing consistent). Exhaustive on purpose: a new
+     * Container type must decide its resume semantics here.
+     */
+    suspend fun resumeTracks(container: MediaId.Container, savedTrackId: String): List<Track> =
+        when (container) {
+            MediaId.HomeRandomMix -> randomMix.resumeQueue(savedTrackId)
+            is MediaId.HomeSimilar ->
+                similarMixes.resumeQueue(container.artistId, savedTrackId)
+            is MediaId.HomeBestOf ->
+                bestOfMixes.resumeQueue(container.artistId, savedTrackId)
+            is MediaId.CatalogMix -> catalogMixes.resumeQueue(container, savedTrackId)
+            is MediaId.SongRadio ->
+                savedTrackFirst(
+                    repository,
+                    savedTrackId,
+                    repository.similarTracks(container.seedArtistId),
+                )
+            is MediaId.Album, is MediaId.Playlist, MediaId.HomeFavoriteSongs ->
+                containerTracks(container)
+        }
+
     suspend fun containerTracks(container: MediaId.Container): List<Track> =
         when (container) {
             is MediaId.Album -> repository.album(container.id).tracks
@@ -79,5 +89,6 @@ internal class ResumptionQueueLoader(
             is MediaId.HomeSimilar -> similarMixes.queueTracks(container.artistId)
             is MediaId.HomeBestOf -> bestOfMixes.queueTracks(container.artistId)
             is MediaId.CatalogMix -> catalogMixes.queueTracks(container)
+            is MediaId.SongRadio -> repository.similarTracks(container.seedArtistId)
         }
 }

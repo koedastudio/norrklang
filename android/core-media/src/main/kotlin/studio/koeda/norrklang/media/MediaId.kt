@@ -32,13 +32,18 @@ import java.net.URLEncoder
  * track/{id}|bestof/{artistId}
  * track/{id}|genre/{urlEncodedName}
  * track/{id}|decade/{startYear}
+ * radio/{artistId}                (queue-radio continuation, never browsable)
+ * track/{id}|radio/{artistId}
  * ```
  * The context suffix lets "play one track from a list" rebuild the full
  * sibling queue in onSetMediaItems.
  */
 sealed interface MediaId {
 
-    /** A browsable node whose tracks can serve as a track's queue context. */
+    /**
+     * A browsable node or generated queue whose tracks can serve as a track's
+     * queue context.
+     */
     sealed interface Container : MediaId
 
     /**
@@ -83,6 +88,12 @@ sealed interface MediaId {
     data class Album(val id: String) : Container
     data class Playlist(val id: String) : Container
 
+    /**
+     * The queue-radio tracks appended when a queue nears its end, seeded from
+     * [seedArtistId]. A provenance/resume token only — never browsable.
+     */
+    data class SongRadio(val seedArtistId: String) : Container
+
     /** [container] is the [Album] or [Playlist] this track was browsed from, if any. */
     data class Track(val id: String, val container: Container? = null) : MediaId
 
@@ -110,6 +121,7 @@ sealed interface MediaId {
         is Artist -> "artist/$id"
         is Album -> "album/$id"
         is Playlist -> "playlist/$id"
+        is SongRadio -> "radio/$seedArtistId"
         is Track -> buildString {
             append("track/").append(id)
             container?.let { append(CONTEXT_SEPARATOR).append(it.encode()) }
@@ -156,6 +168,7 @@ sealed interface MediaId {
                 "artist" -> Artist(id)
                 "album" -> Album(id)
                 "playlist" -> Playlist(id)
+                "radio" -> SongRadio(id)
                 "track" -> {
                     val container = context?.let { parse(it) as? Container ?: return null }
                     Track(id, container)

@@ -136,11 +136,13 @@ class ServerSettingsRepositoryTest {
         repo.save(credentials)
         repo.setStreamOriginal(false)
         repo.setScrobblingEnabled(false)
+        repo.setAutoplaySimilar(false)
 
         repo.clearAccount()
 
         assertEquals(false, repo.streamOriginal.first())
         assertEquals(false, repo.scrobbleSettings.first().enabled)
+        assertEquals(false, repo.autoplaySimilar.first())
     }
 
     private val plexAccount = PlexAccount(
@@ -216,6 +218,15 @@ class ServerSettingsRepositoryTest {
 
         repo.setStreamOriginal(false)
         assertEquals(false, repo.streamOriginal.first())
+    }
+
+    @Test
+    fun `autoplay similar defaults to true and round-trips`() = runTest {
+        val repo = ServerSettingsRepository(dataStore(backgroundScope), FakeCipher())
+        assertTrue(repo.autoplaySimilar.first())
+
+        repo.setAutoplaySimilar(false)
+        assertEquals(false, repo.autoplaySimilar.first())
     }
 
     @Test

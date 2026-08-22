@@ -42,6 +42,18 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { settings.setStreamOriginal(enabled) }
     }
 
+    /** See [ServerSettingsRepository.autoplaySimilar] — queue-end radio. */
+    val autoplaySimilar: StateFlow<Boolean> = settings.autoplaySimilar
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000),
+            ServerSettingsRepository.DEFAULT_AUTOPLAY_SIMILAR,
+        )
+
+    fun setAutoplaySimilar(enabled: Boolean) {
+        viewModelScope.launch { settings.setAutoplaySimilar(enabled) }
+    }
+
     // --- Scrobbling ---
 
     /** An artist or playlist as shown in the exclusion picker screens. */

@@ -59,6 +59,7 @@ fun SettingsScreen(
 ) {
     val state by viewModel.sessionState.collectAsStateWithLifecycle()
     val streamOriginal by viewModel.streamOriginal.collectAsStateWithLifecycle()
+    val autoplaySimilar by viewModel.autoplaySimilar.collectAsStateWithLifecycle()
     val scrobble by viewModel.scrobbleSettings.collectAsStateWithLifecycle()
     val dimens = LocalFormDimens.current
     var page by rememberSaveable { mutableStateOf(SettingsPage.Main) }
@@ -135,6 +136,20 @@ fun SettingsScreen(
                     )
                     HorizontalDivider()
                 }
+                // Queue-end radio (see QueueRadioListener); both providers.
+                SettingsToggleRow(
+                    title = stringResource(R.string.settings_autoplay_similar),
+                    subtitle = stringResource(
+                        if (autoplaySimilar) {
+                            R.string.settings_autoplay_similar_on
+                        } else {
+                            R.string.settings_autoplay_similar_off
+                        },
+                    ),
+                    checked = autoplaySimilar,
+                    onToggle = viewModel::setAutoplaySimilar,
+                )
+                HorizontalDivider()
                 // Master switch for all playback reporting — Subsonic
                 // scrobbles and Plex timeline/mark-played alike. Off: plays
                 // update neither server play history nor the server-linked

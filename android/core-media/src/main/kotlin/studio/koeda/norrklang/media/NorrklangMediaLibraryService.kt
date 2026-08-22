@@ -28,6 +28,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import studio.koeda.norrklang.data.diagnostics.Diagnostics
 import studio.koeda.norrklang.data.repo.MusicRepository
@@ -73,6 +74,14 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
             .also(player::addListener)
         resumptionPersister = ResumptionPersister(serviceScope, settings, player)
             .also(player::addListener)
+        player.addListener(
+            QueueRadioListener(
+                scope = serviceScope,
+                autoplayEnabled = { settings.autoplaySimilar.first() },
+                radio = QueueRadio(repository),
+                player = player,
+            ),
+        )
 
         val browseTree =
             BrowseTree(this, repository, randomMix, similarMixes, bestOfMixes, catalogMixes)

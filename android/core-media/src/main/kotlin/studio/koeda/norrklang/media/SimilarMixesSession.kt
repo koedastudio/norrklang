@@ -149,7 +149,7 @@ internal class SimilarMixesSession(
         if (sourceTracks < MIN_TRACKS) {
             return Attempt(mix = null, serverHadTracks = sourceTracks > 0)
         }
-        val tracks = interleave(buckets.asMap(), limit = MAX_TRACKS)
+        val tracks = interleave(buckets.asMap(), limit = MAX_TRACKS, random = random)
         return Attempt(Mix(seed, artworkFor(seed, tracks), tracks), serverHadTracks = true)
     }
 
@@ -171,43 +171,6 @@ internal class SimilarMixesSession(
                 buckets.add(track, owner = artist)
             }
         }
-    }
-
-    /**
-     * Orders bucketed tracks so no artist clumps: draw from a largest bucket
-     * whose artist differs from the last pick (random among ties). Greedy
-     * avoids adjacent repeats whenever the largest bucket holds at most half
-     * the remainder — guaranteed at the start by the cap and [MIN_TRACKS].
-     * Stops at [limit].
-     */
-    private fun interleave(buckets: Map<String, List<Track>>, limit: Int): List<Track> {
-        val remaining = buckets.entries.associateTo(LinkedHashMap()) { (key, tracks) ->
-            key to ArrayDeque(tracks.shuffled(random))
-        }
-        val out = ArrayList<Track>(minOf(limit, buckets.values.sumOf { it.size }))
-        var lastKey: String? = null
-        val ties = ArrayList<String>()
-        while (out.size < limit && remaining.isNotEmpty()) {
-            var largest = -1
-            ties.clear()
-            for ((key, tracks) in remaining) {
-                if (key == lastKey) continue
-                if (tracks.size > largest) {
-                    largest = tracks.size
-                    ties.clear()
-                    ties += key
-                } else if (tracks.size == largest) {
-                    ties += key
-                }
-            }
-            // Only the last-picked artist's bucket left — a clump is unavoidable.
-            val pick = if (ties.isEmpty()) lastKey!! else ties.random(random)
-            val bucket = remaining.getValue(pick)
-            out += bucket.removeFirst()
-            if (bucket.isEmpty()) remaining.remove(pick)
-            lastKey = pick
-        }
-        return out
     }
 
     companion object {
@@ -235,15 +198,3 @@ internal class SimilarMixesSession(
         const val ALBUM_TOPUP_ALBUMS = 2
     }
 }
-
-/**
- * Grouping key for the per-artist cap and the interleaver. Keyed by displayed
- * artist name, not id: collaboration-album tracks can carry a different (or
- * no) artist id under the same visible name, and separate buckets would let
- * one visible artist exceed the cap. The id is a fallback for nameless tracks.
- */
-private fun artistKey(track: Track): String? =
-    track.artistName?.lowercase() ?: track.artistId
-
-/** Same rule for a queried [Artist], whose name is always present. */
-private fun artistKey(artist: Artist): String = artist.name.lowercase()

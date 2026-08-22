@@ -67,6 +67,7 @@ class ServerSettingsRepository @Inject constructor(
         val LAST_MEDIA_ID = stringPreferencesKey("last_media_id")
         val LAST_POSITION_MS = longPreferencesKey("last_position_ms")
         val STREAM_ORIGINAL = booleanPreferencesKey("stream_original")
+        val AUTOPLAY_SIMILAR = booleanPreferencesKey("autoplay_similar")
         val SCROBBLE_ENABLED = booleanPreferencesKey("scrobble_enabled")
         val SCROBBLE_EXCLUDED_ARTISTS = stringSetPreferencesKey("scrobble_excluded_artists")
         val SCROBBLE_EXCLUDED_PLAYLISTS = stringSetPreferencesKey("scrobble_excluded_playlists")
@@ -252,6 +253,16 @@ class ServerSettingsRepository @Inject constructor(
         dataStore.edit { it[Keys.STREAM_ORIGINAL] = enabled }
     }
 
+    // --- Autoplay ---
+
+    /** Keep playing similar music when the queue ends (see QueueRadioListener). */
+    val autoplaySimilar: Flow<Boolean> =
+        dataStore.data.map { it[Keys.AUTOPLAY_SIMILAR] ?: DEFAULT_AUTOPLAY_SIMILAR }
+
+    suspend fun setAutoplaySimilar(enabled: Boolean) {
+        dataStore.edit { it[Keys.AUTOPLAY_SIMILAR] = enabled }
+    }
+
     // --- Scrobbling ---
 
     /**
@@ -329,6 +340,9 @@ class ServerSettingsRepository @Inject constructor(
          * wrong state.
          */
         const val DEFAULT_STREAM_ORIGINAL = true
+
+        /** Value of [autoplaySimilar] before anything is written. */
+        const val DEFAULT_AUTOPLAY_SIMILAR = true
 
         private const val PROVIDER_SUBSONIC = "subsonic"
         private const val PROVIDER_PLEX = "plex"

@@ -116,6 +116,8 @@ internal class BrowseTree(
             is MediaId.Artist -> albumItems(repository.artist(id.id).albums, page, pageSize)
             is MediaId.Album -> trackItems(repository.album(id.id).tracks, id, page, pageSize)
             is MediaId.Playlist -> trackItems(repository.playlist(id.id).tracks, id, page, pageSize)
+            // Queue-radio provenance token, never a browse node.
+            is MediaId.SongRadio -> null
             is MediaId.Track, null -> null
         }
 
@@ -259,6 +261,7 @@ internal class BrowseTree(
             is MediaId.Album -> MediaItemFactory.forAlbum(repository.album(id.id).album)
             is MediaId.Playlist -> MediaItemFactory.forPlaylist(repository.playlist(id.id).playlist)
             is MediaId.Track -> MediaItemFactory.forTrack(repository.track(id.id), id.container)
+            is MediaId.SongRadio -> null
             null -> null
         }
 
