@@ -18,8 +18,8 @@ import studio.koeda.norrklang.data.repo.MusicRepository
  * Renders the Home and Library tabs' square button images — the static
  * [HomeTile] buttons and the dynamic catalog mix tiles alike: a collage of the covers actually
  * behind each button (2×2 when four distinct covers exist, a single
- * full-bleed cover otherwise), under a bottom scrim and a dark icon badge
- * that says what the button contains. Buttons with no covers — icon-only
+ * full-bleed cover otherwise), under a dark icon badge that says what the
+ * button contains. Buttons with no covers — icon-only
  * [HomeTile]s (the Library tab) and collage sections with no content yet —
  * get an accent gradient with a large centered icon instead.
  *
@@ -69,7 +69,6 @@ internal object HomeButtonArtwork {
             if (tiles.isEmpty()) {
                 drawCenteredIcon(context, canvas, iconRes)
             } else {
-                drawScrim(canvas)
                 drawBadge(context, canvas, iconRes)
             }
             writeAtomically(bitmap, target)
@@ -95,13 +94,18 @@ internal object HomeButtonArtwork {
         canvas.drawBitmap(bitmap, Rect(left, top, left + edge, top + edge), dst, coverPaint)
     }
 
-    /** Diagonal accent gradient for sections that are still empty. */
+    /**
+     * Accent gradient behind icon-only tiles. Vertical, so the brightness is
+     * horizontally symmetric and the centered icon reads as centered even on
+     * small list-row thumbnails (a diagonal gradient's bright corner visually
+     * pushes the icon toward the dark one).
+     */
     private fun drawFallback(canvas: Canvas, accentColor: Int) {
         val paint = Paint().apply {
             shader = LinearGradient(
                 0f,
                 0f,
-                SIZE.toFloat(),
+                0f,
                 SIZE.toFloat(),
                 accentColor,
                 darken(accentColor),
@@ -109,22 +113,6 @@ internal object HomeButtonArtwork {
             )
         }
         canvas.drawRect(0f, 0f, SIZE.toFloat(), SIZE.toFloat(), paint)
-    }
-
-    /** Bottom gradient keeping the badge legible on busy cover art. */
-    private fun drawScrim(canvas: Canvas) {
-        val paint = Paint().apply {
-            shader = LinearGradient(
-                0f,
-                SIZE * SCRIM_START,
-                0f,
-                SIZE.toFloat(),
-                Color.TRANSPARENT,
-                SCRIM_COLOR,
-                Shader.TileMode.CLAMP,
-            )
-        }
-        canvas.drawRect(0f, SIZE * SCRIM_START, SIZE.toFloat(), SIZE.toFloat(), paint)
     }
 
     private fun drawBadge(context: Context, canvas: Canvas, iconRes: Int) {
@@ -186,9 +174,6 @@ internal object HomeButtonArtwork {
 
     /** Covers in a full collage; fewer means a single full-bleed cover. */
     const val COLLAGE_TILES = 4
-
-    private const val SCRIM_START = 0.45f
-    private const val SCRIM_COLOR = 0xB3000000.toInt()
 
     // Near-black with slight translucency, so the cover art still reads
     // through the badge edge while the white icon stays high-contrast.
