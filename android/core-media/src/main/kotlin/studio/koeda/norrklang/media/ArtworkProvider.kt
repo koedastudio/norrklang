@@ -70,6 +70,8 @@ class ArtworkProvider : ContentProvider() {
         fun musicRepository(): MusicRepository
         fun randomMixSession(): RandomMixSession
         fun catalogMixesSession(): CatalogMixesSession
+        fun bestOfMixesSession(): BestOfMixesSession
+        fun similarMixesSession(): SimilarMixesSession
     }
 
     override fun onCreate(): Boolean = true
@@ -96,9 +98,9 @@ class ArtworkProvider : ContentProvider() {
                     segments[1],
                 )
             segments.size == 3 && segments[0] == ArtworkContract.PATH_HOME ->
-                catalogMixFile(
+                homeMixFile(
                     context,
-                    dependencies.catalogMixesSession(),
+                    dependencies,
                     session,
                     accountDir,
                     kind = segments[1],
@@ -171,25 +173,26 @@ class ArtworkProvider : ContentProvider() {
             accountDir,
             cacheKey = "home-button/$key",
             iconRes = tile.iconRes,
-            accentColor = tile.accentColor,
         ) { HomeButtonArtwork.coverIds(tile, repository, randomMix) }
     }
 
     /**
-     * The composed image for a dynamic catalog mix tile (`home/<kind>/<key>`).
-     * The key is resolved against the current mix snapshot — an unknown key
-     * (no snapshot yet after a process restart, or a stale host URI) serves
-     * the cached image when one exists, like any render failure.
+     * The composed image for a dynamic mix tile (`home/<kind>/<key>`).
+     * The key is resolved against the owning session's current snapshot — an
+     * unknown key (no snapshot yet after a process restart, or a stale host
+     * URI) serves the cached image when one exists, like any render failure.
+     * The artist mixes declare one cover (the seed artist's image), so they
+     * render full-bleed under the badge rather than as a collage.
      */
-    private fun catalogMixFile(
+    private fun homeMixFile(
         context: Context,
-        catalogMixes: CatalogMixesSession,
+        dependencies: Dependencies,
         session: ProviderSession,
         accountDir: File,
         kind: String,
         key: String,
     ): File {
-        val mixKind = CatalogMixKind.forPath(kind)
+        val mixKind = HomeMixKind.forPath(kind)
             ?: throw FileNotFoundException("Unknown mix kind: $kind")
         return composedTileFile(
             context,
@@ -197,14 +200,21 @@ class ArtworkProvider : ContentProvider() {
             accountDir,
             cacheKey = "home-button/$kind/$key",
             iconRes = mixKind.iconRes,
-            accentColor = mixKind.accentColor,
         ) {
             val urls = when (mixKind) {
-                CatalogMixKind.GENRE ->
-                    catalogMixes.currentGenreMixes()
+                HomeMixKind.BEST_OF ->
+                    dependencies.bestOfMixesSession().currentMixes()
+                        .firstOrNull { it.artist.id == key }
+                        ?.let { listOfNotNull(it.artworkUrl) }
+                HomeMixKind.SIMILAR ->
+                    dependencies.similarMixesSession().currentMixes()
+                        .firstOrNull { it.artist.id == key }
+                        ?.let { listOfNotNull(it.artworkUrl) }
+                HomeMixKind.GENRE ->
+                    dependencies.catalogMixesSession().currentGenreMixes()
                         .firstOrNull { it.name == key }?.artworkUrls
-                CatalogMixKind.DECADE ->
-                    catalogMixes.currentDecadeMixes()
+                HomeMixKind.DECADE ->
+                    dependencies.catalogMixesSession().currentDecadeMixes()
                         .firstOrNull { it.startYear.toString() == key }?.artworkUrls
             } ?: throw FileNotFoundException("Unknown mix: $kind/$key")
             HomeButtonArtwork.coverIds(urls)
@@ -222,7 +232,6 @@ class ArtworkProvider : ContentProvider() {
         accountDir: File,
         cacheKey: String,
         iconRes: Int,
-        accentColor: Int,
         coverIds: suspend () -> List<String>,
     ): File {
         val file = File(accountDir, hashedFileName(cacheKey))
@@ -248,7 +257,7 @@ class ArtworkProvider : ContentProvider() {
                         }
                     }
                 }
-                HomeButtonArtwork.render(context, iconRes, accentColor, covers, file)
+                HomeButtonArtwork.render(context, iconRes, covers, file)
                 evict(accountDir)
             } catch (e: Exception) {
                 if (file.length() == 0L) {

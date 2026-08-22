@@ -351,36 +351,36 @@ internal class BrowseTree(
             groupTitle = artistsGroup,
         )
 
+    // Mix tile images served by ArtworkProvider — see HomeButtonArtwork.
     private fun similarMixButton(mix: ArtistMixesSession.Mix) = trackListTile(
         MediaId.HomeSimilar(mix.artist.id),
         context.getString(R.string.browse_home_similar_to, mix.artist.name),
-        mix.artworkUrl,
+        mixCollageUri(HomeMixKind.SIMILAR, mix.artist.id),
         madeForYouGroup,
     )
 
     private fun bestOfMixButton(mix: ArtistMixesSession.Mix) = trackListTile(
         MediaId.HomeBestOf(mix.artist.id),
         context.getString(R.string.browse_home_best_of, mix.artist.name),
-        mix.artworkUrl,
+        mixCollageUri(HomeMixKind.BEST_OF, mix.artist.id),
         madeForYouGroup,
     )
 
-    // Collages served by ArtworkProvider — see HomeButtonArtwork.
     private fun genreMixButton(mix: CatalogMixesSession.GenreMix) = trackListTile(
         MediaId.HomeGenre(mix.name),
         mix.name,
-        mixCollageUri(CatalogMixKind.GENRE, mix.name),
+        mixCollageUri(HomeMixKind.GENRE, mix.name),
         genreMixesGroup,
     )
 
     private fun decadeMixButton(mix: CatalogMixesSession.DecadeMix) = trackListTile(
         MediaId.HomeDecade(mix.startYear),
         context.getString(R.string.browse_home_decade_mix, mix.startYear),
-        mixCollageUri(CatalogMixKind.DECADE, mix.startYear.toString()),
+        mixCollageUri(HomeMixKind.DECADE, mix.startYear.toString()),
         decadeMixesGroup,
     )
 
-    private fun mixCollageUri(kind: CatalogMixKind, key: String): String =
+    private fun mixCollageUri(kind: HomeMixKind, key: String): String =
         ArtworkContract.homeMixUri(context.packageName, kind.pathSegment, key)
 
     private fun homeTab() = MediaItemFactory.browsable(

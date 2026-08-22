@@ -4,11 +4,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Rect
-import android.graphics.Shader
 import android.net.Uri
 import java.io.File
 import java.io.IOException
@@ -16,12 +13,13 @@ import studio.koeda.norrklang.data.repo.MusicRepository
 
 /**
  * Renders the Home and Library tabs' square button images — the static
- * [HomeTile] buttons and the dynamic catalog mix tiles alike: a collage of the covers actually
+ * [HomeTile] buttons and the dynamic mix tiles alike: a collage of the covers actually
  * behind each button (2×2 when four distinct covers exist, a single
  * full-bleed cover otherwise), under a dark icon badge that says what the
  * button contains. Buttons with no covers — icon-only
  * [HomeTile]s (the Library tab) and collage sections with no content yet —
- * get an accent gradient with a large centered icon instead.
+ * get a uniform near-black fill with only an oversized faded icon bleeding
+ * off the bottom-right corner — one quiet look for the whole Library list.
  *
  * Composed on demand by [ArtworkProvider] (paths `home/<key>` and
  * `home/<kind>/<key>`) and cached next to the plain cover files.
@@ -53,7 +51,6 @@ internal object HomeButtonArtwork {
     fun render(
         context: Context,
         iconRes: Int,
-        accentColor: Int,
         covers: List<File>,
         target: File,
     ) {
@@ -64,10 +61,10 @@ internal object HomeButtonArtwork {
             when {
                 tiles.size >= COLLAGE_TILES -> drawCollage(canvas, tiles)
                 tiles.isNotEmpty() -> drawCover(canvas, tiles.first(), Rect(0, 0, SIZE, SIZE))
-                else -> drawFallback(canvas, accentColor)
+                else -> drawFallback(canvas)
             }
             if (tiles.isEmpty()) {
-                drawCenteredIcon(context, canvas, iconRes)
+                drawMotif(context, canvas, iconRes)
             } else {
                 drawBadge(context, canvas, iconRes)
             }
@@ -95,24 +92,12 @@ internal object HomeButtonArtwork {
     }
 
     /**
-     * Accent gradient behind icon-only tiles. Vertical, so the brightness is
-     * horizontally symmetric and the centered icon reads as centered even on
-     * small list-row thumbnails (a diagonal gradient's bright corner visually
-     * pushes the icon toward the dark one).
+     * Uniform near-black fill behind icon-only tiles — deliberately close
+     * to the car UIs' dark backgrounds, so the Library reads as quiet icon
+     * rows rather than a stack of colour swatches.
      */
-    private fun drawFallback(canvas: Canvas, accentColor: Int) {
-        val paint = Paint().apply {
-            shader = LinearGradient(
-                0f,
-                0f,
-                0f,
-                SIZE.toFloat(),
-                accentColor,
-                darken(accentColor),
-                Shader.TileMode.CLAMP,
-            )
-        }
-        canvas.drawRect(0f, 0f, SIZE.toFloat(), SIZE.toFloat(), paint)
+    private fun drawFallback(canvas: Canvas) {
+        canvas.drawColor(EMPTY_TILE_COLOR)
     }
 
     private fun drawBadge(context: Context, canvas: Canvas, iconRes: Int) {
@@ -127,8 +112,23 @@ internal object HomeButtonArtwork {
         drawIcon(context, canvas, iconRes, cx, cy, (BADGE_RADIUS * 2 * BADGE_ICON_FRACTION).toInt())
     }
 
-    private fun drawCenteredIcon(context: Context, canvas: Canvas, iconRes: Int) {
-        drawIcon(context, canvas, iconRes, SIZE / 2, SIZE / 2, EMPTY_ICON_SIZE)
+    /**
+     * The icon-only tiles' sole glyph: an oversized, faded copy of the icon
+     * bleeding off the tile's bottom-right corner. Asymmetric on purpose:
+     * some hosts show list artwork in a not-quite-square view with an
+     * off-center crop (seen on the Polestar 2) — with no centered content
+     * and no symmetric frame, there is nothing such a crop can visibly
+     * misplace.
+     */
+    private fun drawMotif(context: Context, canvas: Canvas, iconRes: Int) {
+        // mutate() before alpha: getDrawable instances share constant state,
+        // and the collage badge's copy of the icon must stay opaque.
+        val icon = context.getDrawable(iconRes)?.mutate() ?: return
+        icon.alpha = MOTIF_ALPHA
+        val center = (SIZE * MOTIF_CENTER).toInt()
+        val half = MOTIF_SIZE / 2
+        icon.setBounds(center - half, center - half, center + half, center + half)
+        icon.draw(canvas)
     }
 
     private fun drawIcon(context: Context, canvas: Canvas, iconRes: Int, cx: Int, cy: Int, size: Int) {
@@ -162,12 +162,6 @@ internal object HomeButtonArtwork {
         }
     }
 
-    private fun darken(color: Int): Int = Color.rgb(
-        (Color.red(color) * DARKEN_FACTOR).toInt(),
-        (Color.green(color) * DARKEN_FACTOR).toInt(),
-        (Color.blue(color) * DARKEN_FACTOR).toInt(),
-    )
-
     private val coverPaint = Paint(Paint.FILTER_BITMAP_FLAG)
 
     private const val SIZE = 512
@@ -182,6 +176,14 @@ internal object HomeButtonArtwork {
     private const val BADGE_MARGIN = 28
     private const val BADGE_RADIUS = 56
     private const val BADGE_ICON_FRACTION = 0.58f
-    private const val EMPTY_ICON_SIZE = 224
-    private const val DARKEN_FACTOR = 0.45f
+
+    // A shade off pure black, so the tile still separates (just) from a
+    // true-black host background.
+    private const val EMPTY_TILE_COLOR = 0xFF111113.toInt()
+
+    // Motif square, its center as a fraction of both axes (past 0.5 so it
+    // bleeds off the bottom-right edges), and its opacity out of 255.
+    private const val MOTIF_SIZE = 460
+    private const val MOTIF_CENTER = 0.8f
+    private const val MOTIF_ALPHA = 46
 }

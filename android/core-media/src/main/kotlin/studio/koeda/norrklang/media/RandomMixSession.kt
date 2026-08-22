@@ -66,7 +66,7 @@ internal class RandomMixSession(
 
     /**
      * The mix for the tile montage: generates one when none exists (real
-     * covers over the gradient fallback), otherwise the snapshot as-is —
+     * covers over the flat accent fallback), otherwise the snapshot as-is —
      * without refreshing the grace window, so a background render can
      * neither reshuffle the list the user saw nor keep it alive past grace.
      */
