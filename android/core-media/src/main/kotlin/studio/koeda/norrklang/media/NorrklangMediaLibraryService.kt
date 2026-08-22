@@ -24,8 +24,10 @@ import javax.inject.Inject
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import studio.koeda.norrklang.data.diagnostics.Diagnostics
 import studio.koeda.norrklang.data.repo.MusicRepository
@@ -65,6 +67,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
 
         val player = buildPlayer()
         player.addListener(PlaybackReporter(serviceScope, repository, settings, player))
+        player.addListener(PlaybackErrorRecorder())
         player.addListener(RandomMixPlaySourceListener(randomMix))
         playbackRecovery = PlaybackRecoveryListener(this, serviceScope, player)
             .also(player::addListener)
@@ -181,6 +184,16 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
         resumptionLoader: ResumptionQueueLoader,
     ) {
         var queueRestored = false
+        // Debounce the post-connect burst of mix-section notifies — one
+        // notify per section made some hosts visibly re-render repeatedly.
+        var homeNotify: Job? = null
+        fun scheduleHomeNotify(session: MediaLibrarySession) {
+            homeNotify?.cancel()
+            homeNotify = serviceScope.launch {
+                delay(HOME_NOTIFY_COALESCE_MS)
+                session.notifyChildrenChanged(MediaId.TabHome.encode(), Int.MAX_VALUE, null)
+            }
+        }
         serviceScope.launch {
             sessionManager.state.collect { state ->
                 Log.d(TAG, "session state: ${state::class.simpleName}")
@@ -200,11 +213,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
                         // top-songs cache makes the wait cheap.
                         suspend fun refreshIntoHome(mixes: HomeMixesSession<*, *>) {
                             if (mixes.refresh(state.session.cacheFingerprint)) {
-                                session.notifyChildrenChanged(
-                                    MediaId.TabHome.encode(),
-                                    Int.MAX_VALUE,
-                                    null,
-                                )
+                                scheduleHomeNotify(session)
                             }
                         }
                         serviceScope.launch {
@@ -282,6 +291,8 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
 
         // Buffer up to 3 minutes ahead (audio is cheap) so short dead zones
         // never reach the user; keep at least 1 minute before pausing loads.
+        private const val HOME_NOTIFY_COALESCE_MS = 500L
+
         private const val MIN_BUFFER_MS = 60_000
         private const val MAX_BUFFER_MS = 180_000
 

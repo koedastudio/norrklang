@@ -58,7 +58,7 @@ object Diagnostics {
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             runCatching {
                 crashFile?.writeText(
-                    "${timestamp()} crash on thread ${thread.name}\n${stackTrace(throwable)}"
+                    sanitize("${timestamp()} crash on thread ${thread.name}\n${stackTrace(throwable)}")
                         .take(MAX_CRASH_CHARS),
                 )
             }
@@ -74,17 +74,30 @@ object Diagnostics {
     }
 
     fun record(where: String, detail: String) {
+        val sanitized = sanitize(detail)
         // runCatching also covers android.util.Log, which throws in plain
         // JVM unit tests.
-        runCatching { Log.w(TAG, "$where: $detail") }
+        runCatching { Log.w(TAG, "$where: $sanitized") }
         runCatching {
             synchronized(lock) {
-                events.addLast("${timestamp()} $where — ${detail.take(MAX_DETAIL_CHARS)}")
+                events.addLast("${timestamp()} $where — ${sanitized.take(MAX_DETAIL_CHARS)}")
                 while (events.size > MAX_EVENTS) events.removeFirst()
                 eventsFile?.writeText(events.joinToString("\n"))
             }
         }
     }
+
+    /**
+     * Drops URL authorities and query strings from recorded text: exception
+     * messages embed full request URLs, and both backends carry auth
+     * material there (Subsonic token+salt in the query, Plex token likewise).
+     */
+    internal fun sanitize(text: String): String = text
+        .replace(URL_AUTHORITY) { "${it.groupValues[1]}//…" }
+        .replace(URL_QUERY, "?…")
+
+    private val URL_AUTHORITY = Regex("""(https?:)//[^/\s\]"),]+""")
+    private val URL_QUERY = Regex("""\?[^\s\]"),]*""")
 
     /** The persisted stack of the last crash, or null when there is none. */
     fun lastCrash(): String? = synchronized(lock) {
