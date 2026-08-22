@@ -41,10 +41,16 @@ internal object MediaModule {
     @Singleton
     fun similarMixesSession(
         repository: MusicRepository,
+        bestOfMixes: BestOfMixesSession,
         sessionManager: SessionManager,
         @ApplicationScope scope: CoroutineScope,
     ): SimilarMixesSession =
-        SimilarMixesSession(repository).clearingOnSignOut(sessionManager, scope)
+        SimilarMixesSession(
+            repository,
+            // No artist should head both a "Best of" and a "Similar to" tile;
+            // the service refreshes Best of first so these seeds are settled.
+            excludedSeedIds = { bestOfMixes.currentMixes().map { it.artist.id }.toSet() },
+        ).clearingOnSignOut(sessionManager, scope)
 
     @Provides
     @Singleton

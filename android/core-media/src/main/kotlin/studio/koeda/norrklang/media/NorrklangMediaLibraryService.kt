@@ -193,20 +193,25 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
                         // to dozens of requests each), each popping into the
                         // home tab when ready. Separate launches so a slow
                         // generation delays neither the other sections nor
-                        // the queue restore below.
-                        val mixSessions: List<HomeMixesSession<*, *>> =
-                            listOf(similarMixes, bestOfMixes, catalogMixes)
-                        for (mixes in mixSessions) {
-                            serviceScope.launch {
-                                if (mixes.refresh(state.session.cacheFingerprint)) {
-                                    session.notifyChildrenChanged(
-                                        MediaId.TabHome.encode(),
-                                        Int.MAX_VALUE,
-                                        null,
-                                    )
-                                }
+                        // the queue restore below — except Best of ahead of
+                        // Similar to in one launch: Similar's generation
+                        // excludes Best of's seed artists (see MediaModule),
+                        // so that snapshot must settle first. The shared
+                        // top-songs cache makes the wait cheap.
+                        suspend fun refreshIntoHome(mixes: HomeMixesSession<*, *>) {
+                            if (mixes.refresh(state.session.cacheFingerprint)) {
+                                session.notifyChildrenChanged(
+                                    MediaId.TabHome.encode(),
+                                    Int.MAX_VALUE,
+                                    null,
+                                )
                             }
                         }
+                        serviceScope.launch {
+                            refreshIntoHome(bestOfMixes)
+                            refreshIntoHome(similarMixes)
+                        }
+                        serviceScope.launch { refreshIntoHome(catalogMixes) }
                         // The car's control bar is always on screen; pre-load
                         // the last queue (paused) so it shows the track play
                         // would resume instead of an empty box.

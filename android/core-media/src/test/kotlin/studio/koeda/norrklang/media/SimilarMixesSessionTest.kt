@@ -112,6 +112,22 @@ class SimilarMixesSessionTest {
     }
 
     @Test
+    fun `excluded seeds are skipped in every pass`() = runTest {
+        val f = (1..5).map { artist("f$it") }.onEach { qualify(it) }
+        repository.frequentPool += f
+        repository.recentPool += f // spillover pass sees them too
+        val session = SimilarMixesSession(
+            repository,
+            random = Random(42),
+            excludedSeedIds = { setOf("f1", "f3") },
+        )
+
+        assertTrue(session.refresh("fp"))
+        val seeds = session.currentMixes().map { it.artist.id }
+        assertEquals(setOf("f2", "f4", "f5"), seeds.toSet())
+    }
+
+    @Test
     fun `a seed below the track minimum is skipped for the next candidate`() = runTest {
         val thin = artist("thin")
         qualify(thin, artists = 4, perArtist = 4) // 16 < 20

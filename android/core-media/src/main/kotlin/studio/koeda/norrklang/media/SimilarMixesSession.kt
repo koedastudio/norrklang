@@ -27,11 +27,19 @@ import studio.koeda.norrklang.data.repo.MusicException
 internal class SimilarMixesSession(
     repository: MusicRepository,
     private val random: Random = Random.Default,
+    /**
+     * Seed ids to skip — the artists already fronting a "Best of" tile, so
+     * no artist heads tiles in both halves of "Made for you" (MediaModule
+     * wires this to [BestOfMixesSession]; the service refreshes that section
+     * first so the set is settled by the time this one generates).
+     */
+    private val excludedSeedIds: suspend () -> Set<String> = { emptySet() },
 ) : ArtistMixesSession(repository) {
 
     override suspend fun generate(): List<Mix> {
         val accepted = mutableListOf<Mix>()
-        val probed = mutableSetOf<String>()
+        // Pre-marking the exclusions as probed drops them from every pass.
+        val probed = excludedSeedIds().toMutableSet()
         val deadProbes = DeadProbeTally()
 
         val (frequent, recent) = candidatePools()
