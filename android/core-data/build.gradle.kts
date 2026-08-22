@@ -6,6 +6,13 @@ plugins {
 
 android {
     namespace = "studio.koeda.norrklang.data"
+
+    // For the on-device JDK-API smoke test (src/androidTest) — run it against
+    // the OLDEST practical AVD to catch JDK-only calls in the pure-JVM
+    // modules; see JdkApiOnDeviceTest.
+    defaultConfig {
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
 }
 
 dependencies {
@@ -23,4 +30,7 @@ dependencies {
     testImplementation(libs.kotlin.test.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.ktor.client.mock)
+
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
 }
