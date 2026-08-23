@@ -10,8 +10,7 @@
 - [ ] `./gradlew test` passes
 - [ ] New behaviour has tests
 - [ ] No new dependencies (or they were agreed on in the issue)
-- [ ] Car UI changes: ran the relevant items of the
-      [manual test checklist](../docs/manual-test-checklist.md) — listed below
+- [ ] Car UI changes: exercised the affected flows manually — listed below
 
-<!-- If you ran manual checklist items, say which ones and on what
+<!-- If you tested manually, say what you tested and on what
      (car model or emulator image). -->

@@ -32,9 +32,9 @@ Website: `cd www && npm ci && npm run check && npm run build`.
   are deliberately unit-testable on the JVM).
 - Match the surrounding style; `.editorconfig` is authoritative.
 - No new dependencies without discussing them in the issue first.
-- For changes visible in the car UI, run the relevant items of the
-  [manual test checklist](docs/manual-test-checklist.md) and say which ones
-  in the PR description.
+- For changes visible in the car UI, exercise the affected flows on the
+  Automotive emulator (or a real car) and say what you tested in the PR
+  description.
 
 By contributing you agree that your work is licensed under the project
 license, [GPL-3.0-or-later](LICENSE).

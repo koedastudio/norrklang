@@ -1,25 +1,28 @@
 # Norrklang
 
-A family of music clients for [Navidrome](https://www.navidrome.org/) — self-hosted music streaming.
+A family of music clients for self-hosted music — [Navidrome](https://www.navidrome.org/), other Subsonic-compatible servers, and [Plex](https://www.plex.tv/).
 
 The first project is a **car media app** for **Android Automotive OS** — it runs natively in cars like the Polestar 2.
 
 The repo also contains `app-mobile`, a phone APK that hosts **Android Auto** projection from the same Kotlin codebase. It builds, passes the same tests, and shares all the core modules — but it has not had the same real-world testing as the car app, so it is not yet published. The first Play release is Android Automotive OS only; Android Auto will follow once it has been proven out.
 
-**Status: 1.0.** The app is feature-complete for everyday in-car listening
+**Status: 1.1.** The app is feature-complete for everyday in-car listening
 and hardened for distribution (signed releases, encrypted credential storage,
 per-account caches), but it has seen a small number of servers and cars.
 Expect rough edges; please report them.
 
 - **Server requirements**: Navidrome (current stable releases) or any server
-  implementing **Subsonic API 1.16.1** with token authentication.
+  implementing **Subsonic API 1.16.1** with token authentication; or a
+  **Plex Media Server** with a music library, linked with a Plex account.
 - **HTTPS required**: release builds refuse cleartext HTTP — put your server
   behind TLS (a reverse proxy with Let's Encrypt is enough). Plain HTTP works
-  only in debug builds against local test servers.
+  only in debug builds against local test servers. Plex connections come with
+  Plex's own `plex.direct` TLS, so nothing extra to set up there.
 - **Known limitations**: no offline/downloaded playback; gapless playback
   only when streaming original files (the default setting) — server
-  transcoding reintroduces gaps; no multi-server profiles (one signed-in
-  server at a time); search results are capped at 50 per category.
+  transcoding reintroduces gaps; Plex playback is direct play only (no
+  transcoding fallback); no multi-server profiles (one signed-in provider
+  and server at a time); search results are capped at 50 per category.
 - **Install**: [Google Play](https://play.google.com/store/apps/details?id=studio.koeda.norrklang)
   (Android Automotive OS).
 - **Support**: [GitHub issues](https://github.com/koedastudio/norrklang/issues).
@@ -37,13 +40,14 @@ norrklang/
 │   ├── app-automotive/       # Android Automotive OS APK (Polestar 2 & friends)
 │   ├── app-mobile/           # Phone APK hosting Android Auto projection (not in the initial release)
 │   ├── core-subsonic/        # Pure-JVM Subsonic/OpenSubsonic API client (Ktor)
+│   ├── core-plex/            # Pure-JVM Plex client (plex.tv link + Plex Media Server)
 │   ├── core-data/            # Session, settings (DataStore), repositories
 │   ├── core-media/           # Media3 MediaLibraryService — browse tree + playback
 │   ├── core-ui/              # Shared Compose UI (sign-in, settings, theme)
 │   └── build-logic/          # Gradle convention plugins (SDK levels, signing, versioning)
 ├── www/                      # norrklang.app — Astro static site (landing + privacy policy)
-├── docs/                     # Test + release checklists (below)
-└── assets/                   # Brand sources: app icon + Play feature graphic (SVG masters and exports)
+├── docs/                     # Play store listing copy (below)
+└── assets/                   # Brand sources (app icon + Play feature graphic) and Play store screenshots
 ```
 
 The car never runs custom UI for browsing/playback — the OS renders the media
@@ -51,24 +55,29 @@ template from the browse tree that `core-media` serves. That's a platform
 requirement for driver safety, and it's also why the same `core-media` browse
 tree drives Android Auto head units unchanged when that form factor ships.
 
-`core-subsonic` is deliberately free of Android dependencies so it can become
-the shared kernel (KMP) for future phone/desktop clients in this monorepo.
+`core-subsonic` and `core-plex` are deliberately free of Android dependencies
+so they can become the shared kernel (KMP) for future phone/desktop clients in
+this monorepo.
 
 ## Features
 
-- Sign in to any Navidrome server (token auth; the password is never stored)
+- Sign in to a Navidrome/Subsonic server (token auth; the password is never
+  stored) or link a Plex account with a code or QR scan — no password typed
+  in the car
 - Browse: Home with Quick play, Made for you (Best of / Similar to), Genre and
-  Decade mixes; Artists, Albums, Playlists
+  Decade mixes, favourite artists and recently added tracks; Playlists;
+  Library with all artists, all albums and the recently/most played, new and
+  favourite album collections
 - Full playback via ExoPlayer: queue, shuffle, seek, audio focus, artwork
 - Favourites from the car UI: heart the playing track, heart albums while browsing
 - Voice/keyboard search across artists, albums and tracks
-- Scrobbling back to Navidrome, with on/off and per-artist/per-playlist exclusions
+- Play reporting back to the server (Navidrome scrobbles, Plex timelines),
+  with on/off and per-artist/per-playlist exclusions
 - Playback resumption after restarts; automatic recovery from network dropouts
 
 ## Guides
 
-- [Manual test checklist](docs/manual-test-checklist.md)
-- [Release checklist](docs/release-checklist.md)
+- [Play store listing copy](docs/play-store-listing.md)
 - [Privacy policy](https://norrklang.app/privacy) (source: `www/src/pages/privacy.md`)
 
 ## Quick start (build + unit tests)
@@ -99,6 +108,33 @@ keyPassword=…
 
 Debug builds and tests never touch it; without the file, release tasks fail
 with the same instructions.
+
+### Shipping an AAOS release to Google Play
+
+1. Bump `norrklang.version` in `android/gradle.properties` — new version name
+   and an increased build number (see §Versioning) — and update
+   `CHANGELOG.md`.
+2. Build the automotive bundle (signing configured as above):
+
+   ```bash
+   cd android && ./gradlew :app-automotive:bundleRelease
+   ```
+
+   The artifact lands in
+   `android/app-automotive/build/outputs/bundle/release/app-automotive-release.aab`.
+3. Verify the artifact and run the test passes: check the signature
+   (`jarsigner -verify`), the version code and declared features
+   (`bundletool dump manifest`), and exercise the app on the Automotive
+   emulator and a real car before promoting.
+4. If the release changes what the app does or supports, refresh the store
+   listing from [docs/play-store-listing.md](docs/play-store-listing.md)
+   (edit the doc first, then paste into the Play Console).
+5. Upload the `.aab` in the Play Console to a testing track and promote from
+   there. Two Play settings matter for cars: the release must be opted out of
+   **App integrity → automatic protection** (protected builds show Play's
+   "Something went wrong" dialog in cars that wake up offline), and the
+   bundle goes to the **Android Automotive OS** form factor of the single
+   `studio.koeda.norrklang` listing.
 
 ## Contributing
 

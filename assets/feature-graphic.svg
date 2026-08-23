@@ -1,0 +1,25 @@
+<!-- Play Store feature graphic (1024x500). Export:
+     rsvg-convert -w 1024 -h 500 assets/feature-graphic.svg -o assets/feature-graphic-1024x500.png
+     Text is rendered with the system sans stack, matching the website. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 500" width="1024" height="500"
+     font-family="Helvetica Neue, Arial, sans-serif">
+  <rect width="1024" height="500" fill="#0B0D10"/>
+
+  <!-- App icon: rounded card + the waveform from icon.svg (viewBox 18..90 mapped to 160px) -->
+  <rect x="432" y="76" width="160" height="160" rx="38" fill="#14171C"/>
+  <g transform="translate(432 76) scale(2.2222) translate(-18 -18)"
+     stroke-width="6" stroke-linecap="round" fill="none">
+    <path d="M36 46 L36 62" stroke="#4FD8C4"/>
+    <path d="M45 38 L45 70" stroke="#4FD8C4"/>
+    <path d="M54 30 L54 78" stroke="#6FE6D6"/>
+    <path d="M63 38 L63 70" stroke="#4FD8C4"/>
+    <path d="M72 46 L72 62" stroke="#4FD8C4"/>
+  </g>
+
+  <text x="512" y="330" text-anchor="middle" font-size="62" font-weight="700"
+        fill="#F2F4F7">Norrklang</text>
+  <text x="512" y="384" text-anchor="middle" font-size="29" font-weight="400"
+        fill="#98A2B3">Your music library, in your car</text>
+  <text x="512" y="434" text-anchor="middle" font-size="21" font-weight="500"
+        letter-spacing="0.5" fill="#4FD8C4" opacity="0.85">Navidrome&#160;&#160;·&#160;&#160;Subsonic&#160;&#160;·&#160;&#160;Plex</text>
+</svg>
