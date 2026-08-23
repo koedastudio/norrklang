@@ -4,7 +4,7 @@ import Base from '../layouts/Base.astro';
 import Mark from '../components/Mark.astro';
 import { GITHUB_URL, LICENSE_URL, PLAY_URL, PUBLISHER, PUBLISHER_URL, TAGLINE } from '../config';
 import carDashboard from '../assets/car-dashboard.png';
-import screenAlbums from '../assets/screen-albums.webp';
+import screenHome from '../assets/screen-home.webp';
 import screenPlayer from '../assets/screen-player.webp';
 
 const features = [
@@ -142,18 +142,18 @@ const iconPaths: Record<string, string> = {
       <div class="screens">
         <figure class="screen">
           <Image
-            src={screenAlbums}
-            alt="Album grid in the car UI: cover art with titles, artists and years, tabs for Home, Playlists and Library"
+            src={screenHome}
+            alt="Home screen in the car UI: Quick play tiles for Favourites, Recently added and Random mix, then Made for you mixes, with tabs for Home, Playlists and Library"
             widths={[400, 800]}
             sizes="(max-width: 56rem) 92vw, 30rem"
             loading="lazy"
           />
-          <figcaption>Browse artists, albums, playlists and mixes</figcaption>
+          <figcaption>Quick play and mixes made from your own library</figcaption>
         </figure>
         <figure class="screen">
           <Image
             src={screenPlayer}
-            alt="Now Playing screen in the car UI: cover art, track title, artist, seek bar and playback controls with a heart button"
+            alt="Now Playing screen in the car UI: cover art, track title, artist, elapsed and total time, seek bar, and shuffle, skip, play and heart controls"
             widths={[400, 800]}
             sizes="(max-width: 56rem) 92vw, 30rem"
             loading="lazy"

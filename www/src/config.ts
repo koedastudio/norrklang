@@ -2,7 +2,7 @@
 
 export const SITE_NAME = 'Norrklang';
 export const SITE_URL = 'https://norrklang.app';
-export const TAGLINE = 'Your Navidrome library, in your car';
+export const TAGLINE = 'Your self-hosted music, in your car';
 export const DESCRIPTION =
   'Norrklang is a music player for Navidrome and Subsonic-compatible servers ' +
   'and for Plex, made for cars running Android Automotive OS. It installs in ' +
