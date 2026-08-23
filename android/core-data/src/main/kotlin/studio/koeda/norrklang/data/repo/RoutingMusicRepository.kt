@@ -42,7 +42,10 @@ class RoutingMusicRepository @Inject constructor(
         active().albums(offset, size)
     override suspend fun recentlyAdded(size: Int): List<Album> = active().recentlyAdded(size)
     override suspend fun favoriteAlbums(size: Int): List<Album> = active().favoriteAlbums(size)
+    override suspend fun favoriteArtists(): List<Artist> = active().favoriteArtists()
     override suspend fun favoriteTracks(): List<Track> = active().favoriteTracks()
+    override suspend fun recentlyAddedTracks(size: Int): List<Track> =
+        active().recentlyAddedTracks(size)
     override suspend fun randomTracks(size: Int): List<Track> = active().randomTracks(size)
     override suspend fun recentlyPlayedAlbums(size: Int): List<Album> =
         active().recentlyPlayedAlbums(size)

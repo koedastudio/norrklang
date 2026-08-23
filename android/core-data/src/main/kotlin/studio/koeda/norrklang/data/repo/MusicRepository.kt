@@ -46,8 +46,14 @@ interface MusicRepository {
     /** Albums starred ("favorited") on the server. */
     suspend fun favoriteAlbums(size: Int = 50): List<Album>
 
+    /** Artists starred ("favorited") on the server. */
+    suspend fun favoriteArtists(): List<Artist>
+
     /** All tracks starred ("favorited") on the server. */
     suspend fun favoriteTracks(): List<Track>
+
+    /** The library's most recently added tracks, newest first. */
+    suspend fun recentlyAddedTracks(size: Int = RECENT_TRACKS_SIZE): List<Track>
 
     /** [size] random tracks; a fresh selection on every call (never cached). */
     suspend fun randomTracks(size: Int = 50): List<Track>
@@ -121,4 +127,9 @@ interface MusicRepository {
     suspend fun search(query: String): SearchResults
     suspend fun scrobble(trackId: String, submission: Boolean)
     fun invalidateCache()
+
+    companion object {
+        /** Default [recentlyAddedTracks] length — a flat 200-track browse list. */
+        const val RECENT_TRACKS_SIZE = 200
+    }
 }

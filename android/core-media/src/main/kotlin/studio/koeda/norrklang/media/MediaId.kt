@@ -13,7 +13,8 @@ import java.net.URLEncoder
  * root
  * tab/home | tab/library | tab/artists | tab/albums | tab/playlists
  * home/recently-added | home/favorite-albums | home/favorite-songs
- * home/random-mix | home/recently-played | home/most-played
+ * home/recently-added-songs | home/random-mix | home/recently-played
+ * home/most-played | home/favorite-artists
  * similar/{artistId}              ("Similar to <artist>" home mix)
  * bestof/{artistId}               ("Best of <artist>" home mix)
  * genre/{urlEncodedName}          (genre home mix)
@@ -27,6 +28,7 @@ import java.net.URLEncoder
  * track/{id}|album/{albumId}      (track with queue context)
  * track/{id}|playlist/{plId}
  * track/{id}|home/favorite-songs
+ * track/{id}|home/recently-added-songs
  * track/{id}|home/random-mix
  * track/{id}|similar/{artistId}
  * track/{id}|bestof/{artistId}
@@ -61,9 +63,11 @@ sealed interface MediaId {
 
     data object HomeRecentlyAdded : MediaId
     data object HomeFavoriteAlbums : MediaId
+    data object HomeFavoriteArtists : MediaId
     data object HomeRecentlyPlayed : MediaId
     data object HomeMostPlayed : MediaId
     data object HomeFavoriteSongs : Container
+    data object HomeRecentlyAddedSongs : Container
     data object HomeRandomMix : Container
 
     /** A generated "Similar to <artist>" mix on the home tab. */
@@ -106,9 +110,11 @@ sealed interface MediaId {
         TabPlaylists -> "tab/playlists"
         HomeRecentlyAdded -> "home/recently-added"
         HomeFavoriteAlbums -> "home/favorite-albums"
+        HomeFavoriteArtists -> "home/favorite-artists"
         HomeRecentlyPlayed -> "home/recently-played"
         HomeMostPlayed -> "home/most-played"
         HomeFavoriteSongs -> "home/favorite-songs"
+        HomeRecentlyAddedSongs -> "home/recently-added-songs"
         HomeRandomMix -> "home/random-mix"
         is HomeSimilar -> "similar/$artistId"
         is HomeBestOf -> "bestof/$artistId"
@@ -141,9 +147,11 @@ sealed interface MediaId {
                 "tab/playlists" -> return TabPlaylists
                 "home/recently-added" -> return HomeRecentlyAdded
                 "home/favorite-albums" -> return HomeFavoriteAlbums
+                "home/favorite-artists" -> return HomeFavoriteArtists
                 "home/recently-played" -> return HomeRecentlyPlayed
                 "home/most-played" -> return HomeMostPlayed
                 "home/favorite-songs" -> return HomeFavoriteSongs
+                "home/recently-added-songs" -> return HomeRecentlyAddedSongs
                 "home/random-mix" -> return HomeRandomMix
             }
             val (head, context) = encoded.split(CONTEXT_SEPARATOR, limit = 2)

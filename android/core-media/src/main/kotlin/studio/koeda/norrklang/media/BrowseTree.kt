@@ -16,7 +16,8 @@ import studio.koeda.norrklang.data.repo.MusicRepository
  * ```
  * root
  * ├── tab/home        → grid of square buttons in headed sections:
- * │                     "Quick play" (Random mix, Favourites → track lists)
+ * │                     "Quick play" (Favourites, Recently added, Random mix
+ * │                     → track lists)
  * │                     "Made for you" (Best of <artist>, Similar to <artist>
  * │                     → track lists, present only when the server has
  * │                     similarity data)
@@ -24,10 +25,11 @@ import studio.koeda.norrklang.data.repo.MusicRepository
  * │                     "Decade mixes" (populated decades → track lists)
  * ├── tab/playlists   → playlist list → tracks
  * └── tab/library     → list in headed sections:
- *                       "Albums" (Recently played, Favourites, New,
- *                       Most played → album grids;
+ *                       "Albums" (Recently added, Recently played,
+ *                       Most played, Favourite albums → album grids;
  *                       All albums → album grid → tracks)
- *                       "Artists" (All artists → artist list (A–Z headers)
+ *                       "Artists" (Favourite artists → artist list;
+ *                       All artists → artist list (A–Z headers)
  *                       → artist's albums → tracks)
  * ```
  *
@@ -94,6 +96,13 @@ internal class BrowseTree(
                 albumItems(repository.mostPlayedAlbums(SERVER_PAGE_SIZE), page, pageSize)
             MediaId.HomeFavoriteSongs ->
                 trackItems(repository.favoriteTracks(), MediaId.HomeFavoriteSongs, page, pageSize)
+            MediaId.HomeRecentlyAddedSongs ->
+                trackItems(
+                    repository.recentlyAddedTracks(),
+                    MediaId.HomeRecentlyAddedSongs,
+                    page,
+                    pageSize,
+                )
             MediaId.HomeRandomMix ->
                 trackItems(randomMix.browseTracks(), MediaId.HomeRandomMix, page, pageSize)
             is MediaId.HomeSimilar ->
@@ -101,6 +110,9 @@ internal class BrowseTree(
             is MediaId.HomeBestOf ->
                 trackItems(bestOfMixes.queueTracks(id.artistId), id, page, pageSize)
             is MediaId.CatalogMix -> trackItems(catalogMixes.queueTracks(id), id, page, pageSize)
+            MediaId.HomeFavoriteArtists ->
+                Paging.slice(repository.favoriteArtists(), page, pageSize)
+                    .map(MediaItemFactory::forArtist)
             MediaId.TabArtists -> artistListing(page, pageSize)
             MediaId.TabAlbums -> albumListing(page, pageSize)
             MediaId.TabPlaylists ->
@@ -212,8 +224,10 @@ internal class BrowseTree(
             MediaId.Root -> rootItem
             MediaId.TabHome -> homeTab()
             MediaId.HomeRecentlyAdded, MediaId.HomeFavoriteAlbums,
+            MediaId.HomeFavoriteArtists,
             MediaId.HomeRecentlyPlayed, MediaId.HomeMostPlayed,
-            MediaId.HomeFavoriteSongs, MediaId.HomeRandomMix,
+            MediaId.HomeFavoriteSongs, MediaId.HomeRecentlyAddedSongs,
+            MediaId.HomeRandomMix,
             -> HomeTile.forMediaId(id)?.let(::staticTile)
             is MediaId.HomeSimilar ->
                 similarMixes.currentMixes()

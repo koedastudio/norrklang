@@ -106,6 +106,18 @@ class PlexMusicRepository @Inject constructor(
                 .mapNotNull { it.toTrackOrNull(urls) }
         }
 
+    override suspend fun favoriteArtists(): List<Artist> =
+        cached("favorite-artists") { client, _, section ->
+            client.sectionItems(section, ItemType.ARTIST, filters = LOVED)
+                .mapNotNull { it.toArtistOrNull() }
+        }
+
+    override suspend fun recentlyAddedTracks(size: Int): List<Track> =
+        cached("recently-added-tracks/$size") { client, urls, section ->
+            client.sectionItems(section, ItemType.TRACK, sort = "addedAt:desc", size = size)
+                .mapNotNull { it.toTrackOrNull(urls) }
+        }
+
     // Deliberately uncached: the random-mix snapshot (RandomMixSession) owns
     // list stability, and a TTL here would defeat its regeneration.
     override suspend fun randomTracks(size: Int): List<Track> =

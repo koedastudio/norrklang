@@ -76,8 +76,9 @@ internal class ResumptionQueueLoader(
                     savedTrackId,
                     repository.similarTracks(container.seedArtistId),
                 )
-            is MediaId.Album, is MediaId.Playlist, MediaId.HomeFavoriteSongs ->
-                containerTracks(container)
+            is MediaId.Album, is MediaId.Playlist, MediaId.HomeFavoriteSongs,
+            MediaId.HomeRecentlyAddedSongs,
+            -> containerTracks(container)
         }
 
     suspend fun containerTracks(container: MediaId.Container): List<Track> =
@@ -85,6 +86,7 @@ internal class ResumptionQueueLoader(
             is MediaId.Album -> repository.album(container.id).tracks
             is MediaId.Playlist -> repository.playlist(container.id).tracks
             MediaId.HomeFavoriteSongs -> repository.favoriteTracks()
+            MediaId.HomeRecentlyAddedSongs -> repository.recentlyAddedTracks()
             MediaId.HomeRandomMix -> randomMix.queueTracks()
             is MediaId.HomeSimilar -> similarMixes.queueTracks(container.artistId)
             is MediaId.HomeBestOf -> bestOfMixes.queueTracks(container.artistId)

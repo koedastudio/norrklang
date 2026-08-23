@@ -4,6 +4,9 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -96,6 +99,32 @@ class SubsonicMusicRepository @Inject constructor(
     override suspend fun favoriteTracks(): List<Track> =
         cached("favorite-tracks") { client, urls ->
             client.getStarred2().song.map { it.toDomain(urls) }
+        }
+
+    override suspend fun favoriteArtists(): List<Artist> =
+        cached("favorite-artists") { client, _ ->
+            client.getStarred2().artist.map { it.toDomain() }
+        }
+
+    // The Subsonic API has no "newest songs" list — flatten the newest albums
+    // instead: newest album first, album track order within.
+    override suspend fun recentlyAddedTracks(size: Int): List<Track> =
+        cached("recently-added-tracks/$size") { client, urls ->
+            val albums = client.getAlbumList2(SubsonicClient.AlbumListType.NEWEST, size)
+            // Only the album prefix that can fill the list is fetched; the
+            // maxOf guards a missing songCount from stalling the cut-off.
+            var remaining = size
+            val needed = albums.takeWhile { album ->
+                (remaining > 0).also { remaining -= maxOf(album.songCount, 1) }
+            }
+            needed.chunked(RECENT_TRACKS_FETCH_CONCURRENCY)
+                .flatMap { chunk ->
+                    coroutineScope {
+                        chunk.map { album -> async { client.getAlbum(album.id).song } }.awaitAll()
+                    }.flatten()
+                }
+                .take(size)
+                .map { it.toDomain(urls) }
         }
 
     // Deliberately uncached: the random-mix snapshot (RandomMixSession) owns
@@ -275,6 +304,9 @@ class SubsonicMusicRepository @Inject constructor(
 
         /** Similar-artists batch fetched per seed; callers take what they need. */
         const val SIMILAR_ARTISTS_FETCH = 50
+
+        /** Parallel getAlbum calls per batch when flattening the newest albums. */
+        const val RECENT_TRACKS_FETCH_CONCURRENCY = 10
     }
 
     private fun subsonicSession(): SubsonicSession =

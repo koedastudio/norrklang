@@ -6,10 +6,12 @@
   <string name="browse_library_all_artists">All artists</string>
   <string name="browse_library_all_albums">All albums</string>
   <!-- Titled without "albums": they sit under the Library tab's "Albums" header. -->
-  <string name="browse_home_new_albums">New</string>
-  <string name="browse_home_favorite_albums">Favourites</string>
+  <string name="browse_home_recently_added_albums">Recently added</string>
+  <string name="browse_home_favorite_albums">Favourite albums</string>
+  <string name="browse_library_favorite_artists">Favourite artists</string>
   <string name="browse_home_favorite_songs">Favourites</string>
   <string name="browse_home_random_mix">Random mix</string>
+  <string name="browse_home_recently_added_songs">Recently added</string>
   <string name="browse_home_recently_played">Recently played</string>
   <string name="browse_home_most_played">Most played</string>
   <string name="browse_group_quick_play">Quick play</string>

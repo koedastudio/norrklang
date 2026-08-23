@@ -28,6 +28,28 @@ internal enum class HomeTile(
     val coverUrls: suspend (MusicRepository, RandomMixSession) -> List<String> =
         { _, _ -> emptyList() },
 ) {
+    FAVORITE_SONGS(
+        mediaId = MediaId.HomeFavoriteSongs,
+        artworkKey = "favorite-songs",
+        titleRes = R.string.browse_home_favorite_songs,
+        section = Section.QUICK_PLAY,
+        iconRes = R.drawable.ic_home_favorite_songs,
+        coverUrls = { repository, _ ->
+            repository.favoriteTracks().mapNotNull { it.artworkUrl }
+        },
+    ),
+    RECENTLY_ADDED_SONGS(
+        mediaId = MediaId.HomeRecentlyAddedSongs,
+        artworkKey = "recently-added-songs",
+        titleRes = R.string.browse_home_recently_added_songs,
+        section = Section.QUICK_PLAY,
+        iconRes = R.drawable.ic_home_recently_added,
+        // The newest albums' covers — the same covers the mix's leading
+        // tracks carry, without the track flattening behind the browse list.
+        coverUrls = { repository, _ ->
+            repository.recentlyAdded().mapNotNull { it.artworkUrl }
+        },
+    ),
     RANDOM_MIX(
         mediaId = MediaId.HomeRandomMix,
         artworkKey = "random-mix",
@@ -39,15 +61,12 @@ internal enum class HomeTile(
         // RandomMixSession.montageTracks).
         coverUrls = { _, randomMix -> randomMix.montageTracks().mapNotNull { it.artworkUrl } },
     ),
-    FAVORITE_SONGS(
-        mediaId = MediaId.HomeFavoriteSongs,
-        artworkKey = "favorite-songs",
-        titleRes = R.string.browse_home_favorite_songs,
-        section = Section.QUICK_PLAY,
-        iconRes = R.drawable.ic_home_favorite_songs,
-        coverUrls = { repository, _ ->
-            repository.favoriteTracks().mapNotNull { it.artworkUrl }
-        },
+    RECENTLY_ADDED(
+        mediaId = MediaId.HomeRecentlyAdded,
+        artworkKey = "recently-added",
+        titleRes = R.string.browse_home_recently_added_albums,
+        section = Section.ALBUMS,
+        iconRes = R.drawable.ic_home_recently_added,
     ),
     RECENTLY_PLAYED(
         mediaId = MediaId.HomeRecentlyPlayed,
@@ -56,20 +75,6 @@ internal enum class HomeTile(
         section = Section.ALBUMS,
         iconRes = R.drawable.ic_home_recently_played,
     ),
-    FAVORITE_ALBUMS(
-        mediaId = MediaId.HomeFavoriteAlbums,
-        artworkKey = "favorite-albums",
-        titleRes = R.string.browse_home_favorite_albums,
-        section = Section.ALBUMS,
-        iconRes = R.drawable.ic_home_favorite_albums,
-    ),
-    RECENTLY_ADDED(
-        mediaId = MediaId.HomeRecentlyAdded,
-        artworkKey = "recently-added",
-        titleRes = R.string.browse_home_new_albums,
-        section = Section.ALBUMS,
-        iconRes = R.drawable.ic_home_recently_added,
-    ),
     MOST_PLAYED(
         mediaId = MediaId.HomeMostPlayed,
         artworkKey = "most-played",
@@ -77,12 +82,26 @@ internal enum class HomeTile(
         section = Section.ALBUMS,
         iconRes = R.drawable.ic_home_most_played,
     ),
+    FAVORITE_ALBUMS(
+        mediaId = MediaId.HomeFavoriteAlbums,
+        artworkKey = "favorite-albums",
+        titleRes = R.string.browse_home_favorite_albums,
+        section = Section.ALBUMS,
+        iconRes = R.drawable.ic_home_favorite_albums,
+    ),
     ALL_ALBUMS(
         mediaId = MediaId.TabAlbums,
         artworkKey = "all-albums",
         titleRes = R.string.browse_library_all_albums,
         section = Section.ALBUMS,
         iconRes = R.drawable.ic_browse_albums,
+    ),
+    FAVORITE_ARTISTS(
+        mediaId = MediaId.HomeFavoriteArtists,
+        artworkKey = "favorite-artists",
+        titleRes = R.string.browse_library_favorite_artists,
+        section = Section.ARTISTS,
+        iconRes = R.drawable.ic_home_favorite_artists,
     ),
     ALL_ARTISTS(
         mediaId = MediaId.TabArtists,
