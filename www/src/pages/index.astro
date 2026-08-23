@@ -35,7 +35,7 @@ const features = [
   },
   {
     title: 'Keeps playing',
-    body: 'Picks up where you left off after the car restarts.',
+    body: 'Picks up where you left off after the car restarts, and adds similar songs when the queue runs out.',
     icon: 'refresh',
   },
 ];
@@ -43,8 +43,8 @@ const features = [
 const requirements = [
   {
     n: '01',
-    title: 'A Navidrome or Subsonic server',
-    body: 'Norrklang plays music from your own server. It’s built and tested against Navidrome, and works with other servers that speak the Subsonic API.',
+    title: 'A Navidrome, Subsonic or Plex server',
+    body: 'Norrklang plays music from your own server. It’s built and tested against Navidrome, works with other servers that speak the Subsonic API, and connects to a Plex Media Server by linking your Plex account.',
   },
   {
     n: '02',
@@ -54,7 +54,7 @@ const requirements = [
   {
     n: '03',
     title: 'A secure connection',
-    body: 'Your server needs to be reachable over HTTPS. If you already reach your Navidrome from outside your home network, you’re most likely all set.',
+    body: 'Your server needs to be reachable over HTTPS. If you already reach your Navidrome from outside your home network, you’re most likely all set. Plex connections use Plex’s own secure addresses, so there’s nothing extra to set up.',
   },
 ];
 
@@ -79,8 +79,9 @@ const iconPaths: Record<string, string> = {
         <h1>{TAGLINE}</h1>
         <p class="hero__lede">
           Norrklang is a music player for <a href="https://www.navidrome.org/">Navidrome</a> and
-          Subsonic-compatible servers, made for cars running Android Automotive OS. It installs in
-          the car itself — not on your phone — and plays your own music, straight from your server.
+          Subsonic-compatible servers — and for <a href="https://www.plex.tv/">Plex</a> — made for
+          cars running Android Automotive OS. It installs in the car itself — not on your phone —
+          and plays your own music, straight from your server.
         </p>
         <div class="hero__cta">
           <a class="btn btn--primary" href={PLAY_URL}>Get it on Google Play</a>
@@ -142,7 +143,7 @@ const iconPaths: Record<string, string> = {
         <figure class="screen">
           <Image
             src={screenAlbums}
-            alt="Album grid in the car UI: cover art with titles, artists and years, tabs for Home, Artists, Albums and Playlists"
+            alt="Album grid in the car UI: cover art with titles, artists and years, tabs for Home, Playlists and Library"
             widths={[400, 800]}
             sizes="(max-width: 56rem) 92vw, 30rem"
             loading="lazy"

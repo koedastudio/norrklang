@@ -4,9 +4,9 @@ export const SITE_NAME = 'Norrklang';
 export const SITE_URL = 'https://norrklang.app';
 export const TAGLINE = 'Your Navidrome library, in your car';
 export const DESCRIPTION =
-  'Norrklang is a music player for Navidrome and Subsonic-compatible servers, ' +
-  'made for cars running Android Automotive OS. It installs in the car itself ' +
-  'and plays your own music, straight from your server.';
+  'Norrklang is a music player for Navidrome and Subsonic-compatible servers ' +
+  'and for Plex, made for cars running Android Automotive OS. It installs in ' +
+  'the car itself and plays your own music, straight from your server.';
 
 export const APPLICATION_ID = 'studio.koeda.norrklang';
 

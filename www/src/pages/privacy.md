@@ -2,11 +2,12 @@
 layout: ../layouts/Legal.astro
 title: Privacy Policy
 description: What Norrklang stores, what it sends, and to whom. No analytics, no third parties.
-effectiveDate: 2026-08-06
+effectiveDate: 2026-08-21
 ---
 
 Norrklang is a music player for [Navidrome](https://www.navidrome.org/) and
-Subsonic-compatible servers, published by Koeda Studio for Android Automotive
+Subsonic-compatible servers and for [Plex](https://www.plex.tv/) Media Server,
+published by Koeda Studio for Android Automotive
 OS. It is a client for a server **you** choose and control. This policy
 describes what the app itself does with data, plus how this website is
 hosted.
@@ -15,12 +16,14 @@ hosted.
 
 All data the app stores stays **on your device**:
 
-- **Server connection details** — the server address, your username, and a
-  derived authentication token (never your password; the password is used once
-  at sign-in to compute the token and is not retained). The token is encrypted
-  with a key that never leaves the device's Android Keystore, so the stored
-  value is useless anywhere else. The app also opts out of Android's automatic
-  backup, so none of its data is copied into cloud backups.
+- **Server connection details** — the server address, your username, and an
+  authentication token. For Navidrome/Subsonic the token is derived from your
+  password once at sign-in (the password itself is never retained); for Plex
+  it is the token plex.tv issues when you link the device (the app never sees
+  your Plex password at all). Either token is encrypted with a key that never
+  leaves the device's Android Keystore, so the stored value is useless
+  anywhere else. The app also opts out of Android's automatic backup, so none
+  of its data is copied into cloud backups.
 - **Playback state** — the last played track and position, so playback can
   resume after a restart.
 - **Your settings** — whether scrobbling is on, any artists or playlists you
@@ -29,18 +32,42 @@ All data the app stores stays **on your device**:
   per account. Listings are held in memory only and disappear when the app
   stops; cached cover art is stored in the app's cache area and deleted when a
   different account signs in.
+- **Diagnostics** — a short log of recent errors and the last crash, shown on
+  the in-car **Settings → Diagnostics** screen to help you report problems.
+  Entries are sanitized before they are written: server addresses and URL
+  query strings — which can carry authentication tokens — are stripped. The
+  log never leaves the device on its own (see below for the report flow).
 
 Signing out deletes the stored connection details, your settings and the
-playback state. Uninstalling the app deletes everything.
+playback state. One exception: the random device identifier the app mints for
+Plex is kept, so that linking again does not register a duplicate device on
+your Plex account — it identifies the install, not you, and it leaves with the
+app. Uninstalling the app deletes everything.
 
 ## What the app sends, and to whom
 
-The app communicates **only with the server address you configure**:
+The app communicates **with the server you configure** — and with nothing
+else, apart from the plex.tv exception below:
 
 - browsing and search queries, to show your library
 - audio streaming requests, to play music
 - playback reports ("scrobbles"), so your server can track play counts
 - favourite updates you trigger (e.g. the heart button in the car)
+
+If you sign in with Plex, the app also talks to **plex.tv**, Plex's own
+service: at sign-in to link the device, and to list your servers and their
+connection addresses. Your music library, streaming and play reports still go
+only to your own Plex Media Server. Plex's handling of that service traffic is
+governed by [Plex's privacy policy](https://www.plex.tv/about/privacy-legal/),
+not this one.
+
+The **Diagnostics** screen can show a QR code that lets you share the
+sanitized log when reporting a problem. The car uploads nothing: the log is
+encoded into the link itself (in the URL fragment, which browsers do not send
+to any server), and the page at norrklang.app/report decodes it locally on
+your phone. The report reaches the developers only if you then choose to
+submit the pre-filled GitHub issue, under
+[GitHub's privacy policy](https://docs.github.com/en/site-policy/privacy-policies/github-privacy-statement).
 
 Norrklang has **no analytics, no advertising, no crash reporting, and no
 third-party services** — the app bundles no Google or other third-party
