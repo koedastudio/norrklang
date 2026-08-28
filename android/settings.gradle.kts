@@ -25,6 +25,7 @@ rootProject.name = "norrklang-android"
 
 include(":core-subsonic")
 include(":core-plex")
+include(":core-jellyfin")
 include(":core-data")
 include(":core-media")
 include(":core-ui")

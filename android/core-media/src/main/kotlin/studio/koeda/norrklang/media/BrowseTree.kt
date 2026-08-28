@@ -10,7 +10,8 @@ import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.repo.MusicRepository
 
 /**
- * Maps browse requests from the car UI onto the Navidrome library.
+ * Maps browse requests from the car UI onto the active provider's music
+ * library.
  *
  * Tree shape (AAOS guidance suggests max depth 5):
  * ```

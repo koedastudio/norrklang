@@ -34,7 +34,7 @@ import studio.koeda.norrklang.data.session.SessionManager
  *
  * The AAOS/Android Auto hosts only load artwork through a content resolver —
  * remote http(s) icon URIs are ignored. `content://<appId>.artwork/cover/<id>`
- * downloads the authenticated Subsonic `getCoverArt` response into the cache
+ * downloads the provider's authenticated artwork response into the cache
  * once and hands out read-only file descriptors.
  *
  * Exported for the (separate-process) hosts, so hardened against any caller:
@@ -281,7 +281,8 @@ class ArtworkProvider : ContentProvider() {
         connection.readTimeout = READ_TIMEOUT_MS
         try {
             // Subsonic reports errors (bad id, auth) as a 200 with a JSON body,
-            // so the content type is the reliable success signal.
+            // so the content type is the reliable success signal — and the
+            // right check for the other providers too.
             if (connection.responseCode != HttpURLConnection.HTTP_OK ||
                 connection.contentType?.startsWith("image/") != true
             ) {

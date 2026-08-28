@@ -24,12 +24,14 @@ class RoutingMusicRepository @Inject constructor(
     private val sessionManager: SessionManager,
     private val subsonic: SubsonicMusicRepository,
     private val plex: PlexMusicRepository,
+    private val jellyfin: JellyfinMusicRepository,
 ) : MusicRepository {
 
     private fun activeOrNull(): MusicRepository? =
         when (sessionManager.connectedOrNull()?.session?.provider) {
             MusicProvider.SUBSONIC -> subsonic
             MusicProvider.PLEX -> plex
+            MusicProvider.JELLYFIN -> jellyfin
             null -> null
         }
 
@@ -105,5 +107,6 @@ class RoutingMusicRepository @Inject constructor(
     override fun invalidateCache() {
         subsonic.invalidateCache()
         plex.invalidateCache()
+        jellyfin.invalidateCache()
     }
 }

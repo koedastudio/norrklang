@@ -22,6 +22,9 @@ import org.junit.rules.TemporaryFolder
 import studio.koeda.norrklang.data.settings.CredentialCipher
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
 import studio.koeda.norrklang.data.settings.StoredAccount
+import studio.koeda.norrklang.jellyfin.JellyfinAccount
+import studio.koeda.norrklang.jellyfin.JellyfinClient
+import studio.koeda.norrklang.jellyfin.JellyfinClientInfo
 import studio.koeda.norrklang.plex.PlexAccount
 import studio.koeda.norrklang.plex.PlexClientInfo
 import studio.koeda.norrklang.plex.PlexServerClient
@@ -94,6 +97,36 @@ class SessionManagerTest {
     }
 
     private val sectionOkBody = """{"MediaContainer":{"Directory":[{"key":"5","type":"artist"}]}}"""
+
+    private val jellyfinAccount = JellyfinAccount(
+        baseUrl = "https://jf.example.com",
+        serverName = "Vault",
+        userId = "u1",
+        username = "demo",
+        token = "jf-token",
+        libraryId = "lib1",
+    )
+
+    /** Every Jellyfin client answers all calls with [body]. */
+    private fun jellyfinFactory(
+        body: String,
+        status: io.ktor.http.HttpStatusCode = io.ktor.http.HttpStatusCode.OK,
+    ): (JellyfinAccount, JellyfinClientInfo) -> JellyfinClient = { account, info ->
+        JellyfinClient(
+            account.baseUrl,
+            account.token,
+            info,
+            MockEngine {
+                respond(
+                    content = body,
+                    status = status,
+                    headers = headersOf(HttpHeaders.ContentType, "application/json"),
+                )
+            },
+        )
+    }
+
+    private val libraryOkBody = """{"Id":"lib1","Name":"Music","CollectionType":"music"}"""
 
     private suspend fun SessionManager.resolvedState(): SessionManager.SessionState =
         state.first { it !is SessionManager.SessionState.Initializing }
@@ -235,6 +268,81 @@ class SessionManagerTest {
         assertIs<StoredAccount.Plex>(settings.currentAccount())
         // The Subsonic credentials are gone with the switch.
         assertNull(settings.currentCredentials())
+    }
+
+    @Test
+    fun `successful jellyfin sign-in connects and persists`() = runTest {
+        val settings = settings(backgroundScope)
+        val manager = SessionManager(
+            settings,
+            backgroundScope,
+            clientFactory(okBody),
+            jellyfinClientFactory = jellyfinFactory(libraryOkBody),
+        )
+        manager.resolvedState()
+
+        val result = manager.signInJellyfin(jellyfinAccount)
+
+        assertTrue(result.isSuccess)
+        val state = assertIs<SessionManager.SessionState.Connected>(manager.state.value)
+        assertEquals("Vault", state.session.serverLabel)
+        assertEquals("demo", state.session.accountLabel)
+        assertIs<StoredAccount.Jellyfin>(settings.currentAccount())
+    }
+
+    @Test
+    fun `rejected jellyfin sign-in stays signed out and persists nothing`() = runTest {
+        val settings = settings(backgroundScope)
+        val manager = SessionManager(
+            settings,
+            backgroundScope,
+            clientFactory(okBody),
+            jellyfinClientFactory = jellyfinFactory("", io.ktor.http.HttpStatusCode.Unauthorized),
+        )
+        manager.resolvedState()
+
+        val result = manager.signInJellyfin(jellyfinAccount)
+
+        assertTrue(result.isFailure)
+        assertIs<SessionManager.SessionState.SignedOut>(manager.state.value)
+        assertNull(settings.currentAccount())
+    }
+
+    @Test
+    fun `restores a stored jellyfin account on start`() = runTest {
+        val settings = settings(backgroundScope)
+        settings.saveJellyfin(jellyfinAccount)
+
+        val manager = SessionManager(
+            settings,
+            backgroundScope,
+            clientFactory(okBody),
+            jellyfinClientFactory = jellyfinFactory(libraryOkBody),
+        )
+
+        val state = assertIs<SessionManager.SessionState.Connected>(manager.resolvedState())
+        assertEquals("Vault", state.session.serverLabel)
+        assertEquals(jellyfinAccount.cacheFingerprint, state.session.cacheFingerprint)
+    }
+
+    @Test
+    fun `jellyfin sign-in replaces a plex session`() = runTest {
+        val settings = settings(backgroundScope)
+        val manager = SessionManager(
+            settings,
+            backgroundScope,
+            clientFactory(okBody),
+            plexFactory(sectionOkBody),
+            jellyfinFactory(libraryOkBody),
+        )
+        manager.resolvedState()
+        manager.signInPlex(plexAccount)
+
+        manager.signInJellyfin(jellyfinAccount)
+
+        val state = assertIs<SessionManager.SessionState.Connected>(manager.state.value)
+        assertEquals(MusicProvider.JELLYFIN, state.session.provider)
+        assertIs<StoredAccount.Jellyfin>(settings.currentAccount())
     }
 
     @Test

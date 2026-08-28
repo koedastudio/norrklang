@@ -1,5 +1,8 @@
 package studio.koeda.norrklang.data.session
 
+import studio.koeda.norrklang.jellyfin.JellyfinAccount
+import studio.koeda.norrklang.jellyfin.JellyfinClient
+import studio.koeda.norrklang.jellyfin.JellyfinUrlBuilder
 import studio.koeda.norrklang.plex.PlexAccount
 import studio.koeda.norrklang.plex.PlexServerClient
 import studio.koeda.norrklang.plex.PlexUrlBuilder
@@ -7,7 +10,7 @@ import studio.koeda.norrklang.subsonic.SubsonicClient
 import studio.koeda.norrklang.subsonic.SubsonicCredentials
 import studio.koeda.norrklang.subsonic.SubsonicUrlBuilder
 
-enum class MusicProvider { SUBSONIC, PLEX }
+enum class MusicProvider { SUBSONIC, PLEX, JELLYFIN }
 
 /**
  * The provider-neutral face of a signed-in server connection.
@@ -57,6 +60,19 @@ class PlexSession(
     val urlBuilder: PlexUrlBuilder = PlexUrlBuilder(account.serverUri, account.token),
 ) : ProviderSession {
     override val provider: MusicProvider get() = MusicProvider.PLEX
+    override val accountLabel: String get() = account.username
+    override val serverLabel: String get() = account.serverName
+    override val cacheFingerprint: String get() = account.cacheFingerprint
+    override fun artworkUrl(artworkId: String): String = urlBuilder.artworkUrl(artworkId)
+    override fun close() = client.close()
+}
+
+class JellyfinSession(
+    val account: JellyfinAccount,
+    val client: JellyfinClient,
+    val urlBuilder: JellyfinUrlBuilder = JellyfinUrlBuilder(account.baseUrl, account.token),
+) : ProviderSession {
+    override val provider: MusicProvider get() = MusicProvider.JELLYFIN
     override val accountLabel: String get() = account.username
     override val serverLabel: String get() = account.serverName
     override val cacheFingerprint: String get() = account.cacheFingerprint

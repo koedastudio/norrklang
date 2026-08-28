@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import dagger.hilt.android.AndroidEntryPoint
+import studio.koeda.norrklang.ui.signin.JellyfinSignInViewModel
 import studio.koeda.norrklang.ui.signin.PlexSignInViewModel
 import studio.koeda.norrklang.ui.signin.SignInFlow
 import studio.koeda.norrklang.ui.signin.SignInViewModel
@@ -22,6 +23,7 @@ class SignInActivity : ComponentActivity() {
 
     private val viewModel: SignInViewModel by viewModels()
     private val plexViewModel: PlexSignInViewModel by viewModels()
+    private val jellyfinViewModel: JellyfinSignInViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -30,6 +32,7 @@ class SignInActivity : ComponentActivity() {
                 SignInFlow(
                     subsonicViewModel = viewModel,
                     plexViewModel = plexViewModel,
+                    jellyfinViewModel = jellyfinViewModel,
                     onSignedIn = ::finish,
                     onBack = ::finish,
                 )

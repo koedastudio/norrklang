@@ -18,6 +18,7 @@ android {
 dependencies {
     api(project(":core-subsonic"))
     api(project(":core-plex"))
+    api(project(":core-jellyfin"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.datastore.preferences)
