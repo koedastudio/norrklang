@@ -9,6 +9,9 @@
   <string name="signin_provider_subsonic_desc">Connect to your own server with a URL, username and password</string>
   <string name="signin_provider_plex">Plex</string>
   <string name="signin_provider_plex_desc">Link this device with a code from your Plex account</string>
+  <string name="signin_provider_jellyfin">Jellyfin</string>
+  <string name="signin_provider_jellyfin_desc">Connect to your own server with a URL, username and password</string>
+  <string name="signin_subtitle_jellyfin">Connect to your Jellyfin server</string>
 
   <string name="plex_link_title">Link your Plex account</string>
   <string name="plex_link_instruction">On your phone or computer, go to plex.tv/link and enter this code — or scan the QR code</string>
@@ -40,6 +43,7 @@
   <string name="signin_error_network">Can\'t reach the server. Check the address and your connection.</string>
   <string name="signin_error_generic">Something went wrong: %1$s</string>
   <string name="signin_error_missing_fields">Fill in server, username and password</string>
+  <string name="signin_error_no_music_library">This server has no music library</string>
 
   <string name="action_back">Back</string>
 

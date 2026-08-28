@@ -18,6 +18,8 @@ import org.junit.rules.TemporaryFolder
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.data.settings.CredentialCipher
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
+import studio.koeda.norrklang.jellyfin.JellyfinAccount
+import studio.koeda.norrklang.jellyfin.JellyfinClient
 import studio.koeda.norrklang.plex.PlexAccount
 import studio.koeda.norrklang.plex.PlexServerClient
 import studio.koeda.norrklang.subsonic.SubsonicClient
@@ -48,12 +50,25 @@ class RoutingMusicRepositoryTest {
         username = "demo",
     )
 
+    private val jellyfinAccount = JellyfinAccount(
+        baseUrl = "https://jf.example.com",
+        serverName = "Vault",
+        userId = "u1",
+        username = "demo",
+        token = "jf-token",
+        libraryId = "lib1",
+    )
+
     private val requests = mutableListOf<String>()
 
     private fun engine() = MockEngine { request ->
-        requests.add(request.url.toString())
+        val url = request.url.toString()
+        requests.add(url)
+        // A single body serves every provider: it parses as an empty Plex
+        // MediaContainer AND an empty Jellyfin items envelope, and carries
+        // the Id the Jellyfin sign-in's validateLibrary lookup requires.
         respond(
-            content = """{"MediaContainer":{}}""",
+            content = """{"MediaContainer":{},"Id":"lib1","Items":[]}""",
             headers = headersOf(HttpHeaders.ContentType, "application/json"),
         )
     }
@@ -75,11 +90,13 @@ class RoutingMusicRepositoryTest {
             scope,
             { creds: SubsonicCredentials -> SubsonicClient(creds, engine()) },
             { acc, info -> PlexServerClient(acc.serverUri, acc.token, info, engine()) },
+            { acc, info -> JellyfinClient(acc.baseUrl, acc.token, info, engine()) },
         )
         val repository = RoutingMusicRepository(
             sessionManager,
             SubsonicMusicRepository(sessionManager, settings, "studio.koeda.norrklang", scope),
             PlexMusicRepository(sessionManager, "studio.koeda.norrklang", scope),
+            JellyfinMusicRepository(sessionManager, "studio.koeda.norrklang", scope),
         )
         return TestEnv(sessionManager, repository)
     }
@@ -125,6 +142,27 @@ class RoutingMusicRepositoryTest {
             durationMs = 180_000,
         )
         assertEquals(true, "/:/timeline" in requests.last())
+    }
+
+    @Test
+    fun `jellyfin session routes calls to the jellyfin backend`() = runTest {
+        val env = env(backgroundScope)
+        env.sessionManager.signInJellyfin(jellyfinAccount).getOrThrow()
+
+        env.repository.artists()
+
+        // Landed on the Jellyfin library, as an album-artist listing.
+        val url = requests.last { "/Artists/AlbumArtists" in it }
+        assertEquals(true, "ParentId=lib1" in url)
+        assertEquals(10_000L, env.repository.playbackReportIntervalMs)
+
+        env.repository.reportPlayState(
+            "100",
+            PlayState.PAUSED,
+            positionMs = 61_000,
+            durationMs = 180_000,
+        )
+        assertEquals(true, "/Sessions/Playing/Progress" in requests.last())
     }
 
     @Test

@@ -1,5 +1,6 @@
 package studio.koeda.norrklang.data.settings
 
+import studio.koeda.norrklang.jellyfin.JellyfinAccount
 import studio.koeda.norrklang.plex.PlexAccount
 import studio.koeda.norrklang.subsonic.SubsonicCredentials
 
@@ -7,4 +8,5 @@ import studio.koeda.norrklang.subsonic.SubsonicCredentials
 sealed interface StoredAccount {
     data class Subsonic(val credentials: SubsonicCredentials) : StoredAccount
     data class Plex(val account: PlexAccount) : StoredAccount
+    data class Jellyfin(val account: JellyfinAccount) : StoredAccount
 }

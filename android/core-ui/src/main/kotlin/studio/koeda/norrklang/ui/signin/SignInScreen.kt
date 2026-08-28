@@ -80,6 +80,7 @@ fun SignInScreen(
     onConnect: () -> Unit,
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
+    subtitle: String = stringResource(R.string.signin_subtitle),
 ) {
     val dimens = LocalFormDimens.current
 
@@ -113,7 +114,7 @@ fun SignInScreen(
                 color = MaterialTheme.colorScheme.primary,
             )
             Text(
-                text = stringResource(R.string.signin_subtitle),
+                text = subtitle,
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -192,6 +193,8 @@ private fun errorText(error: SignInViewModel.UiState.Error): String = when (erro
     SignInViewModel.ErrorKind.MISSING_FIELDS -> stringResource(R.string.signin_error_missing_fields)
     SignInViewModel.ErrorKind.AUTH -> stringResource(R.string.signin_error_auth)
     SignInViewModel.ErrorKind.NETWORK -> stringResource(R.string.signin_error_network)
+    SignInViewModel.ErrorKind.NO_MUSIC_LIBRARY ->
+        stringResource(R.string.signin_error_no_music_library)
     SignInViewModel.ErrorKind.GENERIC ->
         stringResource(R.string.signin_error_generic, error.detail ?: "unknown error")
 }

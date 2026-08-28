@@ -19,6 +19,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.media.NorrklangMediaLibraryService
 import studio.koeda.norrklang.ui.settings.SettingsViewModel
+import studio.koeda.norrklang.ui.signin.JellyfinSignInViewModel
 import studio.koeda.norrklang.ui.signin.PlexSignInViewModel
 import studio.koeda.norrklang.ui.signin.SignInFlow
 import studio.koeda.norrklang.ui.signin.SignInViewModel
@@ -34,6 +35,7 @@ class MainActivity : ComponentActivity() {
 
     private val signInViewModel: SignInViewModel by viewModels()
     private val plexSignInViewModel: PlexSignInViewModel by viewModels()
+    private val jellyfinSignInViewModel: JellyfinSignInViewModel by viewModels()
     private val settingsViewModel: SettingsViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -49,6 +51,7 @@ class MainActivity : ComponentActivity() {
                     else -> SignInFlow(
                         subsonicViewModel = signInViewModel,
                         plexViewModel = plexSignInViewModel,
+                        jellyfinViewModel = jellyfinSignInViewModel,
                         onSignedIn = {},
                     )
                 }

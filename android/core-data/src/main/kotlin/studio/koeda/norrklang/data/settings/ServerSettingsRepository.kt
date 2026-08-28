@@ -20,6 +20,7 @@ import java.util.UUID
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import studio.koeda.norrklang.data.diagnostics.Diagnostics
+import studio.koeda.norrklang.jellyfin.JellyfinAccount
 import studio.koeda.norrklang.plex.PlexAccount
 import studio.koeda.norrklang.subsonic.SubsonicCredentials
 import studio.koeda.norrklang.subsonic.SubsonicTokenAuth
@@ -41,9 +42,9 @@ class ServerSettingsRepository @Inject constructor(
 
     private object Keys {
         /**
-         * "subsonic" | "plex". Absent on pre-Plex installs — [SERVER_URL]
-         * present then implies Subsonic, so existing users stay signed in
-         * without a migration write.
+         * "subsonic" | "plex" | "jellyfin". Absent on pre-Plex installs —
+         * [SERVER_URL] present then implies Subsonic, so existing users stay
+         * signed in without a migration write.
          */
         val PROVIDER = stringPreferencesKey("provider")
 
@@ -64,6 +65,19 @@ class ServerSettingsRepository @Inject constructor(
         val PLEX_MACHINE_ID = stringPreferencesKey("plex_machine_id")
         val PLEX_SECTION_ID = stringPreferencesKey("plex_section_id")
         val PLEX_USERNAME = stringPreferencesKey("plex_username")
+
+        /**
+         * Jellyfin's DeviceId — the device identity for this install. Minted
+         * once and NEVER cleared, even on sign-out: signing in with a new id
+         * would register a duplicate device on the server's dashboard.
+         */
+        val JELLYFIN_DEVICE_ID = stringPreferencesKey("jellyfin_device_id")
+        val JELLYFIN_TOKEN = stringPreferencesKey("jellyfin_token")
+        val JELLYFIN_BASE_URL = stringPreferencesKey("jellyfin_base_url")
+        val JELLYFIN_SERVER_NAME = stringPreferencesKey("jellyfin_server_name")
+        val JELLYFIN_USER_ID = stringPreferencesKey("jellyfin_user_id")
+        val JELLYFIN_USERNAME = stringPreferencesKey("jellyfin_username")
+        val JELLYFIN_LIBRARY_ID = stringPreferencesKey("jellyfin_library_id")
         val LAST_MEDIA_ID = stringPreferencesKey("last_media_id")
         val LAST_POSITION_MS = longPreferencesKey("last_position_ms")
         val STREAM_ORIGINAL = booleanPreferencesKey("stream_original")
@@ -118,6 +132,9 @@ class ServerSettingsRepository @Inject constructor(
         if (prefs[Keys.PROVIDER] == PROVIDER_PLEX) {
             return decodePlex(prefs)?.let { StoredAccount.Plex(it) }
         }
+        if (prefs[Keys.PROVIDER] == PROVIDER_JELLYFIN) {
+            return decodeJellyfin(prefs)?.let { StoredAccount.Jellyfin(it) }
+        }
         // No provider key (pre-Plex install) or "subsonic": Subsonic path,
         // including its legacy migrations.
         return currentCredentials()?.let { StoredAccount.Subsonic(it) }
@@ -138,6 +155,22 @@ class ServerSettingsRepository @Inject constructor(
         )
     }
 
+    private fun decodeJellyfin(prefs: Preferences): JellyfinAccount? {
+        val baseUrl = prefs[Keys.JELLYFIN_BASE_URL] ?: return null
+        val userId = prefs[Keys.JELLYFIN_USER_ID] ?: return null
+        val libraryId = prefs[Keys.JELLYFIN_LIBRARY_ID] ?: return null
+        // null (undecryptable — Keystore key gone) means signed out.
+        val token = prefs[Keys.JELLYFIN_TOKEN]?.let(cipher::decrypt) ?: return null
+        return JellyfinAccount(
+            baseUrl = baseUrl,
+            serverName = prefs[Keys.JELLYFIN_SERVER_NAME] ?: baseUrl,
+            userId = userId,
+            username = prefs[Keys.JELLYFIN_USERNAME] ?: "",
+            token = token,
+            libraryId = libraryId,
+        )
+    }
+
     suspend fun save(credentials: SubsonicCredentials) {
         dataStore.edit { prefs ->
             prefs[Keys.PROVIDER] = PROVIDER_SUBSONIC
@@ -147,6 +180,7 @@ class ServerSettingsRepository @Inject constructor(
             prefs[Keys.AUTH_TOKEN] = cipher.encrypt(credentials.auth.token)
             prefs.remove(Keys.LEGACY_PASSWORD)
             removePlexAccount(prefs)
+            removeJellyfinAccount(prefs)
         }
     }
 
@@ -160,6 +194,21 @@ class ServerSettingsRepository @Inject constructor(
             prefs[Keys.PLEX_SECTION_ID] = account.sectionId
             prefs[Keys.PLEX_USERNAME] = account.username
             removeSubsonicAccount(prefs)
+            removeJellyfinAccount(prefs)
+        }
+    }
+
+    suspend fun saveJellyfin(account: JellyfinAccount) {
+        dataStore.edit { prefs ->
+            prefs[Keys.PROVIDER] = PROVIDER_JELLYFIN
+            prefs[Keys.JELLYFIN_TOKEN] = cipher.encrypt(account.token)
+            prefs[Keys.JELLYFIN_BASE_URL] = account.baseUrl
+            prefs[Keys.JELLYFIN_SERVER_NAME] = account.serverName
+            prefs[Keys.JELLYFIN_USER_ID] = account.userId
+            prefs[Keys.JELLYFIN_USERNAME] = account.username
+            prefs[Keys.JELLYFIN_LIBRARY_ID] = account.libraryId
+            removeSubsonicAccount(prefs)
+            removePlexAccount(prefs)
         }
     }
 
@@ -175,6 +224,20 @@ class ServerSettingsRepository @Inject constructor(
             if (prefs[Keys.PLEX_CLIENT_ID] == null) prefs[Keys.PLEX_CLIENT_ID] = minted
         }
         return prefs[Keys.PLEX_CLIENT_ID] ?: minted
+    }
+
+    /**
+     * This install's Jellyfin DeviceId, minted on first use. The edit
+     * re-checks under DataStore's own serialization so concurrent first calls
+     * agree on one id.
+     */
+    suspend fun jellyfinDeviceId(): String {
+        dataStore.data.first()[Keys.JELLYFIN_DEVICE_ID]?.let { return it }
+        val minted = UUID.randomUUID().toString()
+        val prefs = dataStore.edit { prefs ->
+            if (prefs[Keys.JELLYFIN_DEVICE_ID] == null) prefs[Keys.JELLYFIN_DEVICE_ID] = minted
+        }
+        return prefs[Keys.JELLYFIN_DEVICE_ID] ?: minted
     }
 
     /**
@@ -206,14 +269,15 @@ class ServerSettingsRepository @Inject constructor(
      * Removes everything tied to the signed-in account: credentials, the
      * resumption pointer, and the scrobble exclusion sets (both hold ids
      * minted by the old server). Device-wide state — [streamOriginal], the
-     * scrobble master toggle, and the Plex client id — survives a sign-out
-     * or server switch.
+     * scrobble master toggle, and the Plex/Jellyfin device ids — survives a
+     * sign-out or server switch.
      */
     suspend fun clearAccount() {
         dataStore.edit { prefs ->
             prefs.remove(Keys.PROVIDER)
             removeSubsonicAccount(prefs)
             removePlexAccount(prefs)
+            removeJellyfinAccount(prefs)
             prefs.remove(Keys.LAST_MEDIA_ID)
             prefs.remove(Keys.LAST_POSITION_MS)
             prefs.remove(Keys.SCROBBLE_EXCLUDED_ARTISTS)
@@ -237,6 +301,16 @@ class ServerSettingsRepository @Inject constructor(
         prefs.remove(Keys.PLEX_MACHINE_ID)
         prefs.remove(Keys.PLEX_SECTION_ID)
         prefs.remove(Keys.PLEX_USERNAME)
+    }
+
+    /** Keeps [Keys.JELLYFIN_DEVICE_ID] — the device identity outlives sign-ins. */
+    private fun removeJellyfinAccount(prefs: MutablePreferences) {
+        prefs.remove(Keys.JELLYFIN_TOKEN)
+        prefs.remove(Keys.JELLYFIN_BASE_URL)
+        prefs.remove(Keys.JELLYFIN_SERVER_NAME)
+        prefs.remove(Keys.JELLYFIN_USER_ID)
+        prefs.remove(Keys.JELLYFIN_USERNAME)
+        prefs.remove(Keys.JELLYFIN_LIBRARY_ID)
     }
 
     // --- Playback quality ---
@@ -267,10 +341,10 @@ class ServerSettingsRepository @Inject constructor(
 
     /**
      * What playback reporting is allowed. The app only talks to the user's
-     * own server (Subsonic `scrobble`); the server forwards plays to
-     * Last.fm/ListenBrainz. The API has no "count internally but don't
-     * forward" variant, so suppressing a play here also keeps it out of the
-     * server's play counts and history.
+     * own server (Subsonic `scrobble`, Plex timeline, Jellyfin sessions);
+     * the server forwards plays to Last.fm/ListenBrainz. The APIs have no
+     * "count internally but don't forward" variant, so suppressing a play
+     * here also keeps it out of the server's play counts and history.
      */
     data class ScrobbleSettings(
         val enabled: Boolean,
@@ -346,5 +420,6 @@ class ServerSettingsRepository @Inject constructor(
 
         private const val PROVIDER_SUBSONIC = "subsonic"
         private const val PROVIDER_PLEX = "plex"
+        private const val PROVIDER_JELLYFIN = "jellyfin"
     }
 }

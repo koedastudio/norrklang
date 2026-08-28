@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.PlayCircleFilled
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -37,18 +38,19 @@ import studio.koeda.norrklang.ui.components.BackButton
 import studio.koeda.norrklang.ui.theme.LocalFormDimens
 
 /** Hand-rolled page state, same pattern as SettingsScreen's SettingsPage. */
-private enum class SignInPage { ProviderPicker, SubsonicForm, Plex }
+private enum class SignInPage { ProviderPicker, SubsonicForm, Plex, JellyfinForm }
 
 /**
- * The full sign-in flow: provider picker → Navidrome/Subsonic form or the
- * Plex link flow. Shared by both apps; [onBack] (when non-null) renders the
- * explicit back affordance the picker page needs on AAOS, and sub-pages
- * always offer back-to-picker.
+ * The full sign-in flow: provider picker → Navidrome/Subsonic form, the
+ * Plex link flow, or the Jellyfin form. Shared by both apps; [onBack] (when
+ * non-null) renders the explicit back affordance the picker page needs on
+ * AAOS, and sub-pages always offer back-to-picker.
  */
 @Composable
 fun SignInFlow(
     subsonicViewModel: SignInViewModel,
     plexViewModel: PlexSignInViewModel,
+    jellyfinViewModel: JellyfinSignInViewModel,
     onSignedIn: () -> Unit,
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
@@ -57,6 +59,10 @@ fun SignInFlow(
 
     LaunchedEffect(plexViewModel.state) {
         if (plexViewModel.state is PlexSignInViewModel.UiState.Done) onSignedIn()
+    }
+
+    LaunchedEffect(jellyfinViewModel.state) {
+        if (jellyfinViewModel.state is SignInViewModel.UiState.Done) onSignedIn()
     }
 
     // start() from an effect, not the picker's click handler: after process
@@ -71,6 +77,7 @@ fun SignInFlow(
         SignInPage.ProviderPicker -> ProviderPickerPage(
             onPickSubsonic = { page = SignInPage.SubsonicForm },
             onPickPlex = { page = SignInPage.Plex },
+            onPickJellyfin = { page = SignInPage.JellyfinForm },
             modifier = modifier,
             onBack = onBack,
         )
@@ -93,6 +100,20 @@ fun SignInFlow(
                 page = SignInPage.ProviderPicker
             },
         )
+
+        SignInPage.JellyfinForm -> SignInScreen(
+            serverUrl = jellyfinViewModel.serverUrl,
+            username = jellyfinViewModel.username,
+            password = jellyfinViewModel.password,
+            state = jellyfinViewModel.state,
+            onServerUrlChange = jellyfinViewModel::onServerUrlChange,
+            onUsernameChange = jellyfinViewModel::onUsernameChange,
+            onPasswordChange = jellyfinViewModel::onPasswordChange,
+            onConnect = jellyfinViewModel::connect,
+            modifier = modifier,
+            onBack = { page = SignInPage.ProviderPicker },
+            subtitle = stringResource(R.string.signin_subtitle_jellyfin),
+        )
     }
 }
 
@@ -100,6 +121,7 @@ fun SignInFlow(
 private fun ProviderPickerPage(
     onPickSubsonic: () -> Unit,
     onPickPlex: () -> Unit,
+    onPickJellyfin: () -> Unit,
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
 ) {
@@ -150,6 +172,12 @@ private fun ProviderPickerPage(
                 title = stringResource(R.string.signin_provider_plex),
                 description = stringResource(R.string.signin_provider_plex_desc),
                 onClick = onPickPlex,
+            )
+            ProviderCard(
+                icon = Icons.Filled.LibraryMusic,
+                title = stringResource(R.string.signin_provider_jellyfin),
+                description = stringResource(R.string.signin_provider_jellyfin_desc),
+                onClick = onPickJellyfin,
             )
         }
     }
