@@ -3,6 +3,7 @@ package studio.koeda.norrklang.media
 import android.app.PendingIntent
 import android.content.Context
 import android.os.Bundle
+import android.provider.MediaStore
 import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
@@ -43,6 +44,7 @@ internal class LibrarySessionCallback(
     private val repository: MusicRepository,
     private val browseTree: BrowseTree,
     private val resumption: ResumptionQueueLoader,
+    private val voiceSearch: VoiceSearchResolver,
     private val signInIntent: PendingIntent,
 ) : MediaLibrarySession.Callback {
 
@@ -255,6 +257,15 @@ internal class LibrarySessionCallback(
         startPositionMs: Long,
     ): ListenableFuture<MediaItemsWithStartPosition> = scope.future {
         awaitResolvedSession()
+        // Assistant voice requests (legacy playFromSearch) arrive as one item
+        // with no media id, carrying only requestMetadata.
+        mediaItems.singleOrNull()?.takeIf(::isVoiceRequest)?.let { requested ->
+            return@future MediaItemsWithStartPosition(
+                resolveVoiceRequest(requested),
+                /* startIndex = */ 0,
+                startPositionMs,
+            )
+        }
         // Tapping one track in an album/playlist sends a single item carrying a
         // container context — rebuild the sibling queue around it.
         val single = mediaItems.singleOrNull()?.let { MediaId.parse(it.mediaId) }
@@ -342,6 +353,57 @@ internal class LibrarySessionCallback(
             else -> emptyList()
         }
 
+    /**
+     * A voice/Assistant media request: no media id and no URI, only
+     * requestMetadata (whose query is empty for "play some music").
+     * A mediaUri request (playFromUri) is not ours to interpret.
+     */
+    private fun isVoiceRequest(item: MediaItem): Boolean =
+        item.mediaId.isEmpty() &&
+            item.localConfiguration == null &&
+            item.requestMetadata.mediaUri == null
+
+    /**
+     * Throws when nothing matched (or the lookup failed): a failed future
+     * leaves the current queue playing, where an empty success would replace
+     * it with silence on a misheard query.
+     */
+    private suspend fun resolveVoiceRequest(item: MediaItem): List<MediaItem> {
+        val queue = try {
+            voiceSearch.resolve(voiceRequest(item))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Diagnostics.record("voice-search", e)
+            throw e
+        }
+        if (queue == null) {
+            throw IllegalArgumentException("No match for voice query")
+        }
+        return queue.tracks.map { MediaItemFactory.playableTrack(it, queue.container) }
+    }
+
+    private fun voiceRequest(item: MediaItem): VoiceSearchResolver.Request {
+        val extras = item.requestMetadata.extras
+        val focus = when (extras?.getString(MediaStore.EXTRA_MEDIA_FOCUS)) {
+            MediaStore.Audio.Artists.ENTRY_CONTENT_TYPE -> VoiceSearchResolver.Focus.Artist
+            MediaStore.Audio.Albums.ENTRY_CONTENT_TYPE -> VoiceSearchResolver.Focus.Album
+            MediaStore.Audio.Media.ENTRY_CONTENT_TYPE -> VoiceSearchResolver.Focus.Title
+            FOCUS_PLAYLIST -> VoiceSearchResolver.Focus.Playlist
+            FOCUS_GENRE -> VoiceSearchResolver.Focus.Genre
+            else -> VoiceSearchResolver.Focus.Unstructured
+        }
+        return VoiceSearchResolver.Request(
+            query = item.requestMetadata.searchQuery.orEmpty(),
+            focus = focus,
+            artist = extras?.getString(MediaStore.EXTRA_MEDIA_ARTIST),
+            album = extras?.getString(MediaStore.EXTRA_MEDIA_ALBUM),
+            title = extras?.getString(MediaStore.EXTRA_MEDIA_TITLE),
+            playlist = extras?.getString(MediaStore.EXTRA_MEDIA_PLAYLIST),
+            genre = extras?.getString(MediaStore.EXTRA_MEDIA_GENRE),
+        )
+    }
+
     private suspend fun searchItems(query: String): List<MediaItem> {
         val results = repository.search(query)
         // Broad-to-specific sections; consecutive items sharing a group title
@@ -418,6 +480,11 @@ internal class LibrarySessionCallback(
          * it, and cold-boot Keystore contention deserves some slack first.
          */
         private const val SESSION_RESOLVE_TIMEOUT_MS = 15_000L
+
+        // Focus values whose MediaStore.Audio owners (Playlists, Genres) are
+        // deprecated; assistants still send them.
+        private const val FOCUS_PLAYLIST = "vnd.android.cursor.item/playlist"
+        private const val FOCUS_GENRE = "vnd.android.cursor.item/genre"
 
         // Search section caps: tracks get more room since a spoken "play X"
         // resolves against them; the repository caches more per query, so
