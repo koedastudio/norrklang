@@ -118,6 +118,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
             repository = repository,
             browseTree = browseTree,
             resumption = resumptionLoader,
+            voiceSearch = VoiceSearchResolver(repository, resumptionLoader::containerTracks),
             signInIntent = signInPendingIntent(),
         )
 
