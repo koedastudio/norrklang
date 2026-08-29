@@ -14,6 +14,7 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.session.CacheBitmapLoader
@@ -168,6 +169,13 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
             .setConnectTimeoutMs(HTTP_CONNECT_TIMEOUT_MS)
             .setReadTimeoutMs(HTTP_READ_TIMEOUT_MS)
             .setAllowCrossProtocolRedirects(true)
+        // Capped tiers are live server transcodes: chunked, no length, no
+        // seek table — without this flag the extractor marks them unseekable
+        // and the car host freezes the scrubber. All three providers are
+        // pinned to CBR MP3 when capped, so byte-estimate seeking is sound;
+        // the seek-bar duration comes from MediaMetadata.durationMs.
+        val extractorsFactory = DefaultExtractorsFactory()
+            .setConstantBitrateSeekingAlwaysEnabled(true)
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
                 MIN_BUFFER_MS,
@@ -179,15 +187,21 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
 
         val exoPlayer = ExoPlayer.Builder(this)
             .setMediaSourceFactory(
-                DefaultMediaSourceFactory(
-                    ResolvingDataSource.Factory(
-                        DefaultDataSource.Factory(this, httpDataSourceFactory),
-                        resolver,
-                    ),
-                )
-                    .setLoadErrorHandlingPolicy(
-                        DefaultLoadErrorHandlingPolicy(LOAD_RETRY_COUNT),
-                    ),
+                // The metadata-duration wrapper keeps a chunked transcode
+                // from registering as a LIVE stream, which would hide the
+                // car's seek bar (see MetadataDurationMediaSourceFactory).
+                MetadataDurationMediaSourceFactory(
+                    DefaultMediaSourceFactory(
+                        ResolvingDataSource.Factory(
+                            DefaultDataSource.Factory(this, httpDataSourceFactory),
+                            resolver,
+                        ),
+                        extractorsFactory,
+                    )
+                        .setLoadErrorHandlingPolicy(
+                            DefaultLoadErrorHandlingPolicy(LOAD_RETRY_COUNT),
+                        ),
+                ),
             )
             .setLoadControl(loadControl)
             .setAudioAttributes(
