@@ -113,6 +113,42 @@ internal fun SettingsToggleRow(
     }
 }
 
+/** Plain navigation row into a settings sub-page. */
+@Composable
+internal fun NavigationRow(
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    val dimens = LocalFormDimens.current
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = dimens.itemSpacing),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 /** Navigation row into one exclusion picker, with the current count trailing. */
 @Composable
 internal fun ExclusionRow(
@@ -161,33 +197,11 @@ internal fun ExclusionRow(
 /** Navigation row into the on-device error log (see DiagnosticsPage). */
 @Composable
 internal fun DiagnosticsRow(onClick: () -> Unit) {
-    val dimens = LocalFormDimens.current
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = dimens.itemSpacing),
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = stringResource(R.string.settings_diagnostics),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            Text(
-                text = stringResource(R.string.settings_diagnostics_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
+    NavigationRow(
+        title = stringResource(R.string.settings_diagnostics),
+        subtitle = stringResource(R.string.settings_diagnostics_hint),
+        onClick = onClick,
+    )
 }
 
 /**

@@ -4,6 +4,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import studio.koeda.norrklang.data.model.StreamRef
+import studio.koeda.norrklang.data.session.MusicProvider
+import studio.koeda.norrklang.jellyfin.JellyfinUrlBuilder
+import studio.koeda.norrklang.plex.PlexClientInfo
 import studio.koeda.norrklang.plex.PlexUrlBuilder
 import studio.koeda.norrklang.subsonic.SubsonicCredentials
 import studio.koeda.norrklang.subsonic.SubsonicTokenAuth
@@ -51,10 +55,37 @@ class JdkApiOnDeviceTest {
 
     @Test
     fun plexUrlBuildingRunsOnThisAndroidVersion() {
-        val urls = PlexUrlBuilder(baseUrl = "https://plex.example:32400", token = "tok en+&")
+        val urls = PlexUrlBuilder(
+            baseUrl = "https://plex.example:32400",
+            token = "tok en+&",
+            clientInfo = PlexClientInfo(clientId = "client-1", version = "1.0"),
+        )
         val part = urls.partUrl("/library/parts/1/2/file.flac")
         assertTrue(part, "X-Plex-Token=tok+en%2B%26" in part)
+        val transcode = urls.streamUrl("100", "/library/parts/1/2/file.flac", maxKbps = 320)
+        assertTrue(transcode, "path=%2Flibrary%2Fmetadata%2F100" in transcode)
         val art = urls.artworkUrl("/library/metadata/1/thumb/2")
         assertTrue(art, "url=%2Flibrary%2Fmetadata%2F1%2Fthumb%2F2" in art)
+    }
+
+    @Test
+    fun jellyfinUrlBuildingRunsOnThisAndroidVersion() {
+        val urls = JellyfinUrlBuilder(
+            baseUrl = "https://jf.example",
+            token = "tok en+&",
+            userId = "u1",
+            deviceId = "d1",
+        )
+        val stream = urls.streamUrl("id &x", maxKbps = 192)
+        assertTrue(stream, "MaxStreamingBitrate=192000" in stream)
+        assertTrue(stream, "api_key=tok+en%2B%26" in stream)
+    }
+
+    @Test
+    fun streamRefCodecRunsOnThisAndroidVersion() {
+        // StreamRef's URLEncoder/URLDecoder calls run on every queue build
+        // and every load-time resolve.
+        val ref = StreamRef(MusicProvider.SUBSONIC, "id with space & ampersand")
+        assertTrue(ref.encode(), StreamRef.parse(ref.encode()) == ref)
     }
 }

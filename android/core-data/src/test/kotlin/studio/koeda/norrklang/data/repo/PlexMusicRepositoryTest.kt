@@ -123,8 +123,9 @@ class PlexMusicRepositoryTest {
         assertEquals(3, t.trackNumber)
         assertEquals(1, t.discNumber)
         assertEquals(215, t.durationSec)
+        // Canonical ref, resolved to a real URL at load time (StreamUrlResolver).
         assertEquals(
-            "https://vault.example.com:32400/library/parts/100/1/file.flac?X-Plex-Token=plex-token",
+            "norrklang-stream://plex?id=100&part=%2Flibrary%2Fparts%2F100%2F1%2Ffile.flac",
             t.streamUrl,
         )
         // Artwork is indirected through the in-app provider, thumb path encoded.
