@@ -31,10 +31,10 @@ class SubsonicUrlBuilderTest {
     }
 
     @Test
-    fun `capped stream url sends maxBitRate and lets the server pick the format`() {
+    fun `capped stream url sends maxBitRate and pins seekable mp3`() {
         val url = builder.streamUrl("track-42", maxKbps = 192)
         assertTrue("&maxBitRate=192" in url)
-        assertTrue("format=" !in url)
+        assertTrue("&format=mp3" in url)
         assertTrue("&id=track-42" in url)
     }
 

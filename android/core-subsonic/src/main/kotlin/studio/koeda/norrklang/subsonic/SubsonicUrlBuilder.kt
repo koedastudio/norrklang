@@ -33,14 +33,21 @@ class SubsonicUrlBuilder(
      * Original requests `format=raw` to disable server-side transcoding:
      * ffmpeg output lacks gapless metadata (LAME/iTunSMPB tags), so every
      * track boundary clicks or gaps, while the original file keeps its tags
-     * and plays gaplessly. Capped sends `maxBitRate` and lets the server's
-     * transcoding config pick the output format.
+     * and plays gaplessly. Capped pins `format=mp3`: a live transcode has no
+     * length or seek table, and CBR MP3 is the one format the player can
+     * still seek by byte estimate (see the media service's extractor flags) —
+     * a server-chosen Opus/OGG stream would freeze the car's scrubber.
      */
     fun streamUrl(trackId: String, maxKbps: Int? = null): String =
         if (maxKbps == null) {
             url("stream", "id" to trackId, "format" to "raw")
         } else {
-            url("stream", "id" to trackId, "maxBitRate" to maxKbps.toString())
+            url(
+                "stream",
+                "id" to trackId,
+                "format" to "mp3",
+                "maxBitRate" to maxKbps.toString(),
+            )
         }
 
     fun coverArtUrl(coverArtId: String, size: Int = DEFAULT_ART_SIZE): String =
