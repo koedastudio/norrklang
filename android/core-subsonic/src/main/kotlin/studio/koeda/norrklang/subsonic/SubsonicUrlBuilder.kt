@@ -13,12 +13,7 @@ import java.net.URLEncoder
  */
 class SubsonicUrlBuilder(
     private val credentials: SubsonicCredentials,
-    private val streamOriginal: Boolean = true,
 ) {
-
-    /** Same credentials, different stream preference (builders are immutable). */
-    fun withStreamOriginal(enabled: Boolean): SubsonicUrlBuilder =
-        if (enabled == streamOriginal) this else SubsonicUrlBuilder(credentials, enabled)
 
     private fun url(endpoint: String, vararg params: Pair<String, String>): String =
         buildString {
@@ -33,17 +28,19 @@ class SubsonicUrlBuilder(
         }
 
     /**
-     * With [streamOriginal], `format=raw` disables server-side transcoding:
+     * Stream URL for a track, at the original quality or capped at [maxKbps].
+     *
+     * Original requests `format=raw` to disable server-side transcoding:
      * ffmpeg output lacks gapless metadata (LAME/iTunSMPB tags), so every
      * track boundary clicks or gaps, while the original file keeps its tags
-     * and plays gaplessly. Otherwise no format is sent and the server's
-     * per-player transcoding config decides.
+     * and plays gaplessly. Capped sends `maxBitRate` and lets the server's
+     * transcoding config pick the output format.
      */
-    fun streamUrl(trackId: String): String =
-        if (streamOriginal) {
+    fun streamUrl(trackId: String, maxKbps: Int? = null): String =
+        if (maxKbps == null) {
             url("stream", "id" to trackId, "format" to "raw")
         } else {
-            url("stream", "id" to trackId)
+            url("stream", "id" to trackId, "maxBitRate" to maxKbps.toString())
         }
 
     fun coverArtUrl(coverArtId: String, size: Int = DEFAULT_ART_SIZE): String =

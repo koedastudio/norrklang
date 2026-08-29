@@ -11,6 +11,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSourceBitmapLoader
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -55,6 +56,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
     private var mediaSession: MediaLibrarySession? = null
     private var resumptionPersister: ResumptionPersister? = null
     private var playbackRecovery: PlaybackRecoveryListener? = null
+    private var networkMonitor: NetworkMonitor? = null
     // The handler is load-bearing: an uncaught throw here kills the process,
     // the car host rebinds into the same state, and the app "flash-loops"
     // until the host gives up ("Norrklang isn't working at the moment").
@@ -66,7 +68,23 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
     override fun onCreate() {
         super.onCreate()
 
-        val player = buildPlayer()
+        // Stream URLs are resolved per load from canonical refs (StreamRef),
+        // picking the quality tier for the network the device is on at that
+        // moment — a Wi-Fi→LTE handoff mid-drive changes the next load, not
+        // nothing.
+        val monitor = NetworkMonitor(this).also { networkMonitor = it }
+        val resolver = StreamUrlResolver { sessionManager.connectedOrNull()?.session }
+        serviceScope.launch {
+            settings.streamQualityWifi.collect { resolver.wifiQuality = it }
+        }
+        serviceScope.launch {
+            settings.streamQualityCellular.collect { resolver.cellularQuality = it }
+        }
+        serviceScope.launch {
+            monitor.onCellular.collect { resolver.onCellular = it }
+        }
+
+        val player = buildPlayer(resolver)
         player.addListener(PlaybackReporter(serviceScope, repository, settings, player))
         player.addListener(PlaybackErrorRecorder())
         player.addListener(RandomMixPlaySourceListener(randomMix))
@@ -144,7 +162,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
      * generous timeouts plus extra in-loader retries keep a hiccup in
      * BUFFERING instead of escalating to a fatal player error.
      */
-    private fun buildPlayer(): AuthGatePlayer {
+    private fun buildPlayer(resolver: StreamUrlResolver): AuthGatePlayer {
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setConnectTimeoutMs(HTTP_CONNECT_TIMEOUT_MS)
             .setReadTimeoutMs(HTTP_READ_TIMEOUT_MS)
@@ -160,7 +178,12 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
 
         val exoPlayer = ExoPlayer.Builder(this)
             .setMediaSourceFactory(
-                DefaultMediaSourceFactory(DefaultDataSource.Factory(this, httpDataSourceFactory))
+                DefaultMediaSourceFactory(
+                    ResolvingDataSource.Factory(
+                        DefaultDataSource.Factory(this, httpDataSourceFactory),
+                        resolver,
+                    ),
+                )
                     .setLoadErrorHandlingPolicy(
                         DefaultLoadErrorHandlingPolicy(LOAD_RETRY_COUNT),
                     ),
@@ -278,6 +301,8 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
         resumptionPersister = null
         playbackRecovery?.release()
         playbackRecovery = null
+        networkMonitor?.close()
+        networkMonitor = null
         mediaSession?.run {
             player.release()
             release()

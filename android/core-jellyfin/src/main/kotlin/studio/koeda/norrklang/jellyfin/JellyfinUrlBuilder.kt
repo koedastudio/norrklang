@@ -13,12 +13,29 @@ import java.net.URLEncoder
 class JellyfinUrlBuilder(
     private val baseUrl: String,
     private val token: String,
+    private val userId: String,
+    private val deviceId: String,
 ) {
 
-    /** Direct-play URL for an audio item — the original file, no transcoding. */
-    fun streamUrl(itemId: String): String =
-        "$baseUrl/Audio/${urlEncode(itemId)}/stream" +
-            "?static=true&api_key=${urlEncode(token)}"
+    /**
+     * Stream URL for an audio item, at the original quality or capped at
+     * [maxKbps]. Original direct-plays the file; capped goes through the
+     * universal audio endpoint, which direct-plays compatible files under
+     * the cap and transcodes to MP3 at the cap otherwise.
+     */
+    fun streamUrl(itemId: String, maxKbps: Int? = null): String =
+        if (maxKbps == null) {
+            "$baseUrl/Audio/${urlEncode(itemId)}/stream" +
+                "?static=true&api_key=${urlEncode(token)}"
+        } else {
+            "$baseUrl/Audio/${urlEncode(itemId)}/universal" +
+                "?UserId=${urlEncode(userId)}" +
+                "&DeviceId=${urlEncode(deviceId)}" +
+                "&MaxStreamingBitrate=${maxKbps * 1000}" +
+                "&Container=$DIRECT_PLAY_CONTAINERS" +
+                "&TranscodingContainer=mp3&TranscodingProtocol=http&AudioCodec=mp3" +
+                "&api_key=${urlEncode(token)}"
+        }
 
     /** Server-side scaled primary image of the item owning the artwork. */
     fun artworkUrl(itemId: String, size: Int = DEFAULT_ART_SIZE): String =
@@ -36,5 +53,8 @@ class JellyfinUrlBuilder(
     companion object {
         /** Matches the Subsonic side (SubsonicUrlBuilder.DEFAULT_ART_SIZE). */
         const val DEFAULT_ART_SIZE = 512
+
+        /** Containers ExoPlayer decodes natively — eligible for direct play. */
+        private const val DIRECT_PLAY_CONTAINERS = "opus,mp3,aac,m4a,flac,wav,ogg"
     }
 }

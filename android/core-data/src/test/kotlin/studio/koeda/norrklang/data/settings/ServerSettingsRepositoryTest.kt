@@ -4,6 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import java.io.File
 import kotlin.test.Test
@@ -135,13 +136,13 @@ class ServerSettingsRepositoryTest {
         val store = dataStore(backgroundScope)
         val repo = ServerSettingsRepository(store, FakeCipher())
         repo.save(credentials)
-        repo.setStreamOriginal(false)
+        repo.setStreamQualityCellular(StreamQuality.HIGH)
         repo.setScrobblingEnabled(false)
         repo.setAutoplaySimilar(false)
 
         repo.clearAccount()
 
-        assertEquals(false, repo.streamOriginal.first())
+        assertEquals(StreamQuality.HIGH, repo.streamQualityCellular.first())
         assertEquals(false, repo.scrobbleSettings.first().enabled)
         assertEquals(false, repo.autoplaySimilar.first())
     }
@@ -267,12 +268,30 @@ class ServerSettingsRepositoryTest {
     }
 
     @Test
-    fun `stream original defaults to true and round-trips`() = runTest {
+    fun `stream quality defaults to original on wifi, capped on cellular, and round-trips`() = runTest {
         val repo = ServerSettingsRepository(dataStore(backgroundScope), FakeCipher())
-        assertTrue(repo.streamOriginal.first())
+        assertEquals(StreamQuality.ORIGINAL, repo.streamQualityWifi.first())
+        assertEquals(StreamQuality.HIGH, repo.streamQualityCellular.first())
 
-        repo.setStreamOriginal(false)
-        assertEquals(false, repo.streamOriginal.first())
+        repo.setStreamQualityWifi(StreamQuality.MEDIUM)
+        repo.setStreamQualityCellular(StreamQuality.LOW)
+        assertEquals(StreamQuality.MEDIUM, repo.streamQualityWifi.first())
+        assertEquals(StreamQuality.LOW, repo.streamQualityCellular.first())
+    }
+
+    @Test
+    fun `legacy stream-original off falls back to the highest capped tier`() = runTest {
+        val store = dataStore(backgroundScope)
+        store.edit { it[booleanPreferencesKey("stream_original")] = false }
+        val repo = ServerSettingsRepository(store, FakeCipher())
+
+        assertEquals(StreamQuality.HIGH, repo.streamQualityWifi.first())
+        assertEquals(StreamQuality.HIGH, repo.streamQualityCellular.first())
+
+        // An explicit choice wins over the legacy fallback.
+        repo.setStreamQualityWifi(StreamQuality.ORIGINAL)
+        assertEquals(StreamQuality.ORIGINAL, repo.streamQualityWifi.first())
+        assertEquals(StreamQuality.HIGH, repo.streamQualityCellular.first())
     }
 
     @Test

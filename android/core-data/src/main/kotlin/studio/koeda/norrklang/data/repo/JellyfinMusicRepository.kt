@@ -20,14 +20,15 @@ import studio.koeda.norrklang.data.model.Genre
 import studio.koeda.norrklang.data.model.Playlist
 import studio.koeda.norrklang.data.model.PlaylistDetail
 import studio.koeda.norrklang.data.model.SearchResults
+import studio.koeda.norrklang.data.model.StreamRef
 import studio.koeda.norrklang.data.model.Track
+import studio.koeda.norrklang.data.session.MusicProvider
 import studio.koeda.norrklang.data.session.JellyfinSession
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.jellyfin.JellyfinAccount
 import studio.koeda.norrklang.jellyfin.JellyfinClient
 import studio.koeda.norrklang.jellyfin.JellyfinClient.Companion.TICKS_PER_MS
 import studio.koeda.norrklang.jellyfin.JellyfinException
-import studio.koeda.norrklang.jellyfin.JellyfinUrlBuilder
 import studio.koeda.norrklang.jellyfin.model.JellyfinItem
 import studio.koeda.norrklang.jellyfin.model.JellyfinPlaybackBody
 
@@ -68,13 +69,13 @@ class JellyfinMusicRepository @Inject constructor(
     }
 
     override suspend fun artists(): List<Artist> =
-        cached("artists") { client, _, account ->
+        cached("artists") { client, account ->
             client.albumArtists(account.userId, account.libraryId)
                 .mapNotNull { it.toArtistOrNull(sortGroup = it.sortBucket()) }
         }
 
     override suspend fun artist(id: String): ArtistDetail =
-        cached("artist/$id") { client, _, account ->
+        cached("artist/$id") { client, account ->
             val dto = client.item(account.userId, id)
             ArtistDetail(
                 artist = dto.toArtistOrNull()
@@ -91,7 +92,7 @@ class JellyfinMusicRepository @Inject constructor(
         }
 
     override suspend fun albums(offset: Int, size: Int): List<Album> =
-        cached("albums/$offset/$size") { client, _, account ->
+        cached("albums/$offset/$size") { client, account ->
             client.items(
                 account.userId,
                 parentId = account.libraryId,
@@ -103,7 +104,7 @@ class JellyfinMusicRepository @Inject constructor(
         }
 
     override suspend fun recentlyAdded(size: Int): List<Album> =
-        cached("recent/$size") { client, _, account ->
+        cached("recent/$size") { client, account ->
             client.items(
                 account.userId,
                 parentId = account.libraryId,
@@ -115,7 +116,7 @@ class JellyfinMusicRepository @Inject constructor(
         }
 
     override suspend fun favoriteAlbums(size: Int): List<Album> =
-        cached("favorites/$size") { client, _, account ->
+        cached("favorites/$size") { client, account ->
             client.items(
                 account.userId,
                 parentId = account.libraryId,
@@ -126,23 +127,23 @@ class JellyfinMusicRepository @Inject constructor(
         }
 
     override suspend fun favoriteTracks(): List<Track> =
-        cached("favorite-tracks") { client, urls, account ->
+        cached("favorite-tracks") { client, account ->
             client.items(
                 account.userId,
                 parentId = account.libraryId,
                 includeItemTypes = "Audio",
                 filters = IS_FAVORITE,
-            ).items.mapNotNull { it.toTrackOrNull(urls) }
+            ).items.mapNotNull { it.toTrackOrNull() }
         }
 
     override suspend fun favoriteArtists(): List<Artist> =
-        cached("favorite-artists") { client, _, account ->
+        cached("favorite-artists") { client, account ->
             client.albumArtists(account.userId, account.libraryId, isFavorite = true)
                 .mapNotNull { it.toArtistOrNull() }
         }
 
     override suspend fun recentlyAddedTracks(size: Int): List<Track> =
-        cached("recently-added-tracks/$size") { client, urls, account ->
+        cached("recently-added-tracks/$size") { client, account ->
             client.items(
                 account.userId,
                 parentId = account.libraryId,
@@ -150,20 +151,20 @@ class JellyfinMusicRepository @Inject constructor(
                 sortBy = "DateCreated",
                 sortOrder = "Descending",
                 limit = size,
-            ).items.mapNotNull { it.toTrackOrNull(urls) }
+            ).items.mapNotNull { it.toTrackOrNull() }
         }
 
     // Deliberately uncached: the random-mix snapshot (RandomMixSession) owns
     // list stability, and a TTL here would defeat its regeneration.
     override suspend fun randomTracks(size: Int): List<Track> =
-        withSession { client, urls, account ->
+        withSession { client, account ->
             client.items(
                 account.userId,
                 parentId = account.libraryId,
                 includeItemTypes = "Audio",
                 sortBy = "Random",
                 limit = size,
-            ).items.mapNotNull { it.toTrackOrNull(urls) }
+            ).items.mapNotNull { it.toTrackOrNull() }
         }
 
     override suspend fun recentlyPlayedAlbums(size: Int): List<Album> =
@@ -173,7 +174,7 @@ class JellyfinMusicRepository @Inject constructor(
         playedAlbums("most-played-albums/$size", "PlayCount", size)
 
     override suspend fun genres(): List<Genre> =
-        cached("genres") { client, _, account ->
+        cached("genres") { client, account ->
             // Jellyfin's genre list has no song counts, but the home tab's
             // genre mixes rank and threshold on them — count each genre's
             // tracks with a zero-size page (TotalRecordCount only, so the
@@ -205,7 +206,7 @@ class JellyfinMusicRepository @Inject constructor(
         }
 
     override suspend fun albumsByGenre(genre: String, size: Int): List<Album> =
-        cached("albums-by-genre/$genre/$size") { client, _, account ->
+        cached("albums-by-genre/$genre/$size") { client, account ->
             val id = genreId(genre) ?: return@cached emptyList()
             client.items(
                 account.userId,
@@ -217,7 +218,7 @@ class JellyfinMusicRepository @Inject constructor(
         }
 
     override suspend fun albumsByYearRange(fromYear: Int, toYear: Int, size: Int): List<Album> =
-        cached("albums-by-year/$fromYear-$toYear/$size") { client, _, account ->
+        cached("albums-by-year/$fromYear-$toYear/$size") { client, account ->
             client.items(
                 account.userId,
                 parentId = account.libraryId,
@@ -231,7 +232,7 @@ class JellyfinMusicRepository @Inject constructor(
     // Track-level genre works here — Jellyfin aggregates album genres from
     // the track tags, so tracks carry them.
     override suspend fun randomTracksByGenre(genre: String, size: Int): List<Track> =
-        withSession { client, urls, account ->
+        withSession { client, account ->
             val id = genreId(genre) ?: return@withSession emptyList()
             client.items(
                 account.userId,
@@ -240,7 +241,7 @@ class JellyfinMusicRepository @Inject constructor(
                 params = listOf("GenreIds" to id),
                 sortBy = "Random",
                 limit = size,
-            ).items.mapNotNull { it.toTrackOrNull(urls) }
+            ).items.mapNotNull { it.toTrackOrNull() }
         }
 
     override suspend fun randomTracksByYearRange(
@@ -248,7 +249,7 @@ class JellyfinMusicRepository @Inject constructor(
         toYear: Int,
         size: Int,
     ): List<Track> =
-        withSession { client, urls, account ->
+        withSession { client, account ->
             client.items(
                 account.userId,
                 parentId = account.libraryId,
@@ -256,7 +257,7 @@ class JellyfinMusicRepository @Inject constructor(
                 params = listOf("Years" to yearList(fromYear, toYear)),
                 sortBy = "Random",
                 limit = size,
-            ).items.mapNotNull { it.toTrackOrNull(urls) }
+            ).items.mapNotNull { it.toTrackOrNull() }
         }
 
     override suspend fun mostPlayedArtists(size: Int): List<Artist> =
@@ -269,7 +270,7 @@ class JellyfinMusicRepository @Inject constructor(
     // is tagged; in-library by construction (the contract Subsonic reaches by
     // filtering albumCount).
     override suspend fun similarArtists(artistId: String, count: Int): List<Artist> =
-        cached("similar-artists/$artistId") { client, _, account ->
+        cached("similar-artists/$artistId") { client, account ->
             client.similar(account.userId, artistId, limit = SIMILAR_ARTIST_FETCH)
                 .filter { it.type == "MusicArtist" && it.id != artistId }
                 .distinctBy { it.id }
@@ -284,7 +285,7 @@ class JellyfinMusicRepository @Inject constructor(
     override suspend fun similarTracks(artistId: String, count: Int): List<Track> {
         val similar = similarArtists(artistId, SIMILAR_TRACK_ARTISTS)
         if (similar.isEmpty()) return emptyList()
-        return withSession { client, urls, account ->
+        return withSession { client, account ->
             // Comma-separated ArtistIds are OR'd by Jellyfin: one request
             // draws random tracks across the seed and all similar artists.
             val ids = (listOf(artistId) + similar.map { it.id }).joinToString(",")
@@ -295,12 +296,12 @@ class JellyfinMusicRepository @Inject constructor(
                 params = listOf("ArtistIds" to ids),
                 sortBy = "Random",
                 limit = count,
-            ).items.mapNotNull { it.toTrackOrNull(urls) }
+            ).items.mapNotNull { it.toTrackOrNull() }
         }
     }
 
     override suspend fun topTracks(artistName: String, count: Int): List<Track> =
-        cached("top-songs/$artistName/$count") { client, urls, account ->
+        cached("top-songs/$artistName/$count") { client, account ->
             // The contract keys by artist NAME (a Subsonic API quirk); resolve
             // to an item id first.
             val artist = client
@@ -318,7 +319,7 @@ class JellyfinMusicRepository @Inject constructor(
                     sortBy = sortBy,
                     sortOrder = sortBy?.let { "Descending" },
                     limit = count,
-                ).items.mapNotNull { it.toTrackOrNull(urls) }
+                ).items.mapNotNull { it.toTrackOrNull() }
 
             // "Best of" blends the account's signals, strongest first: the
             // user's favorites, then their own play counts. Jellyfin has no
@@ -341,18 +342,18 @@ class JellyfinMusicRepository @Inject constructor(
     // served from the TTL cache, which setTrackFavorite clears so the answer
     // never lags a local change. Cached as an id Set for cheap lookups.
     override suspend fun isFavoriteTrack(trackId: String): Boolean =
-        trackId in cached("favorite-track-ids") { _, _, _ ->
+        trackId in cached("favorite-track-ids") { _, _ ->
             favoriteTracks().mapTo(HashSet()) { it.id }
         }
 
     override suspend fun setTrackFavorite(trackId: String, favorite: Boolean) =
-        withSession { client, _, account ->
+        withSession { client, account ->
             client.setFavorite(account.userId, trackId, favorite)
             cache.clear()
         }
 
     override suspend fun setAlbumFavorite(albumId: String, favorite: Boolean) =
-        withSession { client, _, account ->
+        withSession { client, account ->
             client.setFavorite(account.userId, albumId, favorite)
             // Albums carry their favorite state; every cached album list is
             // stale the moment the flag changes.
@@ -360,7 +361,7 @@ class JellyfinMusicRepository @Inject constructor(
         }
 
     override suspend fun album(id: String): AlbumDetail =
-        cached("album/$id") { client, urls, account ->
+        cached("album/$id") { client, account ->
             val dto = client.item(account.userId, id)
             AlbumDetail(
                 album = dto.toAlbumOrNull()
@@ -371,12 +372,12 @@ class JellyfinMusicRepository @Inject constructor(
                     includeItemTypes = "Audio",
                     recursive = false,
                     sortBy = "ParentIndexNumber,IndexNumber,SortName",
-                ).items.mapNotNull { it.toTrackOrNull(urls) },
+                ).items.mapNotNull { it.toTrackOrNull() },
             )
         }
 
     override suspend fun playlists(): List<Playlist> =
-        cached("playlists") { client, _, account ->
+        cached("playlists") { client, account ->
             // Playlists live outside the music library, so no ParentId here;
             // MediaType keeps video playlists out.
             client.items(
@@ -388,26 +389,26 @@ class JellyfinMusicRepository @Inject constructor(
         }
 
     override suspend fun playlist(id: String): PlaylistDetail =
-        cached("playlist/$id") { client, urls, account ->
+        cached("playlist/$id") { client, account ->
             val dto = client.item(account.userId, id)
             PlaylistDetail(
                 playlist = dto.toPlaylistOrNull()
                     ?: throw MusicException.NotFound("Playlist $id not found"),
                 tracks = client.playlistItems(account.userId, id)
-                    .mapNotNull { it.toTrackOrNull(urls) },
+                    .mapNotNull { it.toTrackOrNull() },
             )
         }
 
     override suspend fun track(id: String): Track =
-        cached("track/$id") { client, urls, account ->
-            client.item(account.userId, id).toTrackOrNull(urls)
+        cached("track/$id") { client, account ->
+            client.item(account.userId, id).toTrackOrNull()
                 ?: throw MusicException.NotFound("Track $id has no id")
         }
 
     // Cached so the host's onSearch → onGetSearchResult (paged) sequence hits
     // the server once per query, not once per page.
     override suspend fun search(query: String): SearchResults =
-        cached("search/$query") { client, urls, account ->
+        cached("search/$query") { client, account ->
             coroutineScope {
                 val artists = async {
                     client.albumArtists(
@@ -425,7 +426,7 @@ class JellyfinMusicRepository @Inject constructor(
                     limit = SEARCH_COUNT_PER_TYPE,
                 ).items
                 val albums = async { items("MusicAlbum").mapNotNull { it.toAlbumOrNull() } }
-                val tracks = async { items("Audio").mapNotNull { it.toTrackOrNull(urls) } }
+                val tracks = async { items("Audio").mapNotNull { it.toTrackOrNull() } }
                 SearchResults(
                     artists = artists.await(),
                     albums = albums.await(),
@@ -435,7 +436,7 @@ class JellyfinMusicRepository @Inject constructor(
         }
 
     override suspend fun scrobble(trackId: String, submission: Boolean) =
-        withSession { client, _, account ->
+        withSession { client, account ->
             if (submission) {
                 // Deterministic mark-played: with session-less direct play the
                 // app owns the "counts as played" threshold, not the server.
@@ -452,7 +453,7 @@ class JellyfinMusicRepository @Inject constructor(
         state: PlayState,
         positionMs: Long,
         durationMs: Long?,
-    ) = withSession { client, _, _ ->
+    ) = withSession { client, _ ->
         val body = JellyfinPlaybackBody(
             itemId = trackId,
             positionTicks = positionMs * TICKS_PER_MS,
@@ -490,7 +491,7 @@ class JellyfinMusicRepository @Inject constructor(
 
     private suspend fun <T : Any> cached(
         key: String,
-        loader: suspend (JellyfinClient, JellyfinUrlBuilder, JellyfinAccount) -> T,
+        loader: suspend (JellyfinClient, JellyfinAccount) -> T,
     ): T {
         val session = jellyfinSession()
         val scopedKey = "${session.cacheFingerprint}/$key"
@@ -498,17 +499,17 @@ class JellyfinMusicRepository @Inject constructor(
         // (see SubsonicMusicRepository.cached).
         return cache.getOrLoad(scopedKey) {
             translatingErrors {
-                loader(session.client, session.urlBuilder, session.account)
+                loader(session.client, session.account)
             }
         }
     }
 
     private suspend fun <T> withSession(
-        block: suspend (JellyfinClient, JellyfinUrlBuilder, JellyfinAccount) -> T,
+        block: suspend (JellyfinClient, JellyfinAccount) -> T,
     ): T {
         val session = jellyfinSession()
         return translatingErrors {
-            block(session.client, session.urlBuilder, session.account)
+            block(session.client, session.account)
         }
     }
 
@@ -534,7 +535,7 @@ class JellyfinMusicRepository @Inject constructor(
 
     /** Case-insensitive genre name → GenreIds value, via the cached directory. */
     private suspend fun genreId(name: String): String? =
-        cached("genre-ids") { client, _, account ->
+        cached("genre-ids") { client, account ->
             client.genres(account.userId, account.libraryId)
                 .mapNotNull { g -> g.id?.let { g.name.lowercase() to it } }
                 .toMap()
@@ -565,7 +566,7 @@ class JellyfinMusicRepository @Inject constructor(
      * the artist synthesis.
      */
     private suspend fun playedAlbums(key: String, sortBy: String, size: Int): List<Album> =
-        cached(key) { client, _, account ->
+        cached(key) { client, account ->
             playedTracks(client, account, sortBy, size)
                 .mapNotNull { track ->
                     val albumId = track.albumId ?: return@mapNotNull null
@@ -588,7 +589,7 @@ class JellyfinMusicRepository @Inject constructor(
 
     /** Artists behind the played tracks, order preserved, first occurrence wins. */
     private suspend fun playedArtists(key: String, sortBy: String, size: Int): List<Artist> =
-        cached(key) { client, _, account ->
+        cached(key) { client, account ->
             playedTracks(client, account, sortBy, size)
                 .mapNotNull { track ->
                     val artist = track.albumArtists.firstOrNull() ?: return@mapNotNull null
@@ -651,7 +652,7 @@ class JellyfinMusicRepository @Inject constructor(
     )
 
     /** Every Audio item is streamable via the stream endpoint — no part gate. */
-    private fun JellyfinItem.toTrackOrNull(urls: JellyfinUrlBuilder): Track? {
+    private fun JellyfinItem.toTrackOrNull(): Track? {
         val id = id ?: return null
         return Track(
             id = id,
@@ -665,7 +666,7 @@ class JellyfinMusicRepository @Inject constructor(
             discNumber = parentIndexNumber,
             durationSec = runTimeTicks?.let { (it / TICKS_PER_SEC).toInt() },
             artworkUrl = artworkOrNull(),
-            streamUrl = urls.streamUrl(id),
+            streamUrl = StreamRef(MusicProvider.JELLYFIN, id).encode(),
         )
     }
 

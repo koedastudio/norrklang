@@ -154,7 +154,11 @@ internal object MediaItemFactory {
             .setMediaMetadata(trackMetadata(track, groupTitle))
             .build()
 
-    /** A fully-resolved, playable track handed to ExoPlayer. */
+    /**
+     * A playable track handed to ExoPlayer. The URI is the canonical
+     * `norrklang-stream://` reference; [StreamUrlResolver] turns it into a
+     * real server URL (auth + quality tier) when the load starts.
+     */
     fun playableTrack(track: Track, container: MediaId.Container? = null): MediaItem =
         MediaItem.Builder()
             .setMediaId(MediaId.Track(track.id, container).encode())

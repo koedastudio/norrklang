@@ -196,12 +196,12 @@ class SessionManager(
 
     private suspend fun plexSession(account: PlexAccount): PlexSession {
         val info = PlexClientInfo(settings.plexClientId(), PlexClientInfo.DEFAULT_VERSION)
-        return PlexSession(account, plexClientFactory(account, info))
+        return PlexSession(account, plexClientFactory(account, info), info)
     }
 
     private suspend fun jellyfinSession(account: JellyfinAccount): JellyfinSession {
         val info =
             JellyfinClientInfo(settings.jellyfinDeviceId(), JellyfinClientInfo.DEFAULT_VERSION)
-        return JellyfinSession(account, jellyfinClientFactory(account, info))
+        return JellyfinSession(account, jellyfinClientFactory(account, info), info.deviceId)
     }
 }

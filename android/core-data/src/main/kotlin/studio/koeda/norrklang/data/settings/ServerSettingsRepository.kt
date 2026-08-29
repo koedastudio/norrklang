@@ -80,7 +80,14 @@ class ServerSettingsRepository @Inject constructor(
         val JELLYFIN_LIBRARY_ID = stringPreferencesKey("jellyfin_library_id")
         val LAST_MEDIA_ID = stringPreferencesKey("last_media_id")
         val LAST_POSITION_MS = longPreferencesKey("last_position_ms")
+
+        /**
+         * Pre-quality-tier builds stored a raw-vs-transcoded boolean here;
+         * kept only as a read fallback for [QUALITY_WIFI]/[QUALITY_CELLULAR].
+         */
         val STREAM_ORIGINAL = booleanPreferencesKey("stream_original")
+        val QUALITY_WIFI = stringPreferencesKey("stream_quality_wifi")
+        val QUALITY_CELLULAR = stringPreferencesKey("stream_quality_cellular")
         val AUTOPLAY_SIMILAR = booleanPreferencesKey("autoplay_similar")
         val SCROBBLE_ENABLED = booleanPreferencesKey("scrobble_enabled")
         val SCROBBLE_EXCLUDED_ARTISTS = stringSetPreferencesKey("scrobble_excluded_artists")
@@ -268,7 +275,7 @@ class ServerSettingsRepository @Inject constructor(
     /**
      * Removes everything tied to the signed-in account: credentials, the
      * resumption pointer, and the scrobble exclusion sets (both hold ids
-     * minted by the old server). Device-wide state — [streamOriginal], the
+     * minted by the old server). Device-wide state — the quality tiers, the
      * scrobble master toggle, and the Plex/Jellyfin device ids — survives a
      * sign-out or server switch.
      */
@@ -316,16 +323,41 @@ class ServerSettingsRepository @Inject constructor(
     // --- Playback quality ---
 
     /**
-     * Stream original files (`format=raw`, bit-perfect and gapless) or let
-     * the server's transcoding config decide (saves data, breaks gapless).
-     * Defaults to original — self-hosted libraries expect gapless playback.
+     * Quality tier per network type, applied by the player's stream URL
+     * resolver on each load. Wi-Fi defaults to original (bit-perfect,
+     * gapless); cellular defaults to capped — see
+     * [StreamQuality.DEFAULT_CELLULAR] for why.
      */
-    val streamOriginal: Flow<Boolean> =
-        dataStore.data.map { it[Keys.STREAM_ORIGINAL] ?: DEFAULT_STREAM_ORIGINAL }
+    val streamQualityWifi: Flow<StreamQuality> =
+        dataStore.data.map {
+            decodeQuality(it, Keys.QUALITY_WIFI, StreamQuality.DEFAULT_WIFI)
+        }
 
-    suspend fun setStreamOriginal(enabled: Boolean) {
-        dataStore.edit { it[Keys.STREAM_ORIGINAL] = enabled }
+    val streamQualityCellular: Flow<StreamQuality> =
+        dataStore.data.map {
+            decodeQuality(it, Keys.QUALITY_CELLULAR, StreamQuality.DEFAULT_CELLULAR)
+        }
+
+    suspend fun setStreamQualityWifi(quality: StreamQuality) {
+        dataStore.edit { it[Keys.QUALITY_WIFI] = quality.storageValue }
     }
+
+    suspend fun setStreamQualityCellular(quality: StreamQuality) {
+        dataStore.edit { it[Keys.QUALITY_CELLULAR] = quality.storageValue }
+    }
+
+    /**
+     * Legacy fallback: a user who had turned "stream original" OFF had opted
+     * into server transcoding, so they land on the highest capped tier
+     * (on both networks) instead of silently returning to original quality.
+     */
+    private fun decodeQuality(
+        prefs: Preferences,
+        key: Preferences.Key<String>,
+        default: StreamQuality,
+    ): StreamQuality =
+        prefs[key]?.let(StreamQuality::fromStorageValue)
+            ?: if (prefs[Keys.STREAM_ORIGINAL] == false) StreamQuality.HIGH else default
 
     // --- Autoplay ---
 
@@ -408,13 +440,6 @@ class ServerSettingsRepository @Inject constructor(
     }
 
     companion object {
-        /**
-         * Value of [streamOriginal] before anything is written; shared with
-         * UI-layer stateIn initials so the settings screen never flashes the
-         * wrong state.
-         */
-        const val DEFAULT_STREAM_ORIGINAL = true
-
         /** Value of [autoplaySimilar] before anything is written. */
         const val DEFAULT_AUTOPLAY_SIMILAR = true
 

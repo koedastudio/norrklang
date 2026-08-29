@@ -94,7 +94,7 @@ class RoutingMusicRepositoryTest {
         )
         val repository = RoutingMusicRepository(
             sessionManager,
-            SubsonicMusicRepository(sessionManager, settings, "studio.koeda.norrklang", scope),
+            SubsonicMusicRepository(sessionManager, "studio.koeda.norrklang", scope),
             PlexMusicRepository(sessionManager, "studio.koeda.norrklang", scope),
             JellyfinMusicRepository(sessionManager, "studio.koeda.norrklang", scope),
         )

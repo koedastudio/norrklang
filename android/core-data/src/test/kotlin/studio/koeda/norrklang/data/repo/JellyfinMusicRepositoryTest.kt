@@ -128,10 +128,8 @@ class JellyfinMusicRepositoryTest {
         assertEquals(3, t.trackNumber)
         assertEquals(1, t.discNumber)
         assertEquals(215, t.durationSec)
-        assertEquals(
-            "https://jf.example.com/Audio/100/stream?static=true&api_key=jf-token",
-            t.streamUrl,
-        )
+        // Canonical ref, resolved to a real URL at load time (StreamUrlResolver).
+        assertEquals("norrklang-stream://jellyfin?id=100", t.streamUrl)
         // Artwork is indirected through the in-app provider; tracks borrow
         // the album's primary image.
         assertEquals("content://studio.koeda.norrklang.artwork/cover/70", t.artworkUrl)

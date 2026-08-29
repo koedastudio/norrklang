@@ -19,6 +19,7 @@ import studio.koeda.norrklang.data.repo.MusicRepository
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository.ScrobbleSettings
+import studio.koeda.norrklang.data.settings.StreamQuality
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -30,16 +31,27 @@ class SettingsViewModel @Inject constructor(
 
     val sessionState: StateFlow<SessionManager.SessionState> = sessionManager.state
 
-    /** See [ServerSettingsRepository.streamOriginal] — raw/gapless vs transcoded. */
-    val streamOriginal: StateFlow<Boolean> = settings.streamOriginal
+    /** See [ServerSettingsRepository.streamQualityWifi] — per-network tiers. */
+    val qualityWifi: StateFlow<StreamQuality> = settings.streamQualityWifi
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5_000),
-            ServerSettingsRepository.DEFAULT_STREAM_ORIGINAL,
+            StreamQuality.DEFAULT_WIFI,
         )
 
-    fun setStreamOriginal(enabled: Boolean) {
-        viewModelScope.launch { settings.setStreamOriginal(enabled) }
+    val qualityCellular: StateFlow<StreamQuality> = settings.streamQualityCellular
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000),
+            StreamQuality.DEFAULT_CELLULAR,
+        )
+
+    fun setQualityWifi(quality: StreamQuality) {
+        viewModelScope.launch { settings.setStreamQualityWifi(quality) }
+    }
+
+    fun setQualityCellular(quality: StreamQuality) {
+        viewModelScope.launch { settings.setStreamQualityCellular(quality) }
     }
 
     /** See [ServerSettingsRepository.autoplaySimilar] — queue-end radio. */
