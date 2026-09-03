@@ -1,9 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Material Symbols "shuffle", Outlined, weight 300, filled, 24px (Apache 2.0).
+     Re-export from Android Studio's Vector Asset Studio to change weight or style.
+     Drawn by HomeButtonArtwork into tile badges and motifs at its own sizes, and
+     as a tab icon; no inset of its own. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
+  android:width="24dp"
+  android:height="24dp"
+  android:viewportWidth="960"
+  android:viewportHeight="960"
+  android:tint="#FFFFFF">
+  <!-- The symbol's viewBox is 0 -960 960 960; translate it into the viewport. -->
+  <group android:translateY="960">
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M10.59,9.17L5.41,4 4,5.41l5.17,5.17 1.42,-1.41zM14.5,4l2.04,2.04L4,18.59 5.41,20 17.96,7.46 20,9.5V4h-5.5zM14.83,13.41l-1.41,1.41 3.13,3.13L14.5,20H20v-5.5l-2.04,2.04 -3.13,-3.13z" />
+      android:fillColor="#FFFFFF"
+      android:pathData="M564.62-180v-60h114L544.69-373.92l42.77-42.77L720-284.15v-110.08h60V-180H564.62Zm-342.47 0L180-222.15 677.85-720H564.62v-60H780v214.23h-60v-112.08L222.15-180Zm149.08-367L180-738.23 221.77-780 413-588.77 371.23-547Z" />
+  </group>
 </vector>

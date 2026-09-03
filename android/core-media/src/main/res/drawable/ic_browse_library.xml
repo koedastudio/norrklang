@@ -1,9 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Material Symbols "library_music", Outlined, weight 300, filled, 24px (Apache 2.0).
+     Re-export from Android Studio's Vector Asset Studio to change weight or style.
+     Drawn by HomeButtonArtwork into tile badges and motifs at its own sizes, and
+     as a tab icon; no inset of its own. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
+  android:width="24dp"
+  android:height="24dp"
+  android:viewportWidth="960"
+  android:viewportHeight="960"
+  android:tint="#FFFFFF">
+  <!-- The symbol's viewBox is 0 -960 960 960; translate it into the viewport. -->
+  <group android:translateY="960">
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M20,2H8C6.9,2 6,2.9 6,4v12c0,1.1 0.9,2 2,2h12c1.1,0 2,-0.9 2,-2V4C22,2.9 21.1,2 20,2zM18,7h-3v5.5c0,1.38 -1.12,2.5 -2.5,2.5S10,13.88 10,12.5s1.12,-2.5 2.5,-2.5c0.57,0 1.08,0.19 1.5,0.51V5h4V7zM4,6H2v14c0,1.1 0.9,2 2,2h14v-2H4V6z" />
+      android:fillColor="#FFFFFF"
+      android:pathData="M493.85-366.15q37.76 0 63.88-26.12 26.11-26.11 26.11-63.88v-224.62h114.62v-70.77h-150v226.16q-11.46-10.39-25.11-15.58-13.66-5.19-29.5-5.19-37.77 0-63.89 26.11-26.11 26.12-26.11 63.89 0 37.77 26.11 63.88 26.12 26.12 63.89 26.12ZM322.31-260Q292-260 271-281q-21-21-21-51.31v-455.38Q250-818 271-839q21-21 51.31-21h455.38Q808-860 829-839q21 21 21 51.31v455.38Q850-302 829-281q-21 21-51.31 21H322.31Zm-140 140Q152-120 131-141q-21-21-21-51.31v-515.38h60v515.38q0 4.62 3.85 8.46 3.84 3.85 8.46 3.85h515.38v60H182.31Z" />
+  </group>
 </vector>

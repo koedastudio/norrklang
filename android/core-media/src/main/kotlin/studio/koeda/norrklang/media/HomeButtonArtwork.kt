@@ -18,8 +18,9 @@ import studio.koeda.norrklang.data.repo.MusicRepository
  * full-bleed cover otherwise), under a dark icon badge that says what the
  * button contains. Buttons with no covers — icon-only
  * [HomeTile]s (the Library tab) and collage sections with no content yet —
- * get a uniform near-black fill with only an oversized faded icon bleeding
- * off the bottom-right corner — one quiet look for the whole Library list.
+ * are just the icon: centered at 60% of the tile on a transparent ground,
+ * so the host draws it on its own row background. The same look as
+ * Norrsaga's Library rows, which hand the host an inset drawable.
  *
  * Composed on demand by [ArtworkProvider] (paths `home/<key>` and
  * `home/<kind>/<key>`) and cached next to the plain cover files.
@@ -59,14 +60,15 @@ internal object HomeButtonArtwork {
         try {
             val canvas = Canvas(bitmap)
             when {
-                tiles.size >= COLLAGE_TILES -> drawCollage(canvas, tiles)
-                tiles.isNotEmpty() -> drawCover(canvas, tiles.first(), Rect(0, 0, SIZE, SIZE))
-                else -> drawFallback(canvas)
-            }
-            if (tiles.isEmpty()) {
-                drawMotif(context, canvas, iconRes)
-            } else {
-                drawBadge(context, canvas, iconRes)
+                tiles.size >= COLLAGE_TILES -> {
+                    drawCollage(canvas, tiles)
+                    drawBadge(context, canvas, iconRes)
+                }
+                tiles.isNotEmpty() -> {
+                    drawCover(canvas, tiles.first(), Rect(0, 0, SIZE, SIZE))
+                    drawBadge(context, canvas, iconRes)
+                }
+                else -> drawGlyph(context, canvas, iconRes)
             }
             writeAtomically(bitmap, target)
         } finally {
@@ -91,15 +93,6 @@ internal object HomeButtonArtwork {
         canvas.drawBitmap(bitmap, Rect(left, top, left + edge, top + edge), dst, coverPaint)
     }
 
-    /**
-     * Uniform near-black fill behind icon-only tiles — deliberately close
-     * to the car UIs' dark backgrounds, so the Library reads as quiet icon
-     * rows rather than a stack of colour swatches.
-     */
-    private fun drawFallback(canvas: Canvas) {
-        canvas.drawColor(EMPTY_TILE_COLOR)
-    }
-
     private fun drawBadge(context: Context, canvas: Canvas, iconRes: Int) {
         val cx = BADGE_MARGIN + BADGE_RADIUS
         val cy = SIZE - BADGE_MARGIN - BADGE_RADIUS
@@ -113,22 +106,15 @@ internal object HomeButtonArtwork {
     }
 
     /**
-     * The icon-only tiles' sole glyph: an oversized, faded copy of the icon
-     * bleeding off the tile's bottom-right corner. Asymmetric on purpose:
-     * some hosts show list artwork in a not-quite-square view with an
-     * off-center crop (seen on the Polestar 2) — with no centered content
-     * and no symmetric frame, there is nothing such a crop can visibly
-     * misplace.
+     * The icon-only tiles' sole content: the icon centered at
+     * [GLYPH_FRACTION] of the tile, the bitmap otherwise left transparent.
+     * Some hosts show list artwork in a not-quite-square view with an
+     * off-center crop (seen on the Polestar 2); the inset leaves room for
+     * that without clipping the glyph.
      */
-    private fun drawMotif(context: Context, canvas: Canvas, iconRes: Int) {
-        // mutate() before alpha: getDrawable instances share constant state,
-        // and the collage badge's copy of the icon must stay opaque.
-        val icon = context.getDrawable(iconRes)?.mutate() ?: return
-        icon.alpha = MOTIF_ALPHA
-        val center = (SIZE * MOTIF_CENTER).toInt()
-        val half = MOTIF_SIZE / 2
-        icon.setBounds(center - half, center - half, center + half, center + half)
-        icon.draw(canvas)
+    private fun drawGlyph(context: Context, canvas: Canvas, iconRes: Int) {
+        val center = SIZE / 2
+        drawIcon(context, canvas, iconRes, center, center, (SIZE * GLYPH_FRACTION).toInt())
     }
 
     private fun drawIcon(context: Context, canvas: Canvas, iconRes: Int, cx: Int, cy: Int, size: Int) {
@@ -177,13 +163,7 @@ internal object HomeButtonArtwork {
     private const val BADGE_RADIUS = 56
     private const val BADGE_ICON_FRACTION = 0.58f
 
-    // A shade off pure black, so the tile still separates (just) from a
-    // true-black host background.
-    private const val EMPTY_TILE_COLOR = 0xFF111113.toInt()
-
-    // Motif square, its center as a fraction of both axes (past 0.5 so it
-    // bleeds off the bottom-right edges), and its opacity out of 255.
-    private const val MOTIF_SIZE = 460
-    private const val MOTIF_CENTER = 0.8f
-    private const val MOTIF_ALPHA = 46
+    // Icon-only tiles: the glyph's side as a fraction of the tile — the same
+    // 60% inset Norrsaga's Library row drawables carry.
+    private const val GLYPH_FRACTION = 0.6f
 }
