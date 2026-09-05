@@ -20,13 +20,14 @@ import studio.koeda.norrklang.data.model.Genre
 import studio.koeda.norrklang.data.model.Playlist
 import studio.koeda.norrklang.data.model.PlaylistDetail
 import studio.koeda.norrklang.data.model.SearchResults
+import studio.koeda.norrklang.data.model.StreamRef
 import studio.koeda.norrklang.data.model.Track
+import studio.koeda.norrklang.data.session.MusicProvider
 import studio.koeda.norrklang.data.session.PlexSession
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.plex.PlexException
 import studio.koeda.norrklang.plex.PlexServerClient
 import studio.koeda.norrklang.plex.PlexServerClient.ItemType
-import studio.koeda.norrklang.plex.PlexUrlBuilder
 import studio.koeda.norrklang.plex.model.PlexMetadata
 
 /**
@@ -60,13 +61,13 @@ class PlexMusicRepository @Inject constructor(
     }
 
     override suspend fun artists(): List<Artist> =
-        cached("artists") { client, _, section ->
+        cached("artists") { client, section ->
             client.sectionItems(section, ItemType.ARTIST, sort = "titleSort:asc")
                 .mapNotNull { it.toArtistOrNull(sortGroup = it.sortBucket()) }
         }
 
     override suspend fun artist(id: String): ArtistDetail =
-        cached("artist/$id") { client, _, _ ->
+        cached("artist/$id") { client, _ ->
             val dto = client.metadata(id)
             ArtistDetail(
                 artist = dto.toArtistOrNull()
@@ -78,7 +79,7 @@ class PlexMusicRepository @Inject constructor(
         }
 
     override suspend fun albums(offset: Int, size: Int): List<Album> =
-        cached("albums/$offset/$size") { client, _, section ->
+        cached("albums/$offset/$size") { client, section ->
             client.sectionItems(
                 section,
                 ItemType.ALBUM,
@@ -89,45 +90,45 @@ class PlexMusicRepository @Inject constructor(
         }
 
     override suspend fun recentlyAdded(size: Int): List<Album> =
-        cached("recent/$size") { client, _, section ->
+        cached("recent/$size") { client, section ->
             client.sectionItems(section, ItemType.ALBUM, sort = "addedAt:desc", size = size)
                 .mapNotNull { it.toAlbumOrNull() }
         }
 
     override suspend fun favoriteAlbums(size: Int): List<Album> =
-        cached("favorites/$size") { client, _, section ->
+        cached("favorites/$size") { client, section ->
             client.sectionItems(section, ItemType.ALBUM, filters = LOVED, size = size)
                 .mapNotNull { it.toAlbumOrNull() }
         }
 
     override suspend fun favoriteTracks(): List<Track> =
-        cached("favorite-tracks") { client, urls, section ->
+        cached("favorite-tracks") { client, section ->
             client.sectionItems(section, ItemType.TRACK, filters = LOVED)
-                .mapNotNull { it.toTrackOrNull(urls) }
+                .mapNotNull { it.toTrackOrNull() }
         }
 
     override suspend fun favoriteArtists(): List<Artist> =
-        cached("favorite-artists") { client, _, section ->
+        cached("favorite-artists") { client, section ->
             client.sectionItems(section, ItemType.ARTIST, filters = LOVED)
                 .mapNotNull { it.toArtistOrNull() }
         }
 
     override suspend fun recentlyAddedTracks(size: Int): List<Track> =
-        cached("recently-added-tracks/$size") { client, urls, section ->
+        cached("recently-added-tracks/$size") { client, section ->
             client.sectionItems(section, ItemType.TRACK, sort = "addedAt:desc", size = size)
-                .mapNotNull { it.toTrackOrNull(urls) }
+                .mapNotNull { it.toTrackOrNull() }
         }
 
     // Deliberately uncached: the random-mix snapshot (RandomMixSession) owns
     // list stability, and a TTL here would defeat its regeneration.
     override suspend fun randomTracks(size: Int): List<Track> =
-        withSession { client, urls, section ->
+        withSession { client, section ->
             client.sectionItems(section, ItemType.TRACK, sort = "random", size = size)
-                .mapNotNull { it.toTrackOrNull(urls) }
+                .mapNotNull { it.toTrackOrNull() }
         }
 
     override suspend fun recentlyPlayedAlbums(size: Int): List<Album> =
-        cached("recently-played-albums/$size") { client, _, section ->
+        cached("recently-played-albums/$size") { client, section ->
             client.sectionItems(
                 section,
                 ItemType.ALBUM,
@@ -138,7 +139,7 @@ class PlexMusicRepository @Inject constructor(
         }
 
     override suspend fun mostPlayedAlbums(size: Int): List<Album> =
-        cached("most-played-albums/$size") { client, _, section ->
+        cached("most-played-albums/$size") { client, section ->
             client.sectionItems(
                 section,
                 ItemType.ALBUM,
@@ -149,7 +150,7 @@ class PlexMusicRepository @Inject constructor(
         }
 
     override suspend fun genres(): List<Genre> =
-        cached("genres") { client, _, section ->
+        cached("genres") { client, section ->
             // Plex's genre directory has no song counts, but the home tab's
             // genre mixes rank and threshold on them — count each genre's
             // tracks with a zero-size page (totalSize only, so the fan-out
@@ -178,7 +179,7 @@ class PlexMusicRepository @Inject constructor(
         }
 
     override suspend fun albumsByGenre(genre: String, size: Int): List<Album> =
-        cached("albums-by-genre/$genre/$size") { client, _, section ->
+        cached("albums-by-genre/$genre/$size") { client, section ->
             val id = genreId(genre) ?: return@cached emptyList()
             client.sectionItems(
                 section,
@@ -189,7 +190,7 @@ class PlexMusicRepository @Inject constructor(
         }
 
     override suspend fun albumsByYearRange(fromYear: Int, toYear: Int, size: Int): List<Album> =
-        cached("albums-by-year/$fromYear-$toYear/$size") { client, _, section ->
+        cached("albums-by-year/$fromYear-$toYear/$size") { client, section ->
             client.sectionItems(
                 section,
                 ItemType.ALBUM,
@@ -202,7 +203,7 @@ class PlexMusicRepository @Inject constructor(
     // Tracks rarely carry their own genre tags in Plex, so filter on the
     // album's genre instead.
     override suspend fun randomTracksByGenre(genre: String, size: Int): List<Track> =
-        withSession { client, urls, section ->
+        withSession { client, section ->
             val id = genreId(genre) ?: return@withSession emptyList()
             client.sectionItems(
                 section,
@@ -210,7 +211,7 @@ class PlexMusicRepository @Inject constructor(
                 filters = listOf("album.genre" to id),
                 sort = "random",
                 size = size,
-            ).mapNotNull { it.toTrackOrNull(urls) }
+            ).mapNotNull { it.toTrackOrNull() }
         }
 
     override suspend fun randomTracksByYearRange(
@@ -218,14 +219,14 @@ class PlexMusicRepository @Inject constructor(
         toYear: Int,
         size: Int,
     ): List<Track> =
-        withSession { client, urls, section ->
+        withSession { client, section ->
             client.sectionItems(
                 section,
                 ItemType.TRACK,
                 filters = yearRange("album.year", fromYear, toYear),
                 sort = "random",
                 size = size,
-            ).mapNotNull { it.toTrackOrNull(urls) }
+            ).mapNotNull { it.toTrackOrNull() }
         }
 
     override suspend fun mostPlayedArtists(size: Int): List<Artist> =
@@ -239,7 +240,7 @@ class PlexMusicRepository @Inject constructor(
     // whenever the library's artists are matched. Items are in-library by
     // construction (the contract Subsonic reaches by filtering albumCount).
     override suspend fun similarArtists(artistId: String, count: Int): List<Artist> =
-        cached("similar-artists/$artistId") { client, _, _ ->
+        cached("similar-artists/$artistId") { client, _ ->
             client.related(artistId)
                 .flatMap { it.metadata }
                 .filter { it.type == "artist" && it.ratingKey != artistId }
@@ -253,7 +254,7 @@ class PlexMusicRepository @Inject constructor(
     override suspend fun similarTracks(artistId: String, count: Int): List<Track> {
         val similar = similarArtists(artistId, SIMILAR_TRACK_ARTISTS)
         if (similar.isEmpty()) return emptyList()
-        return withSession { client, urls, section ->
+        return withSession { client, section ->
             // Comma-separated filter values are OR'd by Plex: one request
             // draws random tracks across the seed and all similar artists.
             val ids = (listOf(artistId) + similar.map { it.id }).joinToString(",")
@@ -263,12 +264,12 @@ class PlexMusicRepository @Inject constructor(
                 filters = listOf("artist.id" to ids),
                 sort = "random",
                 size = count,
-            ).mapNotNull { it.toTrackOrNull(urls) }
+            ).mapNotNull { it.toTrackOrNull() }
         }
     }
 
     override suspend fun topTracks(artistName: String, count: Int): List<Track> =
-        cached("top-songs/$artistName/$count") { client, urls, section ->
+        cached("top-songs/$artistName/$count") { client, section ->
             // The contract keys by artist NAME (a Subsonic API quirk); resolve
             // to a rating key first.
             val artist = client.sectionItems(
@@ -285,7 +286,7 @@ class PlexMusicRepository @Inject constructor(
                     filters = listOf("artist.id" to key) + filters,
                     sort = sort,
                     size = count,
-                ).mapNotNull { it.toTrackOrNull(urls) }
+                ).mapNotNull { it.toTrackOrNull() }
 
             // "Best of" blends three signals, strongest first: tracks the
             // user rated 3+ stars (>>5 in half-star units — a LOW rating
@@ -309,18 +310,18 @@ class PlexMusicRepository @Inject constructor(
     // served from the TTL cache, which setTrackFavorite clears so the answer
     // never lags a local change. Cached as an id Set for cheap lookups.
     override suspend fun isFavoriteTrack(trackId: String): Boolean =
-        trackId in cached("favorite-track-ids") { _, _, _ ->
+        trackId in cached("favorite-track-ids") { _, _ ->
             favoriteTracks().mapTo(HashSet()) { it.id }
         }
 
     override suspend fun setTrackFavorite(trackId: String, favorite: Boolean) =
-        withSession { client, _, _ ->
+        withSession { client, _ ->
             client.rate(trackId, if (favorite) LOVED_RATING else CLEAR_RATING)
             cache.clear()
         }
 
     override suspend fun setAlbumFavorite(albumId: String, favorite: Boolean) =
-        withSession { client, _, _ ->
+        withSession { client, _ ->
             client.rate(albumId, if (favorite) LOVED_RATING else CLEAR_RATING)
             // Albums carry their loved state; every cached album list is
             // stale the moment a rating changes.
@@ -328,51 +329,51 @@ class PlexMusicRepository @Inject constructor(
         }
 
     override suspend fun album(id: String): AlbumDetail =
-        cached("album/$id") { client, urls, _ ->
+        cached("album/$id") { client, _ ->
             val dto = client.metadata(id)
             AlbumDetail(
                 album = dto.toAlbumOrNull()
                     ?: throw MusicException.NotFound("Album $id has no rating key"),
-                tracks = client.children(id).mapNotNull { it.toTrackOrNull(urls) },
+                tracks = client.children(id).mapNotNull { it.toTrackOrNull() },
             )
         }
 
     override suspend fun playlists(): List<Playlist> =
-        cached("playlists") { client, _, _ ->
+        cached("playlists") { client, _ ->
             client.playlists().mapNotNull { it.toPlaylistOrNull() }
         }
 
     override suspend fun playlist(id: String): PlaylistDetail =
-        cached("playlist/$id") { client, urls, _ ->
+        cached("playlist/$id") { client, _ ->
             val dto = client.metadata(id)
             PlaylistDetail(
                 playlist = dto.toPlaylistOrNull()
                     ?: throw MusicException.NotFound("Playlist $id not found"),
-                tracks = client.playlistItems(id).mapNotNull { it.toTrackOrNull(urls) },
+                tracks = client.playlistItems(id).mapNotNull { it.toTrackOrNull() },
             )
         }
 
     override suspend fun track(id: String): Track =
-        cached("track/$id") { client, urls, _ ->
-            client.metadata(id).toTrackOrNull(urls)
+        cached("track/$id") { client, _ ->
+            client.metadata(id).toTrackOrNull()
                 ?: throw MusicException.NotFound("Track $id has no playable media")
         }
 
     // Cached so the host's onSearch → onGetSearchResult (paged) sequence hits
     // the server once per query, not once per page.
     override suspend fun search(query: String): SearchResults =
-        cached("search/$query") { client, urls, section ->
+        cached("search/$query") { client, section ->
             val hubs = client.search(section, query, limit = SEARCH_COUNT_PER_TYPE)
             fun hub(type: String) = hubs.filter { it.type == type }.flatMap { it.metadata }
             SearchResults(
                 artists = hub("artist").mapNotNull { it.toArtistOrNull() },
                 albums = hub("album").mapNotNull { it.toAlbumOrNull() },
-                tracks = hub("track").mapNotNull { it.toTrackOrNull(urls) },
+                tracks = hub("track").mapNotNull { it.toTrackOrNull() },
             )
         }
 
     override suspend fun scrobble(trackId: String, submission: Boolean) =
-        withSession { client, _, _ ->
+        withSession { client, _ ->
             if (submission) {
                 // Deterministic mark-played: with session-less direct play the
                 // app owns the "counts as played" threshold, not the server.
@@ -389,7 +390,7 @@ class PlexMusicRepository @Inject constructor(
         state: PlayState,
         positionMs: Long,
         durationMs: Long?,
-    ) = withSession { client, _, _ ->
+    ) = withSession { client, _ ->
         val plexState = when (state) {
             PlayState.PLAYING -> "playing"
             PlayState.PAUSED -> "paused"
@@ -406,7 +407,7 @@ class PlexMusicRepository @Inject constructor(
 
     private suspend fun <T : Any> cached(
         key: String,
-        loader: suspend (PlexServerClient, PlexUrlBuilder, String) -> T,
+        loader: suspend (PlexServerClient, String) -> T,
     ): T {
         val session = plexSession()
         val scopedKey = "${session.cacheFingerprint}/$key"
@@ -414,17 +415,17 @@ class PlexMusicRepository @Inject constructor(
         // (see SubsonicMusicRepository.cached).
         return cache.getOrLoad(scopedKey) {
             translatingErrors {
-                loader(session.client, session.urlBuilder, session.account.sectionId)
+                loader(session.client, session.account.sectionId)
             }
         }
     }
 
     private suspend fun <T> withSession(
-        block: suspend (PlexServerClient, PlexUrlBuilder, String) -> T,
+        block: suspend (PlexServerClient, String) -> T,
     ): T {
         val session = plexSession()
         return translatingErrors {
-            block(session.client, session.urlBuilder, session.account.sectionId)
+            block(session.client, session.account.sectionId)
         }
     }
 
@@ -451,13 +452,13 @@ class PlexMusicRepository @Inject constructor(
 
     /** Case-insensitive genre name → filter id, resolved via the cached directory. */
     private suspend fun genreId(name: String): String? =
-        cached("genre-ids") { client, _, section ->
+        cached("genre-ids") { client, section ->
             client.genres(section).associate { it.title.lowercase() to it.key }
         }[name.lowercase()]
 
     /** Artists behind the album list, order preserved, first occurrence wins. */
     private suspend fun playedArtists(key: String, sort: String, size: Int): List<Artist> =
-        cached(key) { client, _, section ->
+        cached(key) { client, section ->
             client.sectionItems(section, ItemType.ALBUM, filters = PLAYED, sort = sort, size = size)
                 .mapNotNull { album ->
                     val artistId = album.parentRatingKey ?: return@mapNotNull null
@@ -515,7 +516,7 @@ class PlexMusicRepository @Inject constructor(
     )
 
     /** Null when the track has no part to stream — unplayable entries are dropped. */
-    private fun PlexMetadata.toTrackOrNull(urls: PlexUrlBuilder): Track? {
+    private fun PlexMetadata.toTrackOrNull(): Track? {
         val id = ratingKey ?: return null
         val partKey = media.firstOrNull()?.parts?.firstOrNull()?.key ?: return null
         return Track(
@@ -529,7 +530,7 @@ class PlexMusicRepository @Inject constructor(
             discNumber = parentIndex,
             durationSec = duration?.let { (it / 1000L).toInt() },
             artworkUrl = artworkOrNull(),
-            streamUrl = urls.partUrl(partKey),
+            streamUrl = StreamRef(MusicProvider.PLEX, id, partKey).encode(),
         )
     }
 

@@ -1,9 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Material Symbols "calendar_today", Outlined, weight 300, filled, 24px (Apache 2.0).
+     Re-export from Android Studio's Vector Asset Studio to change weight or style.
+     Drawn by HomeButtonArtwork into tile badges and motifs at its own sizes, and
+     as a tab icon; no inset of its own. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
+  android:width="24dp"
+  android:height="24dp"
+  android:viewportWidth="960"
+  android:viewportHeight="960"
+  android:tint="#FFFFFF">
+  <!-- The symbol's viewBox is 0 -960 960 960; translate it into the viewport. -->
+  <group android:translateY="960">
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M20,3h-1L19,1h-2v2L7,3L7,1L5,1v2L4,3c-1.1,0 -2,0.9 -2,2v16c0,1.1 0.9,2 2,2h16c1.1,0 2,-0.9 2,-2L22,5c0,-1.1 -0.9,-2 -2,-2zM20,21L4,21L4,8h16v13z" />
+      android:fillColor="#FFFFFF"
+      android:pathData="M212.31-100Q182-100 161-121q-21-21-21-51.31v-535.38Q140-738 161-759q21-21 51.31-21h55.38v-84.61h61.54V-780h303.08v-84.61h60V-780h55.38Q778-780 799-759q21 21 21 51.31v535.38Q820-142 799-121q-21 21-51.31 21H212.31Zm0-60h535.38q4.62 0 8.46-3.85 3.85-3.84 3.85-8.46v-375.38H200v375.38q0 4.62 3.85 8.46 3.84 3.85 8.46 3.85Z" />
+  </group>
 </vector>

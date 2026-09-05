@@ -30,7 +30,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import studio.koeda.norrklang.data.session.MusicProvider
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository.ScrobbleSettings
 import studio.koeda.norrklang.ui.R
@@ -39,7 +38,7 @@ import studio.koeda.norrklang.ui.components.QrCode
 import studio.koeda.norrklang.ui.theme.LocalFormDimens
 
 /** Which page of the settings UI is showing; sub-pages return to [Main]. */
-private enum class SettingsPage { Main, ScrobbleArtists, ScrobblePlaylists, Diagnostics }
+private enum class SettingsPage { Main, Quality, ScrobbleArtists, ScrobblePlaylists, Diagnostics }
 
 /**
  * Server info + sign-out, reached via the car's APPLICATION_PREFERENCES entry.
@@ -58,7 +57,8 @@ fun SettingsScreen(
     onSignIn: (() -> Unit)? = null,
 ) {
     val state by viewModel.sessionState.collectAsStateWithLifecycle()
-    val streamOriginal by viewModel.streamOriginal.collectAsStateWithLifecycle()
+    val qualityWifi by viewModel.qualityWifi.collectAsStateWithLifecycle()
+    val qualityCellular by viewModel.qualityCellular.collectAsStateWithLifecycle()
     val autoplaySimilar by viewModel.autoplaySimilar.collectAsStateWithLifecycle()
     val scrobble by viewModel.scrobbleSettings.collectAsStateWithLifecycle()
     val dimens = LocalFormDimens.current
@@ -72,6 +72,17 @@ fun SettingsScreen(
             text = diagnostics,
             reportUrl = reportUrl,
             onClear = viewModel::clearDiagnostics,
+            onBack = { page = SettingsPage.Main },
+            modifier = modifier,
+        )
+        return
+    }
+    if (page == SettingsPage.Quality) {
+        StreamQualityPage(
+            qualityWifi = qualityWifi,
+            qualityCellular = qualityCellular,
+            onWifiSelected = viewModel::setQualityWifi,
+            onCellularSelected = viewModel::setQualityCellular,
             onBack = { page = SettingsPage.Main },
             modifier = modifier,
         )
@@ -117,25 +128,14 @@ fun SettingsScreen(
                     subtitle = s.session.serverLabel,
                 )
                 HorizontalDivider()
-                // Raw/gapless vs server-transcoded streaming (see
-                // ServerSettingsRepository.streamOriginal). Applies to the
-                // next queue — the playing queue keeps its URLs. Subsonic
-                // only: Plex is always direct play in this app.
-                if (s.session.provider == MusicProvider.SUBSONIC) {
-                    SettingsToggleRow(
-                        title = stringResource(R.string.settings_stream_original),
-                        subtitle = stringResource(
-                            if (streamOriginal) {
-                                R.string.settings_stream_original_on
-                            } else {
-                                R.string.settings_stream_original_off
-                            },
-                        ),
-                        checked = streamOriginal,
-                        onToggle = viewModel::setStreamOriginal,
-                    )
-                    HorizontalDivider()
-                }
+                // Per-network quality tiers (see StreamQualityPage), applied
+                // at load time by the player's resolver — all providers.
+                NavigationRow(
+                    title = stringResource(R.string.settings_quality),
+                    subtitle = stringResource(R.string.settings_quality_hint),
+                    onClick = { page = SettingsPage.Quality },
+                )
+                HorizontalDivider()
                 // Queue-end radio (see QueueRadioListener); both providers.
                 SettingsToggleRow(
                     title = stringResource(R.string.settings_autoplay_similar),
@@ -275,7 +275,7 @@ private fun ScrobbleExclusionPage(
                 modifier = modifier,
             )
         }
-        SettingsPage.Main, SettingsPage.Diagnostics -> Unit
+        SettingsPage.Main, SettingsPage.Quality, SettingsPage.Diagnostics -> Unit
     }
 }
 

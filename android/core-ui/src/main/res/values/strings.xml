@@ -9,6 +9,9 @@
   <string name="signin_provider_subsonic_desc">Connect to your own server with a URL, username and password</string>
   <string name="signin_provider_plex">Plex</string>
   <string name="signin_provider_plex_desc">Link this device with a code from your Plex account</string>
+  <string name="signin_provider_jellyfin">Jellyfin</string>
+  <string name="signin_provider_jellyfin_desc">Connect to your own server with a URL, username and password</string>
+  <string name="signin_subtitle_jellyfin">Connect to your Jellyfin server</string>
 
   <string name="plex_link_title">Link your Plex account</string>
   <string name="plex_link_instruction">On your phone or computer, go to plex.tv/link and enter this code — or scan the QR code</string>
@@ -40,6 +43,7 @@
   <string name="signin_error_network">Can\'t reach the server. Check the address and your connection.</string>
   <string name="signin_error_generic">Something went wrong: %1$s</string>
   <string name="signin_error_missing_fields">Fill in server, username and password</string>
+  <string name="signin_error_no_music_library">This server has no music library</string>
 
   <string name="action_back">Back</string>
 
@@ -49,9 +53,16 @@
   <string name="settings_signout">Sign out</string>
   <string name="settings_signed_out">Not signed in</string>
   <string name="settings_signin">Sign in</string>
-  <string name="settings_stream_original">Stream original files</string>
-  <string name="settings_stream_original_on">Full quality, gapless playback</string>
-  <string name="settings_stream_original_off">Server decides quality — may use less data and break gapless</string>
+  <string name="settings_quality">Streaming quality</string>
+  <string name="settings_quality_hint">Audio quality per connection type</string>
+  <string name="settings_quality_wifi">On Wi-Fi</string>
+  <string name="settings_quality_cellular">On mobile data</string>
+  <string name="settings_quality_original">Original</string>
+  <string name="settings_quality_original_hint">Full quality, gapless playback — uses the most data</string>
+  <string name="settings_quality_high">High (320 kbps)</string>
+  <string name="settings_quality_medium">Medium (192 kbps)</string>
+  <string name="settings_quality_low">Low (128 kbps)</string>
+  <string name="settings_quality_capped_hint">Transcoded by the server — saves data, may break gapless playback</string>
   <string name="settings_autoplay_similar">Autoplay similar music</string>
   <string name="settings_autoplay_similar_on">When the queue ends, similar songs keep playing</string>
   <string name="settings_autoplay_similar_off">Playback stops at the end of the queue</string>

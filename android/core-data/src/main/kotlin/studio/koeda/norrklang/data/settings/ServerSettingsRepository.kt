@@ -20,6 +20,7 @@ import java.util.UUID
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import studio.koeda.norrklang.data.diagnostics.Diagnostics
+import studio.koeda.norrklang.jellyfin.JellyfinAccount
 import studio.koeda.norrklang.plex.PlexAccount
 import studio.koeda.norrklang.subsonic.SubsonicCredentials
 import studio.koeda.norrklang.subsonic.SubsonicTokenAuth
@@ -41,9 +42,9 @@ class ServerSettingsRepository @Inject constructor(
 
     private object Keys {
         /**
-         * "subsonic" | "plex". Absent on pre-Plex installs — [SERVER_URL]
-         * present then implies Subsonic, so existing users stay signed in
-         * without a migration write.
+         * "subsonic" | "plex" | "jellyfin". Absent on pre-Plex installs —
+         * [SERVER_URL] present then implies Subsonic, so existing users stay
+         * signed in without a migration write.
          */
         val PROVIDER = stringPreferencesKey("provider")
 
@@ -64,9 +65,29 @@ class ServerSettingsRepository @Inject constructor(
         val PLEX_MACHINE_ID = stringPreferencesKey("plex_machine_id")
         val PLEX_SECTION_ID = stringPreferencesKey("plex_section_id")
         val PLEX_USERNAME = stringPreferencesKey("plex_username")
+
+        /**
+         * Jellyfin's DeviceId — the device identity for this install. Minted
+         * once and NEVER cleared, even on sign-out: signing in with a new id
+         * would register a duplicate device on the server's dashboard.
+         */
+        val JELLYFIN_DEVICE_ID = stringPreferencesKey("jellyfin_device_id")
+        val JELLYFIN_TOKEN = stringPreferencesKey("jellyfin_token")
+        val JELLYFIN_BASE_URL = stringPreferencesKey("jellyfin_base_url")
+        val JELLYFIN_SERVER_NAME = stringPreferencesKey("jellyfin_server_name")
+        val JELLYFIN_USER_ID = stringPreferencesKey("jellyfin_user_id")
+        val JELLYFIN_USERNAME = stringPreferencesKey("jellyfin_username")
+        val JELLYFIN_LIBRARY_ID = stringPreferencesKey("jellyfin_library_id")
         val LAST_MEDIA_ID = stringPreferencesKey("last_media_id")
         val LAST_POSITION_MS = longPreferencesKey("last_position_ms")
+
+        /**
+         * Pre-quality-tier builds stored a raw-vs-transcoded boolean here;
+         * kept only as a read fallback for [QUALITY_WIFI]/[QUALITY_CELLULAR].
+         */
         val STREAM_ORIGINAL = booleanPreferencesKey("stream_original")
+        val QUALITY_WIFI = stringPreferencesKey("stream_quality_wifi")
+        val QUALITY_CELLULAR = stringPreferencesKey("stream_quality_cellular")
         val AUTOPLAY_SIMILAR = booleanPreferencesKey("autoplay_similar")
         val SCROBBLE_ENABLED = booleanPreferencesKey("scrobble_enabled")
         val SCROBBLE_EXCLUDED_ARTISTS = stringSetPreferencesKey("scrobble_excluded_artists")
@@ -118,6 +139,9 @@ class ServerSettingsRepository @Inject constructor(
         if (prefs[Keys.PROVIDER] == PROVIDER_PLEX) {
             return decodePlex(prefs)?.let { StoredAccount.Plex(it) }
         }
+        if (prefs[Keys.PROVIDER] == PROVIDER_JELLYFIN) {
+            return decodeJellyfin(prefs)?.let { StoredAccount.Jellyfin(it) }
+        }
         // No provider key (pre-Plex install) or "subsonic": Subsonic path,
         // including its legacy migrations.
         return currentCredentials()?.let { StoredAccount.Subsonic(it) }
@@ -138,6 +162,22 @@ class ServerSettingsRepository @Inject constructor(
         )
     }
 
+    private fun decodeJellyfin(prefs: Preferences): JellyfinAccount? {
+        val baseUrl = prefs[Keys.JELLYFIN_BASE_URL] ?: return null
+        val userId = prefs[Keys.JELLYFIN_USER_ID] ?: return null
+        val libraryId = prefs[Keys.JELLYFIN_LIBRARY_ID] ?: return null
+        // null (undecryptable — Keystore key gone) means signed out.
+        val token = prefs[Keys.JELLYFIN_TOKEN]?.let(cipher::decrypt) ?: return null
+        return JellyfinAccount(
+            baseUrl = baseUrl,
+            serverName = prefs[Keys.JELLYFIN_SERVER_NAME] ?: baseUrl,
+            userId = userId,
+            username = prefs[Keys.JELLYFIN_USERNAME] ?: "",
+            token = token,
+            libraryId = libraryId,
+        )
+    }
+
     suspend fun save(credentials: SubsonicCredentials) {
         dataStore.edit { prefs ->
             prefs[Keys.PROVIDER] = PROVIDER_SUBSONIC
@@ -147,6 +187,7 @@ class ServerSettingsRepository @Inject constructor(
             prefs[Keys.AUTH_TOKEN] = cipher.encrypt(credentials.auth.token)
             prefs.remove(Keys.LEGACY_PASSWORD)
             removePlexAccount(prefs)
+            removeJellyfinAccount(prefs)
         }
     }
 
@@ -160,6 +201,21 @@ class ServerSettingsRepository @Inject constructor(
             prefs[Keys.PLEX_SECTION_ID] = account.sectionId
             prefs[Keys.PLEX_USERNAME] = account.username
             removeSubsonicAccount(prefs)
+            removeJellyfinAccount(prefs)
+        }
+    }
+
+    suspend fun saveJellyfin(account: JellyfinAccount) {
+        dataStore.edit { prefs ->
+            prefs[Keys.PROVIDER] = PROVIDER_JELLYFIN
+            prefs[Keys.JELLYFIN_TOKEN] = cipher.encrypt(account.token)
+            prefs[Keys.JELLYFIN_BASE_URL] = account.baseUrl
+            prefs[Keys.JELLYFIN_SERVER_NAME] = account.serverName
+            prefs[Keys.JELLYFIN_USER_ID] = account.userId
+            prefs[Keys.JELLYFIN_USERNAME] = account.username
+            prefs[Keys.JELLYFIN_LIBRARY_ID] = account.libraryId
+            removeSubsonicAccount(prefs)
+            removePlexAccount(prefs)
         }
     }
 
@@ -175,6 +231,20 @@ class ServerSettingsRepository @Inject constructor(
             if (prefs[Keys.PLEX_CLIENT_ID] == null) prefs[Keys.PLEX_CLIENT_ID] = minted
         }
         return prefs[Keys.PLEX_CLIENT_ID] ?: minted
+    }
+
+    /**
+     * This install's Jellyfin DeviceId, minted on first use. The edit
+     * re-checks under DataStore's own serialization so concurrent first calls
+     * agree on one id.
+     */
+    suspend fun jellyfinDeviceId(): String {
+        dataStore.data.first()[Keys.JELLYFIN_DEVICE_ID]?.let { return it }
+        val minted = UUID.randomUUID().toString()
+        val prefs = dataStore.edit { prefs ->
+            if (prefs[Keys.JELLYFIN_DEVICE_ID] == null) prefs[Keys.JELLYFIN_DEVICE_ID] = minted
+        }
+        return prefs[Keys.JELLYFIN_DEVICE_ID] ?: minted
     }
 
     /**
@@ -205,15 +275,16 @@ class ServerSettingsRepository @Inject constructor(
     /**
      * Removes everything tied to the signed-in account: credentials, the
      * resumption pointer, and the scrobble exclusion sets (both hold ids
-     * minted by the old server). Device-wide state — [streamOriginal], the
-     * scrobble master toggle, and the Plex client id — survives a sign-out
-     * or server switch.
+     * minted by the old server). Device-wide state — the quality tiers, the
+     * scrobble master toggle, and the Plex/Jellyfin device ids — survives a
+     * sign-out or server switch.
      */
     suspend fun clearAccount() {
         dataStore.edit { prefs ->
             prefs.remove(Keys.PROVIDER)
             removeSubsonicAccount(prefs)
             removePlexAccount(prefs)
+            removeJellyfinAccount(prefs)
             prefs.remove(Keys.LAST_MEDIA_ID)
             prefs.remove(Keys.LAST_POSITION_MS)
             prefs.remove(Keys.SCROBBLE_EXCLUDED_ARTISTS)
@@ -239,19 +310,54 @@ class ServerSettingsRepository @Inject constructor(
         prefs.remove(Keys.PLEX_USERNAME)
     }
 
+    /** Keeps [Keys.JELLYFIN_DEVICE_ID] — the device identity outlives sign-ins. */
+    private fun removeJellyfinAccount(prefs: MutablePreferences) {
+        prefs.remove(Keys.JELLYFIN_TOKEN)
+        prefs.remove(Keys.JELLYFIN_BASE_URL)
+        prefs.remove(Keys.JELLYFIN_SERVER_NAME)
+        prefs.remove(Keys.JELLYFIN_USER_ID)
+        prefs.remove(Keys.JELLYFIN_USERNAME)
+        prefs.remove(Keys.JELLYFIN_LIBRARY_ID)
+    }
+
     // --- Playback quality ---
 
     /**
-     * Stream original files (`format=raw`, bit-perfect and gapless) or let
-     * the server's transcoding config decide (saves data, breaks gapless).
-     * Defaults to original — self-hosted libraries expect gapless playback.
+     * Quality tier per network type, applied by the player's stream URL
+     * resolver on each load. Wi-Fi defaults to original (bit-perfect,
+     * gapless); cellular defaults to capped — see
+     * [StreamQuality.DEFAULT_CELLULAR] for why.
      */
-    val streamOriginal: Flow<Boolean> =
-        dataStore.data.map { it[Keys.STREAM_ORIGINAL] ?: DEFAULT_STREAM_ORIGINAL }
+    val streamQualityWifi: Flow<StreamQuality> =
+        dataStore.data.map {
+            decodeQuality(it, Keys.QUALITY_WIFI, StreamQuality.DEFAULT_WIFI)
+        }
 
-    suspend fun setStreamOriginal(enabled: Boolean) {
-        dataStore.edit { it[Keys.STREAM_ORIGINAL] = enabled }
+    val streamQualityCellular: Flow<StreamQuality> =
+        dataStore.data.map {
+            decodeQuality(it, Keys.QUALITY_CELLULAR, StreamQuality.DEFAULT_CELLULAR)
+        }
+
+    suspend fun setStreamQualityWifi(quality: StreamQuality) {
+        dataStore.edit { it[Keys.QUALITY_WIFI] = quality.storageValue }
     }
+
+    suspend fun setStreamQualityCellular(quality: StreamQuality) {
+        dataStore.edit { it[Keys.QUALITY_CELLULAR] = quality.storageValue }
+    }
+
+    /**
+     * Legacy fallback: a user who had turned "stream original" OFF had opted
+     * into server transcoding, so they land on the highest capped tier
+     * (on both networks) instead of silently returning to original quality.
+     */
+    private fun decodeQuality(
+        prefs: Preferences,
+        key: Preferences.Key<String>,
+        default: StreamQuality,
+    ): StreamQuality =
+        prefs[key]?.let(StreamQuality::fromStorageValue)
+            ?: if (prefs[Keys.STREAM_ORIGINAL] == false) StreamQuality.HIGH else default
 
     // --- Autoplay ---
 
@@ -267,10 +373,10 @@ class ServerSettingsRepository @Inject constructor(
 
     /**
      * What playback reporting is allowed. The app only talks to the user's
-     * own server (Subsonic `scrobble`); the server forwards plays to
-     * Last.fm/ListenBrainz. The API has no "count internally but don't
-     * forward" variant, so suppressing a play here also keeps it out of the
-     * server's play counts and history.
+     * own server (Subsonic `scrobble`, Plex timeline, Jellyfin sessions);
+     * the server forwards plays to Last.fm/ListenBrainz. The APIs have no
+     * "count internally but don't forward" variant, so suppressing a play
+     * here also keeps it out of the server's play counts and history.
      */
     data class ScrobbleSettings(
         val enabled: Boolean,
@@ -334,17 +440,11 @@ class ServerSettingsRepository @Inject constructor(
     }
 
     companion object {
-        /**
-         * Value of [streamOriginal] before anything is written; shared with
-         * UI-layer stateIn initials so the settings screen never flashes the
-         * wrong state.
-         */
-        const val DEFAULT_STREAM_ORIGINAL = true
-
         /** Value of [autoplaySimilar] before anything is written. */
         const val DEFAULT_AUTOPLAY_SIMILAR = true
 
         private const val PROVIDER_SUBSONIC = "subsonic"
         private const val PROVIDER_PLEX = "plex"
+        private const val PROVIDER_JELLYFIN = "jellyfin"
     }
 }

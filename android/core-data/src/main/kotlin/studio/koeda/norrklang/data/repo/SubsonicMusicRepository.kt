@@ -2,13 +2,11 @@ package studio.koeda.norrklang.data.repo
 
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import studio.koeda.norrklang.data.artwork.ArtworkContract
 import studio.koeda.norrklang.data.di.AppPackageName
@@ -21,13 +19,13 @@ import studio.koeda.norrklang.data.model.Genre
 import studio.koeda.norrklang.data.model.Playlist
 import studio.koeda.norrklang.data.model.PlaylistDetail
 import studio.koeda.norrklang.data.model.SearchResults
+import studio.koeda.norrklang.data.model.StreamRef
 import studio.koeda.norrklang.data.model.Track
+import studio.koeda.norrklang.data.session.MusicProvider
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.data.session.SubsonicSession
-import studio.koeda.norrklang.data.settings.ServerSettingsRepository
 import studio.koeda.norrklang.subsonic.SubsonicClient
 import studio.koeda.norrklang.subsonic.SubsonicException
-import studio.koeda.norrklang.subsonic.SubsonicUrlBuilder
 import studio.koeda.norrklang.subsonic.model.AlbumID3
 import studio.koeda.norrklang.subsonic.model.ArtistID3
 import studio.koeda.norrklang.subsonic.model.Child
@@ -36,7 +34,6 @@ import studio.koeda.norrklang.subsonic.model.Playlist as PlaylistDto
 @Singleton
 class SubsonicMusicRepository @Inject constructor(
     private val sessionManager: SessionManager,
-    private val settings: ServerSettingsRepository,
     @AppPackageName private val packageName: String,
     @ApplicationScope scope: CoroutineScope,
 ) : MusicRepository {
@@ -44,25 +41,25 @@ class SubsonicMusicRepository @Inject constructor(
     private val cache = TtlCache(ttlMillis = 5 * 60 * 1000L)
 
     init {
-        // Cached entries embed authenticated stream URLs and must never
-        // survive a sign-out or account switch. Keys are also namespaced by
-        // the session fingerprint (see [cached]) so a missed clear can't
-        // serve one account's library to another. drop(1) skips the
-        // subscribe-time state — nothing to clear yet.
+        // Cached entries hold one account's library and must never survive a
+        // sign-out or account switch. Keys are also namespaced by the session
+        // fingerprint (see [cached]) so a missed clear can't serve one
+        // account's library to another. drop(1) skips the subscribe-time
+        // state — nothing to clear yet.
         scope.launch {
             sessionManager.state.drop(1).collect { cache.clear() }
         }
     }
 
     override suspend fun artists(): List<Artist> =
-        cached("artists") { client, _ ->
+        cached("artists") { client ->
             client.getArtists().flatMap { index ->
                 index.artist.map { it.toDomain(sortGroup = index.name) }
             }
         }
 
     override suspend fun artist(id: String): ArtistDetail =
-        cached("artist/$id") { client, _ ->
+        cached("artist/$id") { client ->
             val dto = client.getArtist(id)
             ArtistDetail(
                 artist = Artist(
@@ -79,37 +76,37 @@ class SubsonicMusicRepository @Inject constructor(
         }
 
     override suspend fun albums(offset: Int, size: Int): List<Album> =
-        cached("albums/$offset/$size") { client, _ ->
+        cached("albums/$offset/$size") { client ->
             client.getAlbumList2(SubsonicClient.AlbumListType.ALPHABETICAL, size, offset)
                 .map { it.toDomain() }
         }
 
     override suspend fun recentlyAdded(size: Int): List<Album> =
-        cached("recent/$size") { client, _ ->
+        cached("recent/$size") { client ->
             client.getAlbumList2(SubsonicClient.AlbumListType.NEWEST, size)
                 .map { it.toDomain() }
         }
 
     override suspend fun favoriteAlbums(size: Int): List<Album> =
-        cached("favorites/$size") { client, _ ->
+        cached("favorites/$size") { client ->
             client.getAlbumList2(SubsonicClient.AlbumListType.STARRED, size)
                 .map { it.toDomain() }
         }
 
     override suspend fun favoriteTracks(): List<Track> =
-        cached("favorite-tracks") { client, urls ->
-            client.getStarred2().song.map { it.toDomain(urls) }
+        cached("favorite-tracks") { client ->
+            client.getStarred2().song.map { it.toDomain() }
         }
 
     override suspend fun favoriteArtists(): List<Artist> =
-        cached("favorite-artists") { client, _ ->
+        cached("favorite-artists") { client ->
             client.getStarred2().artist.map { it.toDomain() }
         }
 
     // The Subsonic API has no "newest songs" list — flatten the newest albums
     // instead: newest album first, album track order within.
     override suspend fun recentlyAddedTracks(size: Int): List<Track> =
-        cached("recently-added-tracks/$size") { client, urls ->
+        cached("recently-added-tracks/$size") { client ->
             val albums = client.getAlbumList2(SubsonicClient.AlbumListType.NEWEST, size)
             // Only the album prefix that can fill the list is fetched; the
             // maxOf guards a missing songCount from stalling the cut-off.
@@ -124,47 +121,47 @@ class SubsonicMusicRepository @Inject constructor(
                     }.flatten()
                 }
                 .take(size)
-                .map { it.toDomain(urls) }
+                .map { it.toDomain() }
         }
 
     // Deliberately uncached: the random-mix snapshot (RandomMixSession) owns
     // list stability, and a TTL here would defeat its regeneration.
     override suspend fun randomTracks(size: Int): List<Track> =
-        withSession { client, urls ->
-            client.getRandomSongs(size).map { it.toDomain(urls) }
+        withSession { client ->
+            client.getRandomSongs(size).map { it.toDomain() }
         }
 
     override suspend fun recentlyPlayedAlbums(size: Int): List<Album> =
-        cached("recently-played-albums/$size") { client, _ ->
+        cached("recently-played-albums/$size") { client ->
             client.getAlbumList2(SubsonicClient.AlbumListType.RECENT, size)
                 .map { it.toDomain() }
         }
 
     override suspend fun mostPlayedAlbums(size: Int): List<Album> =
-        cached("most-played-albums/$size") { client, _ ->
+        cached("most-played-albums/$size") { client ->
             client.getAlbumList2(SubsonicClient.AlbumListType.FREQUENT, size)
                 .map { it.toDomain() }
         }
 
     override suspend fun genres(): List<Genre> =
-        cached("genres") { client, _ ->
+        cached("genres") { client ->
             client.getGenres().map { Genre(it.value, it.songCount) }
         }
 
     override suspend fun albumsByGenre(genre: String, size: Int): List<Album> =
-        cached("albums-by-genre/$genre/$size") { client, _ ->
+        cached("albums-by-genre/$genre/$size") { client ->
             client.getAlbumList2ByGenre(genre, size).map { it.toDomain() }
         }
 
     override suspend fun albumsByYearRange(fromYear: Int, toYear: Int, size: Int): List<Album> =
-        cached("albums-by-year/$fromYear-$toYear/$size") { client, _ ->
+        cached("albums-by-year/$fromYear-$toYear/$size") { client ->
             client.getAlbumList2ByYear(fromYear, toYear, size).map { it.toDomain() }
         }
 
     // Uncached like randomTracks: CatalogMixesSession owns list stability.
     override suspend fun randomTracksByGenre(genre: String, size: Int): List<Track> =
-        withSession { client, urls ->
-            client.getRandomSongs(size, genre = genre).map { it.toDomain(urls) }
+        withSession { client ->
+            client.getRandomSongs(size, genre = genre).map { it.toDomain() }
         }
 
     override suspend fun randomTracksByYearRange(
@@ -172,9 +169,9 @@ class SubsonicMusicRepository @Inject constructor(
         toYear: Int,
         size: Int,
     ): List<Track> =
-        withSession { client, urls ->
+        withSession { client ->
             client.getRandomSongs(size, fromYear = fromYear, toYear = toYear)
-                .map { it.toDomain(urls) }
+                .map { it.toDomain() }
         }
 
     override suspend fun mostPlayedArtists(size: Int): List<Artist> =
@@ -187,7 +184,7 @@ class SubsonicMusicRepository @Inject constructor(
     // side: one entry serves every count, and the in-library filter below
     // has headroom to still fill the request.
     override suspend fun similarArtists(artistId: String, count: Int): List<Artist> =
-        cached("similar-artists/$artistId") { client, _ ->
+        cached("similar-artists/$artistId") { client ->
             emptyWhenMissing {
                 client.getArtistInfo2(artistId, SIMILAR_ARTISTS_FETCH).similarArtist
             }
@@ -200,33 +197,33 @@ class SubsonicMusicRepository @Inject constructor(
     // Uncached like randomTracks: getSimilarSongs2 has a random component and
     // SimilarMixesSession owns list stability.
     override suspend fun similarTracks(artistId: String, count: Int): List<Track> =
-        withSession { client, urls ->
+        withSession { client ->
             emptyWhenMissing { client.getSimilarSongs2(artistId, count) }
-                .map { it.toDomain(urls) }
+                .map { it.toDomain() }
         }
 
     override suspend fun topTracks(artistName: String, count: Int): List<Track> =
-        cached("top-songs/$artistName/$count") { client, urls ->
+        cached("top-songs/$artistName/$count") { client ->
             emptyWhenMissing { client.getTopSongs(artistName, count) }
-                .map { it.toDomain(urls) }
+                .map { it.toDomain() }
         }
 
     // Runs on every track transition (keeps the car's heart button current);
     // served from the TTL cache, which setTrackFavorite clears so the answer
     // never lags a local change. Cached as an id Set for cheap lookups.
     override suspend fun isFavoriteTrack(trackId: String): Boolean =
-        trackId in cached("favorite-track-ids") { _, _ ->
+        trackId in cached("favorite-track-ids") { _ ->
             favoriteTracks().mapTo(HashSet()) { it.id }
         }
 
     override suspend fun setTrackFavorite(trackId: String, favorite: Boolean) =
-        withSession { client, _ ->
+        withSession { client ->
             if (favorite) client.star(trackId) else client.unstar(trackId)
             cache.clear()
         }
 
     override suspend fun setAlbumFavorite(albumId: String, favorite: Boolean) =
-        withSession { client, _ ->
+        withSession { client ->
             if (favorite) client.starAlbum(albumId) else client.unstarAlbum(albumId)
             // Albums carry their starred state (see AlbumID3.starred), so every
             // cached album list is stale the moment a star changes.
@@ -234,7 +231,7 @@ class SubsonicMusicRepository @Inject constructor(
         }
 
     override suspend fun album(id: String): AlbumDetail =
-        cached("album/$id") { client, urls ->
+        cached("album/$id") { client ->
             val dto = client.getAlbum(id)
             AlbumDetail(
                 album = Album(
@@ -248,12 +245,12 @@ class SubsonicMusicRepository @Inject constructor(
                     artworkUrl = dto.coverArt?.let { artworkUri(it) },
                     isFavorite = dto.starred != null,
                 ),
-                tracks = dto.song.map { it.toDomain(urls) },
+                tracks = dto.song.map { it.toDomain() },
             )
         }
 
     override suspend fun playlists(): List<Playlist> =
-        cached("playlists") { client, _ ->
+        cached("playlists") { client ->
             // `changed` is ISO-8601, so lexicographic order is chronological.
             client.getPlaylists()
                 .sortedByDescending { it.changed.orEmpty() }
@@ -261,7 +258,7 @@ class SubsonicMusicRepository @Inject constructor(
         }
 
     override suspend fun playlist(id: String): PlaylistDetail =
-        cached("playlist/$id") { client, urls ->
+        cached("playlist/$id") { client ->
             val dto = client.getPlaylist(id)
             PlaylistDetail(
                 playlist = Playlist(
@@ -271,29 +268,29 @@ class SubsonicMusicRepository @Inject constructor(
                     durationSec = dto.duration,
                     artworkUrl = dto.coverArt?.let { artworkUri(it) },
                 ),
-                tracks = dto.entry.map { it.toDomain(urls) },
+                tracks = dto.entry.map { it.toDomain() },
             )
         }
 
     override suspend fun track(id: String): Track =
-        cached("track/$id") { client, urls ->
-            client.getSong(id).toDomain(urls)
+        cached("track/$id") { client ->
+            client.getSong(id).toDomain()
         }
 
     // Cached so the host's onSearch → onGetSearchResult (paged) sequence hits
     // the server once per query, not once per page.
     override suspend fun search(query: String): SearchResults =
-        cached("search/$query") { client, urls ->
+        cached("search/$query") { client ->
             val result = client.search3(query, count = SEARCH_COUNT_PER_TYPE)
             SearchResults(
                 artists = result.artist.map { it.toDomain() },
                 albums = result.album.map { it.toDomain() },
-                tracks = result.song.map { it.toDomain(urls) },
+                tracks = result.song.map { it.toDomain() },
             )
         }
 
     override suspend fun scrobble(trackId: String, submission: Boolean) =
-        withSession { client, _ -> client.scrobble(trackId, submission) }
+        withSession { client -> client.scrobble(trackId, submission) }
 
     override fun invalidateCache() = cache.clear()
 
@@ -315,29 +312,26 @@ class SubsonicMusicRepository @Inject constructor(
 
     private suspend fun <T : Any> cached(
         key: String,
-        loader: suspend (SubsonicClient, SubsonicUrlBuilder) -> T,
+        loader: suspend (SubsonicClient) -> T,
     ): T {
         val session = subsonicSession()
-        // Stream URLs depend on the raw/transcode setting — keying by it makes
-        // a toggle take effect immediately instead of after the TTL expires.
-        val raw = streamOriginal()
-        val scopedKey = "${session.cacheFingerprint}/raw=$raw/$key"
+        val scopedKey = "${session.cacheFingerprint}/$key"
         // The loader uses the SAME session snapshot the key was computed from:
         // a re-read could store one account's data under another's fingerprint
         // if an account switch lands between the two reads.
         return cache.getOrLoad(scopedKey) {
             translatingErrors {
-                loader(session.client, session.urlBuilder.withStreamOriginal(raw))
+                loader(session.client)
             }
         }
     }
 
     private suspend fun <T> withSession(
-        block: suspend (SubsonicClient, SubsonicUrlBuilder) -> T,
+        block: suspend (SubsonicClient) -> T,
     ): T {
         val session = subsonicSession()
         return translatingErrors {
-            block(session.client, session.urlBuilder.withStreamOriginal(streamOriginal()))
+            block(session.client)
         }
     }
 
@@ -352,17 +346,6 @@ class SubsonicMusicRepository @Inject constructor(
             if (e is SubsonicException.AuthFailed) sessionManager.onAuthRejected()
             throw e.toMusicException()
         }
-
-    // The try honors this class's contract (callers catch SubsonicException
-    // only): a failed settings read must fall back to the default, not leak
-    // an IOException through every repository method.
-    private suspend fun streamOriginal(): Boolean = try {
-        settings.streamOriginal.first()
-    } catch (e: CancellationException) {
-        throw e
-    } catch (_: Exception) {
-        ServerSettingsRepository.DEFAULT_STREAM_ORIGINAL
-    }
 
     /**
      * Last.fm-backed endpoints report "no data for this artist" as either an
@@ -388,7 +371,7 @@ class SubsonicMusicRepository @Inject constructor(
         type: SubsonicClient.AlbumListType,
         size: Int,
     ): List<Artist> =
-        cached(key) { client, _ ->
+        cached(key) { client ->
             client.getAlbumList2(type, size)
                 .mapNotNull { album ->
                     val artistId = album.artistId ?: return@mapNotNull null
@@ -436,7 +419,7 @@ class SubsonicMusicRepository @Inject constructor(
         artworkUrl = coverArt?.let { artworkUri(it) },
     )
 
-    private fun Child.toDomain(urls: SubsonicUrlBuilder) = Track(
+    private fun Child.toDomain() = Track(
         id = id,
         title = title,
         artistName = artist,
@@ -447,6 +430,6 @@ class SubsonicMusicRepository @Inject constructor(
         discNumber = discNumber,
         durationSec = duration,
         artworkUrl = coverArt?.let { artworkUri(it) },
-        streamUrl = urls.streamUrl(id),
+        streamUrl = StreamRef(MusicProvider.SUBSONIC, id).encode(),
     )
 }

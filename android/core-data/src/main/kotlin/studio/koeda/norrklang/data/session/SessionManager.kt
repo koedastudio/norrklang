@@ -14,6 +14,10 @@ import studio.koeda.norrklang.data.diagnostics.Diagnostics
 import studio.koeda.norrklang.data.repo.toMusicException
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
 import studio.koeda.norrklang.data.settings.StoredAccount
+import studio.koeda.norrklang.jellyfin.JellyfinAccount
+import studio.koeda.norrklang.jellyfin.JellyfinClient
+import studio.koeda.norrklang.jellyfin.JellyfinClientInfo
+import studio.koeda.norrklang.jellyfin.JellyfinException
 import studio.koeda.norrklang.plex.PlexAccount
 import studio.koeda.norrklang.plex.PlexClientInfo
 import studio.koeda.norrklang.plex.PlexException
@@ -36,6 +40,8 @@ class SessionManager(
     private val clientFactory: (SubsonicCredentials) -> SubsonicClient,
     private val plexClientFactory: (PlexAccount, PlexClientInfo) -> PlexServerClient =
         { account, info -> PlexServerClient(account.serverUri, account.token, info) },
+    private val jellyfinClientFactory: (JellyfinAccount, JellyfinClientInfo) -> JellyfinClient =
+        { account, info -> JellyfinClient(account.baseUrl, account.token, info) },
 ) {
 
     @Inject constructor(
@@ -58,6 +64,8 @@ class SessionManager(
                 when (val stored = settings.currentAccount()) {
                     is StoredAccount.Subsonic -> connectedState(stored.credentials)
                     is StoredAccount.Plex -> SessionState.Connected(plexSession(stored.account))
+                    is StoredAccount.Jellyfin ->
+                        SessionState.Connected(jellyfinSession(stored.account))
                     null -> SessionState.SignedOut
                 }
             } catch (e: CancellationException) {
@@ -133,6 +141,34 @@ class SessionManager(
         }
     }
 
+    /**
+     * Validates the token + music library in one round-trip, then persists
+     * and connects. Replaces any previous provider's sign-in (single active
+     * server).
+     */
+    suspend fun signInJellyfin(account: JellyfinAccount): Result<Unit> {
+        val candidate = SessionState.Connected(jellyfinSession(account))
+        return try {
+            (candidate.session as JellyfinSession)
+                .client.validateLibrary(account.userId, account.libraryId)
+            settings.saveJellyfin(account)
+            replaceState(candidate)
+            Result.success(Unit)
+        } catch (e: JellyfinException) {
+            candidate.session.close()
+            Result.failure(e.toMusicException())
+        } catch (e: CancellationException) {
+            candidate.session.close()
+            throw e
+        } catch (e: Exception) {
+            // Broader than JellyfinException: save() can fail in the Keystore
+            // encrypt, and the sign-in form must render that as an error, not
+            // crash the caller's scope.
+            candidate.session.close()
+            Result.failure(e)
+        }
+    }
+
     suspend fun signOut() {
         settings.clearAccount()
         replaceState(SessionState.SignedOut)
@@ -160,6 +196,12 @@ class SessionManager(
 
     private suspend fun plexSession(account: PlexAccount): PlexSession {
         val info = PlexClientInfo(settings.plexClientId(), PlexClientInfo.DEFAULT_VERSION)
-        return PlexSession(account, plexClientFactory(account, info))
+        return PlexSession(account, plexClientFactory(account, info), info)
+    }
+
+    private suspend fun jellyfinSession(account: JellyfinAccount): JellyfinSession {
+        val info =
+            JellyfinClientInfo(settings.jellyfinDeviceId(), JellyfinClientInfo.DEFAULT_VERSION)
+        return JellyfinSession(account, jellyfinClientFactory(account, info), info.deviceId)
     }
 }

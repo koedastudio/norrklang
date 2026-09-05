@@ -22,13 +22,14 @@ interface MusicRepository {
      * Interval for periodic [PlayState.PLAYING] reports while a track plays,
      * or null when the provider wants no play-state reporting at all
      * (Subsonic — its `scrobble` calls carry everything the server needs).
-     * Non-null (Plex) also enables the state-change reports.
+     * Non-null (Plex, Jellyfin) also enables the state-change reports.
      */
     val playbackReportIntervalMs: Long? get() = null
 
     /**
      * Provider-defined play-state report. Subsonic: no-op. Plex: `/:/timeline`
-     * ping driving the server's now-playing, on-deck, and play history.
+     * ping; Jellyfin: `/Sessions/Playing*` reports — both drive the server's
+     * now-playing and play history.
      * Never called when [playbackReportIntervalMs] is null.
      */
     suspend fun reportPlayState(
@@ -93,7 +94,8 @@ interface MusicRepository {
 
     /**
      * In-library artists similar to [artistId] (Subsonic: Last.fm; Plex: the
-     * related-artists hub); empty when the server has no similarity data.
+     * related-artists hub; Jellyfin: the similar-items endpoint); empty when
+     * the server has no similarity data.
      */
     suspend fun similarArtists(artistId: String, count: Int = 10): List<Artist>
 

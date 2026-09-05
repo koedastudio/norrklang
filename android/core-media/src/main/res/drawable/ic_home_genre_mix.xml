@@ -1,9 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Material Symbols "graphic_eq", Outlined, weight 300, filled, 24px (Apache 2.0).
+     Re-export from Android Studio's Vector Asset Studio to change weight or style.
+     Drawn by HomeButtonArtwork into tile badges and motifs at its own sizes, and
+     as a tab icon; no inset of its own. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
+  android:width="24dp"
+  android:height="24dp"
+  android:viewportWidth="960"
+  android:viewportHeight="960"
+  android:tint="#FFFFFF">
+  <!-- The symbol's viewBox is 0 -960 960 960; translate it into the viewport. -->
+  <group android:translateY="960">
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M7,18h2L9,6L7,6v12zM11,22h2L13,2h-2v20zM3,14h2v-4L3,10v4zM15,18h2L17,6h-2v12zM19,10v4h2v-4h-2z" />
+      android:fillColor="#FFFFFF"
+      android:pathData="M295-257.69v-444.62h60v444.62h-60ZM450-100v-760h60v760h-60ZM140-413.85v-132.3h60v132.3h-60Zm465 156.16v-444.62h60v444.62h-60Zm155-156.16v-132.3h60v132.3h-60Z" />
+  </group>
 </vector>

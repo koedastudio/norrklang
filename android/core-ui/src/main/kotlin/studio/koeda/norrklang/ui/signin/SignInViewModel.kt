@@ -23,7 +23,8 @@ class SignInViewModel @Inject constructor(
         data object Done : UiState
     }
 
-    enum class ErrorKind { MISSING_FIELDS, AUTH, NETWORK, GENERIC }
+    /** Shared with [JellyfinSignInViewModel]; Subsonic never emits [ErrorKind.NO_MUSIC_LIBRARY]. */
+    enum class ErrorKind { MISSING_FIELDS, AUTH, NETWORK, NO_MUSIC_LIBRARY, GENERIC }
 
     var serverUrl by mutableStateOf("")
         private set

@@ -13,8 +13,8 @@ import studio.koeda.norrklang.data.repo.MusicRepository
  * [BrowseTree.homeButtons]).
  *
  * Entries with a [coverUrls] source render a cover collage; the Library
- * tiles deliberately declare none, so they always get the dark icon
- * rendering instead.
+ * tiles deliberately declare none, so they always render as a plain
+ * centered icon instead.
  */
 internal enum class HomeTile(
     val mediaId: MediaId,

@@ -31,15 +31,11 @@ class SubsonicUrlBuilderTest {
     }
 
     @Test
-    fun `stream url omits format when transcoding is allowed`() {
-        val url = builder.withStreamOriginal(false).streamUrl("track-42")
-        assertTrue("format=" !in url)
+    fun `capped stream url sends maxBitRate and pins seekable mp3`() {
+        val url = builder.streamUrl("track-42", maxKbps = 192)
+        assertTrue("&maxBitRate=192" in url)
+        assertTrue("&format=mp3" in url)
         assertTrue("&id=track-42" in url)
-    }
-
-    @Test
-    fun `withStreamOriginal is a no-op when the preference already matches`() {
-        assertTrue(builder.withStreamOriginal(true) === builder)
     }
 
     @Test
