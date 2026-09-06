@@ -1,12 +1,25 @@
-<!-- Norrklang app icon. Matches the launcher's adaptive-icon crop:
-     the center 72x72 of the 108x108 foreground viewport. -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="18 18 72 72" width="512" height="512">
-  <rect x="18" y="18" width="72" height="72" fill="#0B0D10"/>
-  <g stroke-width="6" stroke-linecap="round" fill="none">
-    <path d="M36 46 L36 62" stroke="#4FD8C4"/>
-    <path d="M45 38 L45 70" stroke="#4FD8C4"/>
-    <path d="M54 30 L54 78" stroke="#6FE6D6"/>
-    <path d="M63 38 L63 70" stroke="#4FD8C4"/>
-    <path d="M72 46 L72 62" stroke="#4FD8C4"/>
-  </g>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_22_5705)">
+<rect width="1024" height="1024" fill="#4FD8C4"/>
+<rect y="512" width="1024" height="512" fill="#0DA1A6"/>
+<rect width="1024" height="512" fill="#C6F0EA"/>
+<path d="M512 102L922 512H102L512 102Z" fill="#1FB8B0"/>
+<mask id="mask0_22_5705" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="102" y="102" width="820" height="820">
+<path d="M512 102L922 512L512 922L102 512L512 102Z" fill="white"/>
+</mask>
+<g mask="url(#mask0_22_5705)">
+<path d="M172 512H102V922H172V512Z" fill="#38D7DD"/>
+<path d="M297 512H227V922H297V512Z" fill="#38D7DD"/>
+<path d="M422 512H352V922H422V512Z" fill="#38D7DD"/>
+<path d="M547 512H477V922H547V512Z" fill="#38D7DD"/>
+<path d="M672 512H602V922H672V512Z" fill="#38D7DD"/>
+<path d="M797 512H727V922H797V512Z" fill="#38D7DD"/>
+<path d="M922 512H852V922H922V512Z" fill="#38D7DD"/>
+</g>
+</g>
+<defs>
+<clipPath id="clip0_22_5705">
+<rect width="1024" height="1024" fill="white"/>
+</clipPath>
+</defs>
 </svg>
