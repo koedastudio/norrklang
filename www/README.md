@@ -26,8 +26,9 @@ linked from the app's Settings (`PRIVACY_POLICY_URL` in
 `android/core-ui/.../SettingsRows.kt`). Play requires it to stay reachable —
 never duplicate or move it.
 
-**Social card**: `public/og.png` is generated — after changing the tagline or
-brand colours, run `node scripts/make-og.mjs` and commit the result.
+**Social card and touch icon**: `public/og.png` and
+`public/apple-touch-icon.png` are generated — after changing the tagline, the
+mark or brand colours, run `node scripts/make-og.mjs` and commit the result.
 
 ## Deploy
 

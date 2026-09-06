@@ -5,6 +5,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow semver (`norrklang.version` in `android/gradle.properties`
 is the single source of truth).
 
+## [1.2.0] — 2026-09-06
+
+### Added
+
+- Jellyfin support: sign in with server address, username and password
+  (only the access token is stored); browsing, mixes, favourites and play
+  reporting on par with the other providers.
+- Streaming quality tiers (Original / 320 / 192 / 128 kbps), set separately
+  for Wi-Fi and mobile data. Defaults: Original on Wi-Fi, 320 kbps on
+  mobile data. Replaces the "Stream original files" switch; an existing
+  "off" setting carries over as 320 kbps.
+- Assistant voice requests ("play <artist / album / song / playlist>")
+  resolved against the library; "play some music" starts a random mix.
+
+### Changed
+
+- New launcher icon; browse and home tile icons switched to Material
+  Symbols.
+- Homepage and privacy policy updated for Jellyfin, streaming quality and
+  the new icon.
+
 ## [1.1.0] — 2026-08-23
 
 ### Added

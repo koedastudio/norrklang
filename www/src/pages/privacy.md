@@ -2,13 +2,13 @@
 layout: ../layouts/Legal.astro
 title: Privacy Policy
 description: What Norrklang stores, what it sends, and to whom. No analytics, no third parties.
-effectiveDate: 2026-08-21
+effectiveDate: 2026-09-06
 ---
 
 Norrklang is a music player for [Navidrome](https://www.navidrome.org/) and
-Subsonic-compatible servers and for [Plex](https://www.plex.tv/) Media Server,
-published by Koeda Studio for Android Automotive
-OS. It is a client for a server **you** choose and control. This policy
+Subsonic-compatible servers, [Plex](https://www.plex.tv/) Media Server and
+[Jellyfin](https://jellyfin.org/), published by Koeda Studio for Android
+Automotive OS. It is a client for a server **you** choose and control. This policy
 describes what the app itself does with data, plus how this website is
 hosted.
 
@@ -18,16 +18,20 @@ All data the app stores stays **on your device**:
 
 - **Server connection details** — the server address, your username, and an
   authentication token. For Navidrome/Subsonic the token is derived from your
-  password once at sign-in (the password itself is never retained); for Plex
-  it is the token plex.tv issues when you link the device (the app never sees
-  your Plex password at all). Either token is encrypted with a key that never
+  password once at sign-in (the password itself is never retained); for
+  Jellyfin it is the access token your server issues at sign-in (the password
+  is sent to your server once and never retained); for Plex it is the token
+  plex.tv issues when you link the device (the app never sees your Plex
+  password at all). Whichever token it is, it is encrypted with a key that never
   leaves the device's Android Keystore, so the stored value is useless
   anywhere else. The app also opts out of Android's automatic backup, so none
   of its data is copied into cloud backups.
 - **Playback state** — the last played track and position, so playback can
   resume after a restart.
 - **Your settings** — whether scrobbling is on, any artists or playlists you
-  exclude from it, and the streaming quality preference.
+  exclude from it, autoplay, and the streaming quality tier for Wi-Fi and for
+  mobile data. Which of the two applies is decided on the device from the
+  car's current connection; nothing about the network is sent anywhere.
 - **Caches** — library listings and cover art fetched from your server, kept
   per account. Listings are held in memory only and disappear when the app
   stops; cached cover art is stored in the app's cache area and deleted when a
@@ -59,7 +63,8 @@ service: at sign-in to link the device, and to list your servers and their
 connection addresses. Your music library, streaming and play reports still go
 only to your own Plex Media Server. Plex's handling of that service traffic is
 governed by [Plex's privacy policy](https://www.plex.tv/about/privacy-legal/),
-not this one.
+not this one. Jellyfin sign-in involves no such intermediary: the app talks to
+your Jellyfin server alone.
 
 The **Diagnostics** screen can show a QR code that lets you share the
 sanitized log when reporting a problem. The car uploads nothing: the log is
@@ -86,9 +91,10 @@ metadata (titles, artists, cover art) and playback state. That data stays
 within the car's media system; the app grants it no access to your
 credentials.
 
-Voice search is handled by the car's own assistant: it transcribes what you
-say and hands Norrklang the resulting text, which the app sends to your server
-as a search query. The recording never reaches the app or the developer, and
+Voice search and "play …" requests are handled by the car's own assistant:
+it transcribes what you say and hands Norrklang the resulting text, which the
+app matches against your library by sending it to your server as a search
+query. The recording never reaches the app or the developer, and
 how the car handles it is governed by the car maker's policies.
 
 ## This website

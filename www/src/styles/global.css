@@ -4,7 +4,8 @@
  * prefers-color-scheme light variant.
  *
  * Palette matches the app: #0B0D10 background (res/values/colors.xml,
- * NightBackground), #4FD8C4 / #6FE6D6 accents (the launcher icon strokes).
+ * NightBackground), #4FD8C4 / #6FE6D6 accents. The mark itself (Mark.astro,
+ * favicon.svg) carries the launcher icon's own teals from assets/icon.svg.
  */
 
 :root {

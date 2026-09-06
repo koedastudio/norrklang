@@ -1,8 +1,10 @@
 ---
 /*
- * The aurora soundwave mark — same geometry on the same 108-unit grid as the
- * app's adaptive icon foreground
- * (android/app-automotive/src/main/res/drawable/ic_launcher_foreground.xml).
+ * The Norrklang mark — mountain over its striped reflection — on the same
+ * 1024-unit grid as assets/icon.svg and the app's adaptive launcher icon
+ * (android/app-automotive/src/main/res/drawable/ic_launcher_*.xml).
+ * The reflection bars are pre-clipped polygons so the SVG needs no ids and
+ * can appear more than once on a page. Corner radius follows Play's icon mask.
  */
 interface Props {
   size?: number;
@@ -11,18 +13,17 @@ interface Props {
 const { size = 40 } = Astro.props;
 ---
 
-<svg
-  width={size}
-  height={size}
-  viewBox="0 0 108 108"
-  fill="none"
-  aria-hidden="true"
->
-  <g stroke-width="6" stroke-linecap="round">
-    <path d="M36 46 L36 62" stroke="var(--accent)" />
-    <path d="M45 38 L45 70" stroke="var(--accent)" />
-    <path d="M54 30 L54 78" stroke="var(--accent-bright)" />
-    <path d="M63 38 L63 70" stroke="var(--accent)" />
-    <path d="M72 46 L72 62" stroke="var(--accent)" />
+<svg width={size} height={size} viewBox="0 0 1024 1024" aria-hidden="true">
+  <rect width="1024" height="1024" rx="230" fill="#C6F0EA" />
+  <path d="M0 512H1024V794A230 230 0 0 1 794 1024H230A230 230 0 0 1 0 794Z" fill="#0DA1A6" />
+  <path d="M512 102L922 512H102Z" fill="#1FB8B0" />
+  <g fill="#38D7DD">
+    <path d="M102 512H172V582Z" />
+    <path d="M227 512H297V707L227 637Z" />
+    <path d="M352 512H422V832L352 762Z" />
+    <path d="M477 512H547V887L512 922L477 887Z" />
+    <path d="M602 512H672V762L602 832Z" />
+    <path d="M727 512H797V637L727 707Z" />
+    <path d="M852 512H922L852 582Z" />
   </g>
 </svg>

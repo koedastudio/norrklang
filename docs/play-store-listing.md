@@ -7,7 +7,7 @@ listing**. Keep this file and the live listing in sync.
 
 Play's limits: app name ≤ 30 characters, short description ≤ 80, full
 description ≤ 4000. All three are indexed for search, so Navidrome/Plex/
-Subsonic should stay spelled out.
+Jellyfin/Subsonic should stay spelled out.
 
 ## App name
 
@@ -18,18 +18,19 @@ Norrklang - Navidrome & Plex
 ## Short description
 
 ```
-Play your self-hosted Navidrome or Plex library, in your car.
+Play your self-hosted Navidrome, Plex or Jellyfin library, in your car.
 ```
 
 ## Full description
 
 ```
-Norrklang is a music player for Navidrome and Plex, built for the screen in
-your car.
+Norrklang is a music player for Navidrome, Plex and Jellyfin, built for the
+screen in your car.
 
 You need your own server. Norrklang connects to a Navidrome server — or any
-server speaking Subsonic API 1.16.1 — or to a Plex Media Server with a music
-library. It is not a streaming service and ships with no music of its own.
+server speaking Subsonic API 1.16.1 — to a Plex Media Server with a music
+library, or to a Jellyfin server. It is not a streaming service and ships
+with no music of its own.
 
 In the car
 • Browse your library: artists, albums, playlists and favourites
@@ -40,6 +41,9 @@ and generated mixes — Best of, Similar to, genres and decades
 (can be turned off)
 • Add albums and songs as favourites while listening
 • Voice and keyboard search across artists, albums and tracks
+• Ask the car's assistant to play an artist, album, song or playlist
+• Streaming quality per connection: original files on Wi-Fi, a capped
+bitrate on mobile data — or pick your own tiers
 • Play counts reported to your own server, with per-artist and per-playlist
 exclusions — or turned off entirely
 • Picks up where you left off after the car restarts
@@ -52,7 +56,12 @@ Navidrome and Subsonic
 Plex
 • Link your Plex account with a short code or QR scan — no password typed in
 the car
-• Plays directly from your own Plex Media Server
+• Streams from your own Plex Media Server
+
+Jellyfin
+• Sign in with your server address and account. The password is never stored
+— only an access token, encrypted on the device
+• HTTPS required
 
 Private by design
 No ads, no analytics, no crash reporting, no third-party services. The app
@@ -66,6 +75,15 @@ Privacy policy: https://norrklang.app/privacy
 ```
 
 ## Release notes ("What's new", ≤ 500 characters)
+
+For the 1.2.0 release:
+
+```
+• Jellyfin support — sign in with your server address and account
+• Streaming quality per connection — pick your own tiers in Settings
+• Ask the car's assistant to play an artist, album, song or playlist
+• New app icon and refreshed browse icons
+```
 
 For the 1.1.0 release:
 

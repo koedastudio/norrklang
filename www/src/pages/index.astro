@@ -6,45 +6,46 @@ import { GITHUB_URL, LICENSE_URL, PLAY_URL, PUBLISHER, PUBLISHER_URL, TAGLINE } 
 import carDashboard from '../assets/car-dashboard.png';
 import screenHome from '../assets/screen-home.webp';
 import screenPlayer from '../assets/screen-player.webp';
+import screenLibrary from '../assets/screen-library.webp';
 
 const features = [
   {
     title: 'Home screen',
-    body: 'Quick play and generated playlists like Best of, Similar to etc.',
+    body: 'Quick play, favourite artists, recently added tracks and mixes made from your own library — Best of, Similar to, genres and decades.',
     icon: 'home',
   },
   {
+    title: 'Library',
+    body: 'Artists, albums, playlists and favourites, with long lists split into alphabetical sections so they’re quick to scroll.',
+    icon: 'library',
+  },
+  {
     title: 'Playback',
-    body: 'Play, shuffle, seek, queue and see the artwork.',
+    body: 'Play, shuffle, seek, queue and heart the current track. Picks up where you left off after the car restarts, and adds similar songs when the queue runs out.',
     icon: 'play',
   },
   {
-    title: 'Favourites',
-    body: 'Heart the current track from the player and, in some cars, heart albums.',
-    icon: 'heart',
-  },
-  {
-    title: 'Search',
-    body: 'Type it or say it — search artists, albums and tracks.',
+    title: 'Search and assistant',
+    body: 'Type it or say it — search artists, albums and tracks. Or ask the car’s assistant to play an artist, album, song or playlist.',
     icon: 'search',
   },
   {
-    title: 'Scrobbling',
-    body: 'Play counts go to your own server, not a third party. Or turn it off in the settings.',
-    icon: 'wave',
+    title: 'Streaming quality',
+    body: 'Original files on Wi-Fi, a capped bitrate on mobile data — or pick your own tiers for each connection in the settings.',
+    icon: 'wifi',
   },
   {
-    title: 'Keeps playing',
-    body: 'Picks up where you left off after the car restarts, and adds similar songs when the queue runs out.',
-    icon: 'refresh',
+    title: 'Scrobbling',
+    body: 'Play counts go to your own server, not a third party. Exclude artists or playlists, or turn it off in the settings.',
+    icon: 'equalizer',
   },
 ];
 
 const requirements = [
   {
     n: '01',
-    title: 'A Navidrome, Subsonic or Plex server',
-    body: 'Norrklang plays music from your own server. It’s built and tested against Navidrome, works with other servers that speak the Subsonic API, and connects to a Plex Media Server by linking your Plex account.',
+    title: 'A Navidrome, Plex or Jellyfin server',
+    body: 'Norrklang plays music from your own server. It’s built and tested against Navidrome, works with other servers that speak the Subsonic API, connects to a Plex Media Server by linking your Plex account, and signs in to Jellyfin with your server address and account.',
   },
   {
     n: '02',
@@ -54,19 +55,26 @@ const requirements = [
   {
     n: '03',
     title: 'A secure connection',
-    body: 'Your server needs to be reachable over HTTPS. If you already reach your Navidrome from outside your home network, you’re most likely all set. Plex connections use Plex’s own secure addresses, so there’s nothing extra to set up.',
+    body: 'Your Navidrome or Jellyfin server needs to be reachable over HTTPS. If you already reach it from outside your home network, you’re most likely all set. Plex connections use Plex’s own secure addresses, so there’s nothing extra to set up.',
   },
 ];
 
-/* Stroke icons drawn on a 24-unit grid; rendered with the accent colour. */
+/*
+ * Material Symbols, Outlined, weight 300, 24px (Apache 2.0) — the same set and
+ * cut the app draws its tab and tile icons from (android/core-media/.../res/
+ * drawable/ic_browse_*.xml, ic_home_*.xml); home and library_music are the
+ * app's own path data verbatim. Glyphs are on the symbols' 0 -960 960 960
+ * grid; fill1 variants where the app uses filled icons.
+ */
 const iconPaths: Record<string, string> = {
-  home: 'M4 11.5 12 4.5l8 7M6 10.5V19a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-8.5',
-  play: 'M8 5.5v13l11-6.5z',
-  heart:
-    'M12 20s-7.5-4.9-7.5-10A4.3 4.3 0 0 1 12 7a4.3 4.3 0 0 1 7.5 3c0 5.1-7.5 10-7.5 10z',
-  search: 'M10.5 17a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM15.5 15.5 20 20',
-  wave: 'M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4',
-  refresh: 'M20 8A8.3 8.3 0 0 0 5.5 6.5M4 16a8.3 8.3 0 0 0 14.5 1.5M4.5 3.5v4h4M19.5 20.5v-4h-4',
+  home: 'M180-140v-450l300-225.77L780-590v450H556.15v-267.69h-152.3V-140H180Z',
+  library:
+    'M493.85-366.15q37.76 0 63.88-26.12 26.11-26.11 26.11-63.88v-224.62h114.62v-70.77h-150v226.16q-11.46-10.39-25.11-15.58-13.66-5.19-29.5-5.19-37.77 0-63.89 26.11-26.11 26.12-26.11 63.89 0 37.77 26.11 63.88 26.12 26.12 63.89 26.12ZM322.31-260Q292-260 271-281q-21-21-21-51.31v-455.38Q250-818 271-839q21-21 51.31-21h455.38Q808-860 829-839q21 21 21 51.31v455.38Q850-302 829-281q-21 21-51.31 21H322.31Zm-140 140Q152-120 131-141q-21-21-21-51.31v-515.38h60v515.38q0 4.62 3.85 8.46 3.84 3.85 8.46 3.85h515.38v60H182.31Z',
+  play: 'M340-236.16v-487.68L723.07-480 340-236.16Z',
+  search:
+    'M781.69-136.92 530.46-388.16q-30 24.77-69 38.77-39 14-80.69 14-102.55 0-173.58-71.01-71.03-71.01-71.03-173.54 0-102.52 71.01-173.6 71.01-71.07 173.54-71.07 102.52 0 173.6 71.03 71.07 71.03 71.07 173.58 0 42.85-14.38 81.85-14.39 39-38.39 67.84l251.23 251.23-42.15 42.16ZM380.77-395.38q77.31 0 130.96-53.66 53.66-53.65 53.66-130.96t-53.66-130.96q-53.65-53.66-130.96-53.66t-130.96 53.66Q196.15-657.31 196.15-580t53.66 130.96q53.65 53.66 130.96 53.66Z',
+  wifi: 'M480-131.54q-33.92 0-57.35-23.42-23.42-23.42-23.42-57.35 0-33.92 23.42-57.34 23.43-23.42 57.35-23.42t57.35 23.42q23.42 23.42 23.42 57.34 0 33.93-23.42 57.35-23.43 23.42-57.35 23.42ZM254-346l-62.46-63.69q55.54-55.54 129.33-87.54 73.8-32 159.19-32 85.4 0 159.13 32.31 73.73 32.31 129.27 88.46L706-346q-44-44-102-69t-124-25q-66 0-124 25t-102 69ZM84-516l-62.46-62.46q87.77-89 205-139.88Q343.77-769.23 480-769.23q136.23 0 253.46 50.89 117.23 50.88 205 139.88L876-516q-77-77-178.5-120.5T480-680q-116 0-217.5 43.5T84-516Z',
+  equalizer: 'M180-180v-276.15h140V-180H180Zm230 0v-600h140v600H410Zm230 0v-403.84h140V-180H640Z',
 };
 ---
 
@@ -79,9 +87,10 @@ const iconPaths: Record<string, string> = {
         <h1>{TAGLINE}</h1>
         <p class="hero__lede">
           Norrklang is a music player for <a href="https://www.navidrome.org/">Navidrome</a> and
-          Subsonic-compatible servers — and for <a href="https://www.plex.tv/">Plex</a> — made for
-          cars running Android Automotive OS. It installs in the car itself — not on your phone —
-          and plays your own music, straight from your server.
+          Subsonic-compatible servers, <a href="https://www.plex.tv/">Plex</a> and <a
+            href="https://jellyfin.org/">Jellyfin</a>, made for cars running Android Automotive
+          OS. It installs in the car itself — not on your phone — and plays your own music,
+          straight from your server.
         </p>
         <div class="hero__cta">
           <a class="btn btn--primary" href={PLAY_URL}>Get it on Google Play</a>
@@ -117,7 +126,7 @@ const iconPaths: Record<string, string> = {
           features.map((f) => (
             <li class="feature">
               <span class="feature__icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <svg viewBox="0 -960 960 960" fill="currentColor">
                   <path d={iconPaths[f.icon]} />
                 </svg>
               </span>
@@ -136,8 +145,8 @@ const iconPaths: Record<string, string> = {
       <h2>Feels at home in your car</h2>
       <p class="section__prose">
         Browse artists, albums, playlists and mixes with the controls your car already has.
-        Norrklang follows Android Automotive’s media and safety conventions, so it looks and
-        behaves like it came with the car.
+        Norrklang follows Android Automotive’s media and safety conventions — down to the
+        Material Symbols icons — so it looks and behaves like it came with the car.
       </p>
       <div class="screens">
         <figure class="screen">
@@ -159,6 +168,16 @@ const iconPaths: Record<string, string> = {
             loading="lazy"
           />
           <figcaption>Full playback with seek, shuffle and favourites</figcaption>
+        </figure>
+        <figure class="screen">
+          <Image
+            src={screenLibrary}
+            alt="Library tab in the car UI: Albums rows for Recently added, Recently played, Most played, Favourite albums and All albums, then Artists rows for Favourite artists and All artists"
+            widths={[400, 800]}
+            sizes="(max-width: 56rem) 92vw, 30rem"
+            loading="lazy"
+          />
+          <figcaption>Library: albums, artists and favourites, a tap away</figcaption>
         </figure>
       </div>
     </div>
