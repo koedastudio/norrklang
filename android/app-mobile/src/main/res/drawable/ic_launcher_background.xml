@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Sky over water: the two-tone backdrop from assets/icon.svg, split at the canvas midline. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+  android:width="108dp"
+  android:height="108dp"
+  android:viewportWidth="108"
+  android:viewportHeight="108">
+  <path android:pathData="M0,0H108V54H0Z" android:fillColor="#C6F0EA" />
+  <path android:pathData="M0,54H108V108H0Z" android:fillColor="#0DA1A6" />
+</vector>

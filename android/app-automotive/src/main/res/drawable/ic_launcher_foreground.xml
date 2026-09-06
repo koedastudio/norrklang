@@ -1,33 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Aurora soundwave mark. -->
+<!-- Norrklang mark from assets/icon.svg: mountain over its striped reflection.
+     Source 1024-space artwork mapped onto the 72dp visible area (scale 72/1024). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
   android:width="108dp"
   android:height="108dp"
   android:viewportWidth="108"
   android:viewportHeight="108">
-  <path
-    android:pathData="M36,46 L36,62"
-    android:strokeColor="#4FD8C4"
-    android:strokeWidth="6"
-    android:strokeLineCap="round" />
-  <path
-    android:pathData="M45,38 L45,70"
-    android:strokeColor="#4FD8C4"
-    android:strokeWidth="6"
-    android:strokeLineCap="round" />
-  <path
-    android:pathData="M54,30 L54,78"
-    android:strokeColor="#6FE6D6"
-    android:strokeWidth="6"
-    android:strokeLineCap="round" />
-  <path
-    android:pathData="M63,38 L63,70"
-    android:strokeColor="#4FD8C4"
-    android:strokeWidth="6"
-    android:strokeLineCap="round" />
-  <path
-    android:pathData="M72,46 L72,62"
-    android:strokeColor="#4FD8C4"
-    android:strokeWidth="6"
-    android:strokeLineCap="round" />
+  <group
+    android:scaleX="0.0703125"
+    android:scaleY="0.0703125"
+    android:translateX="18"
+    android:translateY="18">
+    <path android:pathData="M512,102L922,512H102Z" android:fillColor="#1FB8B0" />
+    <group>
+      <clip-path android:pathData="M102,512H922L512,922Z" />
+      <path android:pathData="M102,512H172V922H102Z" android:fillColor="#38D7DD" />
+      <path android:pathData="M227,512H297V922H227Z" android:fillColor="#38D7DD" />
+      <path android:pathData="M352,512H422V922H352Z" android:fillColor="#38D7DD" />
+      <path android:pathData="M477,512H547V922H477Z" android:fillColor="#38D7DD" />
+      <path android:pathData="M602,512H672V922H602Z" android:fillColor="#38D7DD" />
+      <path android:pathData="M727,512H797V922H727Z" android:fillColor="#38D7DD" />
+      <path android:pathData="M852,512H922V922H852Z" android:fillColor="#38D7DD" />
+    </group>
+  </group>
 </vector>
