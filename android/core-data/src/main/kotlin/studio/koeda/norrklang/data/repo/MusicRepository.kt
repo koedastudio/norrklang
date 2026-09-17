@@ -9,6 +9,7 @@ import studio.koeda.norrklang.data.model.Playlist
 import studio.koeda.norrklang.data.model.PlaylistDetail
 import studio.koeda.norrklang.data.model.SearchResults
 import studio.koeda.norrklang.data.model.Track
+import studio.koeda.norrklang.data.session.ProviderSession
 
 /** Playback state as reported to the server (see [MusicRepository.reportPlayState]). */
 enum class PlayState { PLAYING, PAUSED, STOPPED }
@@ -31,12 +32,15 @@ interface MusicRepository {
      * ping; Jellyfin: `/Sessions/Playing*` reports — both drive the server's
      * now-playing and play history.
      * Never called when [playbackReportIntervalMs] is null.
+     * [expectedSession] binds queued reports to their originating sign-in;
+     * a replaced session is rejected before a request is sent.
      */
     suspend fun reportPlayState(
         trackId: String,
         state: PlayState,
         positionMs: Long,
         durationMs: Long?,
+        expectedSession: ProviderSession? = null,
     ) {
     }
     suspend fun artists(): List<Artist>
@@ -127,7 +131,12 @@ interface MusicRepository {
     suspend fun playlist(id: String): PlaylistDetail
     suspend fun track(id: String): Track
     suspend fun search(query: String): SearchResults
-    suspend fun scrobble(trackId: String, submission: Boolean)
+    /** [expectedSession] prevents a delayed play from being reported to a new account. */
+    suspend fun scrobble(
+        trackId: String,
+        submission: Boolean,
+        expectedSession: ProviderSession? = null,
+    )
     fun invalidateCache()
 
     companion object {

@@ -24,6 +24,8 @@
   <application
     android:name=".NorrklangAutomotiveApplication"
     android:allowBackup="false"
+    android:fullBackupContent="false"
+    android:dataExtractionRules="@xml/data_extraction_rules"
     android:appCategory="audio"
     android:icon="@mipmap/ic_launcher"
     android:label="@string/app_name"

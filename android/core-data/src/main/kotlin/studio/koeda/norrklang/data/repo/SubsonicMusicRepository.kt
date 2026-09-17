@@ -22,6 +22,7 @@ import studio.koeda.norrklang.data.model.SearchResults
 import studio.koeda.norrklang.data.model.StreamRef
 import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.session.MusicProvider
+import studio.koeda.norrklang.data.session.ProviderSession
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.data.session.SubsonicSession
 import studio.koeda.norrklang.subsonic.SubsonicClient
@@ -41,13 +42,15 @@ class SubsonicMusicRepository @Inject constructor(
     private val cache = TtlCache(ttlMillis = 5 * 60 * 1000L)
 
     init {
-        // Cached entries hold one account's library and must never survive a
-        // sign-out or account switch. Keys are also namespaced by the session
-        // fingerprint (see [cached]) so a missed clear can't serve one
-        // account's library to another. drop(1) skips the subscribe-time
-        // state — nothing to clear yet.
+        // Explicit sign-out drops cached library data. Direct account switches
+        // use different fingerprint keys, so they cannot reuse another account's
+        // data. The TTL prunes those retired keys as new requests arrive.
         scope.launch {
-            sessionManager.state.drop(1).collect { cache.clear() }
+            sessionManager.state.drop(1).collect { state ->
+                // Connected caches are already keyed by account fingerprint.
+                // Clearing on connect can invalidate that account's first load.
+                if (state is SessionManager.SessionState.SignedOut) cache.clear()
+            }
         }
     }
 
@@ -289,8 +292,12 @@ class SubsonicMusicRepository @Inject constructor(
             )
         }
 
-    override suspend fun scrobble(trackId: String, submission: Boolean) =
-        withSession { client -> client.scrobble(trackId, submission) }
+    override suspend fun scrobble(
+        trackId: String,
+        submission: Boolean,
+        expectedSession: ProviderSession?,
+    ) =
+        withSession(expectedSession) { client -> client.scrobble(trackId, submission) }
 
     override fun invalidateCache() = cache.clear()
 
@@ -320,17 +327,21 @@ class SubsonicMusicRepository @Inject constructor(
         // a re-read could store one account's data under another's fingerprint
         // if an account switch lands between the two reads.
         return cache.getOrLoad(scopedKey) {
-            translatingErrors {
+            translatingErrors(session) {
                 loader(session.client)
             }
         }
     }
 
     private suspend fun <T> withSession(
+        expectedSession: ProviderSession? = null,
         block: suspend (SubsonicClient) -> T,
     ): T {
         val session = subsonicSession()
-        return translatingErrors {
+        if (expectedSession != null && session !== expectedSession) {
+            throw MusicException.AuthFailed("Playback account changed")
+        }
+        return translatingErrors(session) {
             block(session.client)
         }
     }
@@ -339,11 +350,11 @@ class SubsonicMusicRepository @Inject constructor(
      * The [MusicException] boundary: nothing above core-data sees a
      * [SubsonicException]. Auth rejections also flip the session state.
      */
-    private suspend fun <T> translatingErrors(block: suspend () -> T): T =
+    private suspend fun <T> translatingErrors(session: SubsonicSession, block: suspend () -> T): T =
         try {
             block()
         } catch (e: SubsonicException) {
-            if (e is SubsonicException.AuthFailed) sessionManager.onAuthRejected()
+            if (e is SubsonicException.AuthFailed) sessionManager.onAuthRejected(session)
             throw e.toMusicException()
         }
 

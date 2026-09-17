@@ -21,9 +21,16 @@ internal class NetworkMonitor(context: Context) : AutoCloseable {
     private val _onCellular = MutableStateFlow(currentDefaultIsCellular())
     val onCellular: StateFlow<Boolean> = _onCellular.asStateFlow()
 
+    private val _isConnected = MutableStateFlow(currentDefaultIsConnected())
+    val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
+
     private val callback = object : ConnectivityManager.NetworkCallback() {
         override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
             _onCellular.value = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
+            _isConnected.value = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        }
+        override fun onLost(network: Network) {
+            _isConnected.value = false
         }
         // onLost keeps the last known transport: with no network the tier is
         // moot, and the next default network updates it via the callback.
@@ -38,6 +45,14 @@ internal class NetworkMonitor(context: Context) : AutoCloseable {
 
     override fun close() {
         runCatching { connectivityManager?.unregisterNetworkCallback(callback) }
+    }
+
+    private fun currentDefaultIsConnected(): Boolean {
+        val manager = connectivityManager ?: return false
+        return runCatching {
+            manager.getNetworkCapabilities(manager.activeNetwork)
+                ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+        }.getOrDefault(false)
     }
 
     private fun currentDefaultIsCellular(): Boolean {

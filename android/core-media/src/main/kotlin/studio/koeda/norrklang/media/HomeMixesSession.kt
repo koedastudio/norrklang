@@ -6,8 +6,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import studio.koeda.norrklang.data.model.Track
-import studio.koeda.norrklang.data.repo.MusicRepository
 import studio.koeda.norrklang.data.repo.MusicException
+import studio.koeda.norrklang.data.repo.MusicRepository
 
 /**
  * Shared shell for the generated home-tab mix sections: a tile snapshot of
@@ -58,6 +58,12 @@ internal abstract class HomeMixesSession<K : Any, S : Any>(
     suspend fun refresh(fingerprint: String): Boolean {
         val startEpoch = stateMutex.withLock {
             if (snapshotFingerprint == fingerprint && snapshot != null) return false
+            if (snapshotFingerprint != fingerprint) {
+                epoch++
+                snapshotFingerprint = fingerprint
+                snapshot = null
+                tracksByMix.clear()
+            }
             epoch
         }
         val generated = try {

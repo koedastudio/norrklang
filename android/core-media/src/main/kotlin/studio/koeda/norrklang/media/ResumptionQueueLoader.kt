@@ -1,6 +1,7 @@
 package studio.koeda.norrklang.media
 
 import androidx.annotation.OptIn
+import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession.MediaItemsWithStartPosition
 import kotlin.coroutines.cancellation.CancellationException
@@ -21,26 +22,39 @@ internal class ResumptionQueueLoader(
     private val similarMixes: SimilarMixesSession,
     private val bestOfMixes: BestOfMixesSession,
     private val catalogMixes: CatalogMixesSession,
+    private val buildItem: (Track, MediaId.Container?) -> MediaItem = MediaItemFactory::playableTrack,
 ) {
 
     /** The restored queue, or null when there is nothing (or no way) to restore. */
     suspend fun load(): MediaItemsWithStartPosition? {
         return try {
-            val state = settings.resumptionState() ?: return null
+            restore(settings.resumptionState())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    internal suspend fun restore(
+        state: ServerSettingsRepository.ResumptionState?,
+    ): MediaItemsWithStartPosition? {
+        return try {
+            state ?: return null
             val id = MediaId.parse(state.mediaId) as? MediaId.Track ?: return null
             val container = id.container
             if (container != null) {
                 val queue = resumeTracks(container, id.id)
                 if (queue.isEmpty()) return null
-                val index = queue.indexOfFirst { it.id == id.id }.coerceAtLeast(0)
+                val index = queue.indexOfFirst { it.id == id.id }
                 MediaItemsWithStartPosition(
-                    queue.map { MediaItemFactory.playableTrack(it, container) },
-                    index,
-                    state.positionMs,
+                    queue.map { buildItem(it, container) },
+                    index.coerceAtLeast(0),
+                    if (index >= 0) state.positionMs else 0L,
                 )
             } else {
                 MediaItemsWithStartPosition(
-                    listOf(MediaItemFactory.playableTrack(repository.track(id.id))),
+                    listOf(buildItem(repository.track(id.id), null)),
                     /* startIndex = */ 0,
                     state.positionMs,
                 )

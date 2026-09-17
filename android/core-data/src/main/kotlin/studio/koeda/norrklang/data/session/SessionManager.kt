@@ -175,9 +175,13 @@ class SessionManager(
     }
 
     /** Called by the data layer when the server rejects our stored credentials. */
-    fun onAuthRejected() {
-        if (_state.value is SessionState.Connected) {
-            replaceState(SessionState.SignedOut)
+    fun onAuthRejected(rejectedSession: ProviderSession) {
+        val current = _state.value as? SessionState.Connected ?: return
+        // A late response from an old account must not sign out its replacement.
+        if (current.session === rejectedSession &&
+            _state.compareAndSet(current, SessionState.SignedOut)
+        ) {
+            rejectedSession.close()
         }
     }
 

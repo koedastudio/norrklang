@@ -3,19 +3,19 @@ package studio.koeda.norrklang.data.settings
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
-import kotlin.test.assertIs
-import kotlin.test.assertNotEquals
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
 import studio.koeda.norrklang.jellyfin.JellyfinAccount
@@ -311,5 +311,29 @@ class ServerSettingsRepositoryTest {
             ServerSettingsRepository.ResumptionState("track/42", 90_000L),
             repo.resumptionState(),
         )
+    }
+
+    @Test
+    fun `a queued resumption save cannot revive state after sign-out`() = runTest {
+        val repo = ServerSettingsRepository(dataStore(backgroundScope), FakeCipher())
+        repo.save(credentials)
+        val revision = repo.accountRevision()!!
+        repo.clearAccount()
+        repo.saveResumptionState("track/old", 12_000, revision)
+        assertNull(repo.resumptionState())
+    }
+
+    @Test
+    fun `switching accounts clears server ids and rejects the old persister`() = runTest {
+        val repo = ServerSettingsRepository(dataStore(backgroundScope), FakeCipher())
+        repo.save(credentials)
+        val revision = repo.accountRevision()!!
+        repo.saveResumptionState("track/old", 12_000, revision)
+        repo.setArtistScrobbleExcluded("old-artist", true)
+        repo.save(SubsonicCredentials.fromInput("https://other.example.com", "bob", "secret"))
+        repo.saveResumptionState("track/old", 20_000, revision)
+        assertNull(repo.resumptionState())
+        assertTrue(repo.scrobbleSettings.first().excludedArtistIds.isEmpty())
+        assertNotEquals(revision, repo.accountRevision())
     }
 }

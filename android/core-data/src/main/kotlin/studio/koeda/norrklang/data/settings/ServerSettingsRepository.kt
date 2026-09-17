@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.cancellation.CancellationException
@@ -16,7 +17,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
-import java.util.UUID
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import studio.koeda.norrklang.data.diagnostics.Diagnostics
@@ -47,6 +47,7 @@ class ServerSettingsRepository @Inject constructor(
          * signed in without a migration write.
          */
         val PROVIDER = stringPreferencesKey("provider")
+        val ACCOUNT_REVISION = stringPreferencesKey("account_revision")
 
         val SERVER_URL = stringPreferencesKey("server_url")
         val USERNAME = stringPreferencesKey("username")
@@ -180,6 +181,12 @@ class ServerSettingsRepository @Inject constructor(
 
     suspend fun save(credentials: SubsonicCredentials) {
         dataStore.edit { prefs ->
+            if (prefs[Keys.SERVER_URL] != credentials.baseUrl ||
+                prefs[Keys.USERNAME] != credentials.username
+            ) {
+                clearAccountPlayback(prefs)
+            }
+            prefs[Keys.ACCOUNT_REVISION] = UUID.randomUUID().toString()
             prefs[Keys.PROVIDER] = PROVIDER_SUBSONIC
             prefs[Keys.SERVER_URL] = credentials.baseUrl
             prefs[Keys.USERNAME] = credentials.username
@@ -193,6 +200,13 @@ class ServerSettingsRepository @Inject constructor(
 
     suspend fun savePlex(account: PlexAccount) {
         dataStore.edit { prefs ->
+            if (prefs[Keys.PLEX_SERVER_URI] != account.serverUri ||
+                prefs[Keys.PLEX_SECTION_ID] != account.sectionId ||
+                prefs[Keys.PLEX_USERNAME] != account.username
+            ) {
+                clearAccountPlayback(prefs)
+            }
+            prefs[Keys.ACCOUNT_REVISION] = UUID.randomUUID().toString()
             prefs[Keys.PROVIDER] = PROVIDER_PLEX
             prefs[Keys.PLEX_TOKEN] = cipher.encrypt(account.token)
             prefs[Keys.PLEX_SERVER_URI] = account.serverUri
@@ -207,6 +221,13 @@ class ServerSettingsRepository @Inject constructor(
 
     suspend fun saveJellyfin(account: JellyfinAccount) {
         dataStore.edit { prefs ->
+            if (prefs[Keys.JELLYFIN_BASE_URL] != account.baseUrl ||
+                prefs[Keys.JELLYFIN_USER_ID] != account.userId ||
+                prefs[Keys.JELLYFIN_LIBRARY_ID] != account.libraryId
+            ) {
+                clearAccountPlayback(prefs)
+            }
+            prefs[Keys.ACCOUNT_REVISION] = UUID.randomUUID().toString()
             prefs[Keys.PROVIDER] = PROVIDER_JELLYFIN
             prefs[Keys.JELLYFIN_TOKEN] = cipher.encrypt(account.token)
             prefs[Keys.JELLYFIN_BASE_URL] = account.baseUrl
@@ -282,15 +303,29 @@ class ServerSettingsRepository @Inject constructor(
     suspend fun clearAccount() {
         dataStore.edit { prefs ->
             prefs.remove(Keys.PROVIDER)
+            prefs.remove(Keys.ACCOUNT_REVISION)
             removeSubsonicAccount(prefs)
             removePlexAccount(prefs)
             removeJellyfinAccount(prefs)
-            prefs.remove(Keys.LAST_MEDIA_ID)
-            prefs.remove(Keys.LAST_POSITION_MS)
-            prefs.remove(Keys.SCROBBLE_EXCLUDED_ARTISTS)
-            prefs.remove(Keys.SCROBBLE_EXCLUDED_PLAYLISTS)
+            clearAccountPlayback(prefs)
         }
     }
+
+    private fun clearAccountPlayback(prefs: MutablePreferences) {
+        prefs.remove(Keys.LAST_MEDIA_ID)
+        prefs.remove(Keys.LAST_POSITION_MS)
+        prefs.remove(Keys.SCROBBLE_EXCLUDED_ARTISTS)
+        prefs.remove(Keys.SCROBBLE_EXCLUDED_PLAYLISTS)
+    }
+
+    /** Mint a revision for older installs, without changing their saved queue. */
+    suspend fun accountRevision(): String? = dataStore.edit { prefs ->
+        val signedIn = prefs[Keys.SERVER_URL] != null || prefs[Keys.PLEX_TOKEN] != null ||
+            prefs[Keys.JELLYFIN_TOKEN] != null
+        if (signedIn && prefs[Keys.ACCOUNT_REVISION] == null) {
+            prefs[Keys.ACCOUNT_REVISION] = UUID.randomUUID().toString()
+        }
+    }[Keys.ACCOUNT_REVISION]
 
     private fun removeSubsonicAccount(prefs: MutablePreferences) {
         prefs.remove(Keys.SERVER_URL)
@@ -324,7 +359,7 @@ class ServerSettingsRepository @Inject constructor(
 
     /**
      * Quality tier per network type, applied by the player's stream URL
-     * resolver on each load. Wi-Fi defaults to original (bit-perfect,
+     * resolver when a track's data source first loads. Wi-Fi defaults to original (bit-perfect,
      * gapless); cellular defaults to capped — see
      * [StreamQuality.DEFAULT_CELLULAR] for why.
      */
@@ -426,8 +461,13 @@ class ServerSettingsRepository @Inject constructor(
 
     data class ResumptionState(val mediaId: String, val positionMs: Long)
 
-    suspend fun saveResumptionState(mediaId: String, positionMs: Long) {
+    suspend fun saveResumptionState(
+        mediaId: String,
+        positionMs: Long,
+        expectedRevision: String? = null,
+    ) {
         dataStore.edit { prefs ->
+            if (expectedRevision != null && prefs[Keys.ACCOUNT_REVISION] != expectedRevision) return@edit
             prefs[Keys.LAST_MEDIA_ID] = mediaId
             prefs[Keys.LAST_POSITION_MS] = positionMs
         }

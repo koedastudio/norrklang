@@ -12,6 +12,7 @@ import studio.koeda.norrklang.data.model.PlaylistDetail
 import studio.koeda.norrklang.data.model.SearchResults
 import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.session.MusicProvider
+import studio.koeda.norrklang.data.session.ProviderSession
 import studio.koeda.norrklang.data.session.SessionManager
 
 /**
@@ -86,8 +87,12 @@ class RoutingMusicRepository @Inject constructor(
     override suspend fun playlist(id: String): PlaylistDetail = active().playlist(id)
     override suspend fun track(id: String): Track = active().track(id)
     override suspend fun search(query: String): SearchResults = active().search(query)
-    override suspend fun scrobble(trackId: String, submission: Boolean) =
-        active().scrobble(trackId, submission)
+    override suspend fun scrobble(
+        trackId: String,
+        submission: Boolean,
+        expectedSession: ProviderSession?,
+    ) =
+        active().scrobble(trackId, submission, expectedSession)
 
     // Signed out answers null instead of throwing — reporting is optional.
     override val playbackReportIntervalMs: Long?
@@ -100,8 +105,9 @@ class RoutingMusicRepository @Inject constructor(
         state: PlayState,
         positionMs: Long,
         durationMs: Long?,
+        expectedSession: ProviderSession?,
     ) {
-        activeOrNull()?.reportPlayState(trackId, state, positionMs, durationMs)
+        activeOrNull()?.reportPlayState(trackId, state, positionMs, durationMs, expectedSession)
     }
 
     override fun invalidateCache() {

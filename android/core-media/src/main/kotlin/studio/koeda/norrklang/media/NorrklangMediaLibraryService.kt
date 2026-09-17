@@ -3,37 +3,40 @@ package studio.koeda.norrklang.media
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Bundle
-import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSourceBitmapLoader
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
+import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.session.CacheBitmapLoader
 import androidx.media3.session.MediaConstants
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession.ControllerInfo
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import studio.koeda.norrklang.data.diagnostics.Diagnostics
 import studio.koeda.norrklang.data.repo.MusicRepository
+import studio.koeda.norrklang.data.session.ProviderSession
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
 
@@ -55,8 +58,8 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
     @Inject internal lateinit var catalogMixes: CatalogMixesSession
 
     private var mediaSession: MediaLibrarySession? = null
+    @Volatile private var playbackAccount: ProviderSession? = null
     private var resumptionPersister: ResumptionPersister? = null
-    private var playbackRecovery: PlaybackRecoveryListener? = null
     private var networkMonitor: NetworkMonitor? = null
     // The handler is load-bearing: an uncaught throw here kills the process,
     // the car host rebinds into the same state, and the app "flash-loops"
@@ -69,12 +72,12 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
     override fun onCreate() {
         super.onCreate()
 
-        // Stream URLs are resolved per load from canonical refs (StreamRef),
-        // picking the quality tier for the network the device is on at that
-        // moment — a Wi-Fi→LTE handoff mid-drive changes the next load, not
-        // nothing.
+        // Each track's data source pins its quality across retries and seeks.
+        // New tracks pick the latest network tier.
         val monitor = NetworkMonitor(this).also { networkMonitor = it }
-        val resolver = StreamUrlResolver { sessionManager.connectedOrNull()?.session }
+        val resolver = StreamUrlResolver {
+            playbackAccount?.takeIf { sessionManager.connectedOrNull()?.session === it }
+        }
         serviceScope.launch {
             settings.streamQualityWifi.collect { resolver.wifiQuality = it }
         }
@@ -86,21 +89,8 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
         }
 
         val player = buildPlayer(resolver)
-        player.addListener(PlaybackReporter(serviceScope, repository, settings, player))
         player.addListener(PlaybackErrorRecorder())
         player.addListener(RandomMixPlaySourceListener(randomMix))
-        playbackRecovery = PlaybackRecoveryListener(this, serviceScope, player)
-            .also(player::addListener)
-        resumptionPersister = ResumptionPersister(serviceScope, settings, player)
-            .also(player::addListener)
-        player.addListener(
-            QueueRadioListener(
-                scope = serviceScope,
-                autoplayEnabled = { settings.autoplaySimilar.first() },
-                radio = QueueRadio(repository),
-                player = player,
-            ),
-        )
 
         val browseTree =
             BrowseTree(this, repository, randomMix, similarMixes, bestOfMixes, catalogMixes)
@@ -156,7 +146,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
                 )
             }
 
-        observeSessionState(player, resumptionLoader)
+        observeSessionState(player, resumptionLoader, monitor)
     }
 
     /**
@@ -192,10 +182,12 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
                 // car's seek bar (see MetadataDurationMediaSourceFactory).
                 MetadataDurationMediaSourceFactory(
                     DefaultMediaSourceFactory(
-                        ResolvingDataSource.Factory(
-                            DefaultDataSource.Factory(this, httpDataSourceFactory),
-                            resolver,
-                        ),
+                        DataSource.Factory {
+                            ResolvingDataSource(
+                                DefaultDataSource.Factory(this, httpDataSourceFactory).createDataSource(),
+                                resolver.createResolver(),
+                            )
+                        },
                         extractorsFactory,
                     )
                         .setLoadErrorHandlingPolicy(
@@ -229,73 +221,85 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
     private fun observeSessionState(
         player: AuthGatePlayer,
         resumptionLoader: ResumptionQueueLoader,
+        monitor: NetworkMonitor,
     ) {
-        var queueRestored = false
-        // Debounce the post-connect burst of mix-section notifies — one
-        // notify per section made some hosts visibly re-render repeatedly.
-        var homeNotify: Job? = null
-        fun scheduleHomeNotify(session: MediaLibrarySession) {
-            homeNotify?.cancel()
-            homeNotify = serviceScope.launch {
-                delay(HOME_NOTIFY_COALESCE_MS)
-                session.notifyChildrenChanged(MediaId.TabHome.encode(), Int.MAX_VALUE, null)
-            }
-        }
         serviceScope.launch {
-            sessionManager.state.collect { state ->
-                Log.d(TAG, "session state: ${state::class.simpleName}")
-                val session = mediaSession ?: return@collect
-                when (state) {
-                    is SessionManager.SessionState.Connected -> {
-                        player.setAuthError(null)
-                        session.notifyChildrenChanged(MediaId.Root.encode(), 3, null)
-                        // Generate the mix sections off the browse path (up
-                        // to dozens of requests each), each popping into the
-                        // home tab when ready. Separate launches so a slow
-                        // generation delays neither the other sections nor
-                        // the queue restore below — except Best of ahead of
-                        // Similar to in one launch: Similar's generation
-                        // excludes Best of's seed artists (see MediaModule),
-                        // so that snapshot must settle first. The shared
-                        // top-songs cache makes the wait cheap.
-                        suspend fun refreshIntoHome(mixes: HomeMixesSession<*, *>) {
-                            if (mixes.refresh(state.session.cacheFingerprint)) {
-                                scheduleHomeNotify(session)
-                            }
+            val session = mediaSession ?: return@launch
+            followPlaybackAccounts(
+                player = player,
+                states = sessionManager.state,
+                signedOut = {
+                    playbackAccount = null
+                    player.setAuthError(
+                        SessionErrors.authenticationExpiredException(
+                            this@NorrklangMediaLibraryService, signInPendingIntent(),
+                        ),
+                    )
+                    session.notifyChildrenChanged(MediaId.Root.encode(), 0, null)
+                },
+                connected = { account ->
+                    playbackAccount = account
+                    player.setAuthError(null)
+                    session.notifyChildrenChanged(MediaId.Root.encode(), 3, null)
+                    val reporter = PlaybackReporter(this, repository, settings, player, account)
+                    val persister = try {
+                        settings.accountRevision()?.let { revision ->
+                            ResumptionPersister(this, settings, player, revision)
                         }
-                        serviceScope.launch {
-                            refreshIntoHome(bestOfMixes)
-                            refreshIntoHome(similarMixes)
-                        }
-                        serviceScope.launch { refreshIntoHome(catalogMixes) }
-                        // The car's control bar is always on screen; pre-load
-                        // the last queue (paused) so it shows the track play
-                        // would resume instead of an empty box.
-                        if (!queueRestored && player.mediaItemCount == 0) {
-                            queueRestored = true
-                            resumptionLoader.load()?.let { resumed ->
-                                player.setMediaItems(
-                                    resumed.mediaItems,
-                                    resumed.startIndex,
-                                    resumed.startPositionMs,
-                                )
-                                player.prepare()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Diagnostics.record("resumption-setup", e)
+                        null
+                    }
+                    val radio = QueueRadioListener(
+                        scope = this,
+                        autoplayEnabled = { settings.autoplaySimilar.first() },
+                        radio = QueueRadio(repository),
+                        player = player,
+                    )
+                    var homeNotify: Job? = null
+                    suspend fun refreshIntoHome(mixes: HomeMixesSession<*, *>) {
+                        if (mixes.refresh(account.cacheFingerprint)) {
+                            homeNotify?.cancel()
+                            homeNotify = launch {
+                                delay(HOME_NOTIFY_COALESCE_MS)
+                                session.notifyChildrenChanged(MediaId.TabHome.encode(), Int.MAX_VALUE, null)
                             }
                         }
                     }
-                    is SessionManager.SessionState.SignedOut -> {
-                        Log.d(TAG, "applying auth player error")
-                        player.setAuthError(
-                            SessionErrors.authenticationExpiredException(
-                                this@NorrklangMediaLibraryService,
-                                signInPendingIntent(),
-                            ),
-                        )
-                        session.notifyChildrenChanged(MediaId.Root.encode(), 0, null)
+                    val initialization = PlaybackInitialization(
+                        scope = this,
+                        player = player,
+                        loadQueue = resumptionLoader::load,
+                        refreshHome = {
+                            coroutineScope {
+                                launch {
+                                    refreshIntoHome(bestOfMixes)
+                                    refreshIntoHome(similarMixes)
+                                }
+                                launch { refreshIntoHome(catalogMixes) }
+                            }
+                        },
+                    )
+                    val recovery = PlaybackRecoveryListener(
+                        this@NorrklangMediaLibraryService, this, player,
+                    )
+                    val listeners = listOfNotNull(reporter, recovery, persister, radio, initialization)
+                    listeners.forEach(player::addListener)
+                    resumptionPersister = persister
+                    try {
+                        initialization.retry()
+                        monitor.isConnected.collect { connected ->
+                            if (connected) initialization.retry()
+                        }
+                    } finally {
+                        listeners.forEach(player::removeListener)
+                        recovery.release()
+                        resumptionPersister = null
                     }
-                    else -> Unit
-                }
-            }
+                },
+            )
         }
     }
 
@@ -314,16 +318,15 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
         // NonCancellable, so cancelling serviceScope below is safe.
         resumptionPersister?.saveNow()
         resumptionPersister = null
-        playbackRecovery?.release()
-        playbackRecovery = null
         networkMonitor?.close()
         networkMonitor = null
+        serviceScope.cancel()
+        playbackAccount = null
         mediaSession?.run {
             player.release()
             release()
         }
         mediaSession = null
-        serviceScope.cancel()
         super.onDestroy()
     }
 
@@ -336,8 +339,6 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
         )
 
     companion object {
-        private const val TAG = "NorrklangMedia"
-
         // Buffer up to 3 minutes ahead (audio is cheap) so short dead zones
         // never reach the user; keep at least 1 minute before pausing loads.
         private const val HOME_NOTIFY_COALESCE_MS = 500L

@@ -1,9 +1,11 @@
 package studio.koeda.norrklang.media
 
+import android.os.SystemClock
 import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -12,19 +14,21 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import studio.koeda.norrklang.data.repo.MusicRepository
 import studio.koeda.norrklang.data.repo.PlayState
+import studio.koeda.norrklang.data.session.ProviderSession
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository.ScrobbleSettings
 
 /**
  * Reports playback to the music server. Two channels:
  *
- * Scrobbles (both providers; Navidrome's `stream` endpoint does NOT scrobble):
+ * Scrobbles (all providers; Navidrome's `stream` endpoint does NOT scrobble):
  *  - on every track transition → "now playing" (`submission=false`)
  *  - when a track has played ≥50% or ≥4 minutes (Last.fm convention) →
  *    submission (`submission=true`)
  *
- * Submissions fire from a position discontinuity when the queue moves off a
- * track, and from [Player.STATE_ENDED] for the final track (no discontinuity).
+ * Listening time uses a monotonic clock while audio is actually playing;
+ * seeks, pauses and buffering do not add time. Submissions fire when the queue
+ * moves off a track, and from [Player.STATE_ENDED] for the final track (no discontinuity).
  *
  * Play-state reports ([MusicRepository.reportPlayState] — Plex timeline;
  * gated on a non-null [MusicRepository.playbackReportIntervalMs]):
@@ -49,12 +53,28 @@ internal class PlaybackReporter(
     private val repository: MusicRepository,
     private val settings: ServerSettingsRepository,
     private val player: Player,
+    private val account: ProviderSession,
+    private val clock: () -> Long = SystemClock::elapsedRealtime,
 ) : Player.Listener {
 
     /** Guards against double-submitting the last track if STATE_ENDED re-fires. */
     private var endedSubmitted = false
 
+    private val reportIntervalMs = repository.playbackReportIntervalMs
     private var tickerJob: Job? = null
+    private var listenedMs = 0L
+    private var playingSince: Long? = null
+
+    private fun updateListening(isPlaying: Boolean) {
+        val now = clock()
+        playingSince?.let { listenedMs += (now - it).coerceAtLeast(0) }
+        playingSince = now.takeIf { isPlaying }
+    }
+
+    private fun resetListening() {
+        listenedMs = 0L
+        if (playingSince != null) playingSince = clock()
+    }
 
     private sealed interface Report {
         data class Scrobble(val submission: Boolean) : Report
@@ -78,22 +98,27 @@ internal class PlaybackReporter(
         // server one report at a time, preserving enqueue order on the wire.
         scope.launch {
             for ((mediaId, artistId, report) in reports) {
-                // The settings read stays inside runCatching: a failed read
-                // drops one report instead of killing the consumer for good.
-                runCatching {
+                // Each event belongs to this reporter's account. The repository
+                // rejects it if that account has been replaced before delivery.
+                try {
                     val allowed = settings.scrobbleSettings.first()
                         .allowsScrobble(mediaId, artistId)
-                    if (!allowed) return@runCatching
+                    if (!allowed) continue
                     when (report) {
                         is Report.Scrobble ->
-                            repository.scrobble(mediaId.id, report.submission)
+                            repository.scrobble(mediaId.id, report.submission, account)
                         is Report.State -> repository.reportPlayState(
                             mediaId.id,
                             report.state,
                             report.positionMs,
                             report.durationMs,
+                            account,
                         )
                     }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    // Reporting is best effort; one failure must not stop playback.
                 }
             }
         }
@@ -101,11 +126,13 @@ internal class PlaybackReporter(
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
         endedSubmitted = false
+        resetListening()
         mediaItem ?: return
         scrobble(mediaItem, submission = false)
     }
 
     override fun onIsPlayingChanged(isPlaying: Boolean) {
+        updateListening(isPlaying)
         tickerJob?.cancel()
         tickerJob = null
         val item = player.currentMediaItem ?: return
@@ -122,7 +149,7 @@ internal class PlaybackReporter(
     }
 
     private fun startTicker() {
-        val interval = repository.playbackReportIntervalMs ?: return
+        val interval = reportIntervalMs ?: return
         tickerJob = scope.launch {
             while (true) {
                 delay(interval)
@@ -148,28 +175,32 @@ internal class PlaybackReporter(
             return
         }
         val finished = oldPosition.mediaItem ?: return
-        if (finished.mediaId == newPosition.mediaItem?.mediaId) return
+        val sameOccurrence = finished.mediaId == newPosition.mediaItem?.mediaId &&
+            oldPosition.mediaItemIndex == newPosition.mediaItemIndex
+        // AUTO also covers repeat-one: the same item starts a new listen.
+        if (sameOccurrence && reason != Player.DISCONTINUITY_REASON_AUTO_TRANSITION) return
+        updateListening(playingSince != null)
 
         // Finalize the finished track's play-state before the submission —
         // Plex closes its timeline entry on "stopped".
         reportState(finished, PlayState.STOPPED, oldPosition.positionMs)
         submitIfPlayedEnough(
             item = finished,
-            playedMs = oldPosition.positionMs,
+            playedMs = listenedMs,
         )
+        resetListening()
     }
 
     override fun onPlaybackStateChanged(playbackState: Int) {
+        if (playbackState != Player.STATE_READY) updateListening(false)
         when (playbackState) {
             // The last track of a queue ends without a discontinuity.
             Player.STATE_ENDED -> {
                 if (endedSubmitted) return
                 val item = player.currentMediaItem ?: return
                 reportState(item, PlayState.STOPPED, player.currentPosition)
-                endedSubmitted = submitIfPlayedEnough(
-                    item = item,
-                    playedMs = player.currentPosition,
-                )
+                submitIfPlayedEnough(item, listenedMs)
+                endedSubmitted = true
             }
             // Explicit stop() or a playback error: close the timeline entry
             // so the track doesn't linger as paused/on-deck. Deliberately no
@@ -203,7 +234,7 @@ internal class PlaybackReporter(
      * [MusicRepository.playbackReportIntervalMs].
      */
     private fun reportState(item: MediaItem, state: PlayState, positionMs: Long) {
-        if (repository.playbackReportIntervalMs == null) return
+        if (reportIntervalMs == null) return
         enqueue(item, Report.State(state, positionMs, item.mediaMetadata.durationMs))
     }
 

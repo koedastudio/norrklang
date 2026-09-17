@@ -1,6 +1,5 @@
 package studio.koeda.norrklang.data.repo
 
-import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -16,37 +15,49 @@ class TtlCache(
 
     private class Entry(val value: Any, val storedAt: Long)
 
-    private val entries = ConcurrentHashMap<String, Entry>()
+    private val monitor = Any()
+    private val entries = mutableMapOf<String, Entry>()
+    private var generation = 0L
 
-    // Per-key locks coalesce concurrent misses (the car UI fans the browse
-    // tree out in parallel): the first caller loads, the rest reuse its result.
-    private val locks = ConcurrentHashMap<String, Mutex>()
+    // Locks exist only while a load or one of its waiters is active.
+    private class LoadLock(val mutex: Mutex = Mutex(), var users: Int = 0)
+    private val locks = mutableMapOf<String, LoadLock>()
 
     @Suppress("UNCHECKED_CAST")
     suspend fun <T : Any> getOrLoad(key: String, loader: suspend () -> T): T {
-        fresh(key)?.let { return it as T }
-        return locks.computeIfAbsent(key) { Mutex() }.withLock {
-            fresh(key)?.let { return@withLock it as T }
-            prune()
-            val loaded = loader()
-            entries[key] = Entry(loaded, clock())
-            loaded
+        val (startedIn, lock) = synchronized(monitor) {
+            fresh(key)?.let { return it as T }
+            generation to locks.getOrPut(key) { LoadLock() }.also { it.users++ }
+        }
+        try {
+            return lock.mutex.withLock {
+                synchronized(monitor) {
+                    fresh(key)?.let { return@withLock it as T }
+                    val now = clock()
+                    entries.entries.removeAll { now - it.value.storedAt >= ttlMillis }
+                }
+                val loaded = loader()
+                synchronized(monitor) {
+                    // A favourite change or sign-out must win over an older load.
+                    if (generation == startedIn) entries[key] = Entry(loaded, clock())
+                }
+                loaded
+            }
+        } finally {
+            synchronized(monitor) {
+                if (--lock.users == 0) locks.remove(key)
+            }
         }
     }
 
+    /** Called only while holding [monitor]. */
     private fun fresh(key: String): Any? {
         val existing = entries[key] ?: return null
         return existing.value.takeIf { clock() - existing.storedAt < ttlMillis }
     }
 
-    /** Drops expired entries so superseded keys don't pile up for the process lifetime. */
-    private fun prune() {
-        val now = clock()
-        entries.entries.removeIf { now - it.value.storedAt >= ttlMillis }
-    }
-
-    fun clear() {
+    fun clear() = synchronized(monitor) {
+        generation++
         entries.clear()
-        locks.clear()
     }
 }

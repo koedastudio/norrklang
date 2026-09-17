@@ -22,8 +22,9 @@ import studio.koeda.norrklang.data.model.PlaylistDetail
 import studio.koeda.norrklang.data.model.SearchResults
 import studio.koeda.norrklang.data.model.StreamRef
 import studio.koeda.norrklang.data.model.Track
-import studio.koeda.norrklang.data.session.MusicProvider
 import studio.koeda.norrklang.data.session.JellyfinSession
+import studio.koeda.norrklang.data.session.MusicProvider
+import studio.koeda.norrklang.data.session.ProviderSession
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.jellyfin.JellyfinAccount
 import studio.koeda.norrklang.jellyfin.JellyfinClient
@@ -58,13 +59,17 @@ class JellyfinMusicRepository @Inject constructor(
     // The open play session reported to /Sessions/Playing; reportPlayState is
     // state-only, so the repository tracks which item the start was sent for.
     @Volatile
-    private var startedItemId: String? = null
+    private var startedPlayback: Pair<JellyfinClient, String>? = null
 
     init {
-        // Cached entries embed authenticated stream URLs and must never
-        // survive a sign-out or account switch (see SubsonicMusicRepository).
+        // Sign-out purges entries; fingerprint keys isolate direct account
+        // switches (see SubsonicMusicRepository).
         scope.launch {
-            sessionManager.state.drop(1).collect { cache.clear() }
+            sessionManager.state.drop(1).collect { state ->
+                // Connected caches are already keyed by account fingerprint.
+                // Clearing on connect can invalidate that account's first load.
+                if (state is SessionManager.SessionState.SignedOut) cache.clear()
+            }
         }
     }
 
@@ -435,8 +440,12 @@ class JellyfinMusicRepository @Inject constructor(
             }
         }
 
-    override suspend fun scrobble(trackId: String, submission: Boolean) =
-        withSession { client, account ->
+    override suspend fun scrobble(
+        trackId: String,
+        submission: Boolean,
+        expectedSession: ProviderSession?,
+    ) =
+        withSession(expectedSession) { client, account ->
             if (submission) {
                 // Deterministic mark-played: with session-less direct play the
                 // app owns the "counts as played" threshold, not the server.
@@ -453,7 +462,8 @@ class JellyfinMusicRepository @Inject constructor(
         state: PlayState,
         positionMs: Long,
         durationMs: Long?,
-    ) = withSession { client, _ ->
+        expectedSession: ProviderSession?,
+    ) = withSession(expectedSession) { client, _ ->
         val body = JellyfinPlaybackBody(
             itemId = trackId,
             positionTicks = positionMs * TICKS_PER_MS,
@@ -467,20 +477,20 @@ class JellyfinMusicRepository @Inject constructor(
             // session first. PlaybackReporter serializes reports, so the
             // start/progress order holds.
             PlayState.PLAYING, PlayState.PAUSED -> {
-                if (startedItemId != trackId) sendPlaybackStart(client, trackId)
+                if (startedPlayback != (client to trackId)) sendPlaybackStart(client, trackId)
                 client.reportPlaybackProgress(body)
             }
 
             PlayState.STOPPED -> {
                 client.reportPlaybackStopped(body)
-                startedItemId = null
+                startedPlayback = null
             }
         }
     }
 
     private suspend fun sendPlaybackStart(client: JellyfinClient, trackId: String) {
         client.reportPlaybackStart(JellyfinPlaybackBody(itemId = trackId, positionTicks = 0))
-        startedItemId = trackId
+        startedPlayback = client to trackId
     }
 
     override fun invalidateCache() = cache.clear()
@@ -498,17 +508,21 @@ class JellyfinMusicRepository @Inject constructor(
         // The loader uses the SAME session snapshot the key was computed from
         // (see SubsonicMusicRepository.cached).
         return cache.getOrLoad(scopedKey) {
-            translatingErrors {
+            translatingErrors(session) {
                 loader(session.client, session.account)
             }
         }
     }
 
     private suspend fun <T> withSession(
+        expectedSession: ProviderSession? = null,
         block: suspend (JellyfinClient, JellyfinAccount) -> T,
     ): T {
         val session = jellyfinSession()
-        return translatingErrors {
+        if (expectedSession != null && session !== expectedSession) {
+            throw MusicException.AuthFailed("Playback account changed")
+        }
+        return translatingErrors(session) {
             block(session.client, session.account)
         }
     }
@@ -517,11 +531,11 @@ class JellyfinMusicRepository @Inject constructor(
      * The [MusicException] boundary: nothing above core-data sees a
      * [JellyfinException]. Auth rejections also flip the session state.
      */
-    private suspend fun <T> translatingErrors(block: suspend () -> T): T =
+    private suspend fun <T> translatingErrors(session: JellyfinSession, block: suspend () -> T): T =
         try {
             block()
         } catch (e: JellyfinException) {
-            if (e is JellyfinException.AuthFailed) sessionManager.onAuthRejected()
+            if (e is JellyfinException.AuthFailed) sessionManager.onAuthRejected(session)
             throw e.toMusicException()
         }
 

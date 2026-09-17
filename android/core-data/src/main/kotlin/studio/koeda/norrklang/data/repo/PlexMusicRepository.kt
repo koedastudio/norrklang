@@ -24,6 +24,7 @@ import studio.koeda.norrklang.data.model.StreamRef
 import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.session.MusicProvider
 import studio.koeda.norrklang.data.session.PlexSession
+import studio.koeda.norrklang.data.session.ProviderSession
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.plex.PlexException
 import studio.koeda.norrklang.plex.PlexServerClient
@@ -53,10 +54,14 @@ class PlexMusicRepository @Inject constructor(
     private val cache = TtlCache(ttlMillis = 5 * 60 * 1000L)
 
     init {
-        // Cached entries embed authenticated stream URLs and must never
-        // survive a sign-out or account switch (see SubsonicMusicRepository).
+        // Sign-out purges entries; fingerprint keys isolate direct account
+        // switches (see SubsonicMusicRepository).
         scope.launch {
-            sessionManager.state.drop(1).collect { cache.clear() }
+            sessionManager.state.drop(1).collect { state ->
+                // Connected caches are already keyed by account fingerprint.
+                // Clearing on connect can invalidate that account's first load.
+                if (state is SessionManager.SessionState.SignedOut) cache.clear()
+            }
         }
     }
 
@@ -372,8 +377,12 @@ class PlexMusicRepository @Inject constructor(
             )
         }
 
-    override suspend fun scrobble(trackId: String, submission: Boolean) =
-        withSession { client, _ ->
+    override suspend fun scrobble(
+        trackId: String,
+        submission: Boolean,
+        expectedSession: ProviderSession?,
+    ) =
+        withSession(expectedSession) { client, _ ->
             if (submission) {
                 // Deterministic mark-played: with session-less direct play the
                 // app owns the "counts as played" threshold, not the server.
@@ -390,7 +399,8 @@ class PlexMusicRepository @Inject constructor(
         state: PlayState,
         positionMs: Long,
         durationMs: Long?,
-    ) = withSession { client, _ ->
+        expectedSession: ProviderSession?,
+    ) = withSession(expectedSession) { client, _ ->
         val plexState = when (state) {
             PlayState.PLAYING -> "playing"
             PlayState.PAUSED -> "paused"
@@ -414,17 +424,21 @@ class PlexMusicRepository @Inject constructor(
         // The loader uses the SAME session snapshot the key was computed from
         // (see SubsonicMusicRepository.cached).
         return cache.getOrLoad(scopedKey) {
-            translatingErrors {
+            translatingErrors(session) {
                 loader(session.client, session.account.sectionId)
             }
         }
     }
 
     private suspend fun <T> withSession(
+        expectedSession: ProviderSession? = null,
         block: suspend (PlexServerClient, String) -> T,
     ): T {
         val session = plexSession()
-        return translatingErrors {
+        if (expectedSession != null && session !== expectedSession) {
+            throw MusicException.AuthFailed("Playback account changed")
+        }
+        return translatingErrors(session) {
             block(session.client, session.account.sectionId)
         }
     }
@@ -433,11 +447,11 @@ class PlexMusicRepository @Inject constructor(
      * The [MusicException] boundary: nothing above core-data sees a
      * [PlexException]. Auth rejections also flip the session state.
      */
-    private suspend fun <T> translatingErrors(block: suspend () -> T): T =
+    private suspend fun <T> translatingErrors(session: PlexSession, block: suspend () -> T): T =
         try {
             block()
         } catch (e: PlexException) {
-            if (e is PlexException.AuthFailed) sessionManager.onAuthRejected()
+            if (e is PlexException.AuthFailed) sessionManager.onAuthRejected(session)
             throw e.toMusicException()
         }
 

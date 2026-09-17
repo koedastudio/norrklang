@@ -1,11 +1,13 @@
 package studio.koeda.norrklang.media
 
+import androidx.media3.common.MediaItem
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlinx.coroutines.test.runTest
 import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.repo.MusicException
 import studio.koeda.norrklang.data.repo.MusicRepository
+import studio.koeda.norrklang.data.settings.ServerSettingsRepository.ResumptionState
 
 class ResumptionQueueLoaderTest {
 
@@ -16,6 +18,7 @@ class ResumptionQueueLoaderTest {
         similarMixes = SimilarMixesSession(repository),
         bestOfMixes = BestOfMixesSession(repository),
         catalogMixes = CatalogMixesSession(repository),
+        buildItem = { track, container -> MediaItem.Builder().setMediaId(MediaId.Track(track.id, container).encode()).build() },
     )
 
     @Test
@@ -66,5 +69,26 @@ class ResumptionQueueLoaderTest {
             loader(repo).resumeTracks(MediaId.SongRadio("ar-seed"), savedTrackId = "tr-9")
         }.exceptionOrNull()
         assertEquals(MusicException.NetworkError::class, thrown!!::class)
+    }
+
+    @Test
+    fun `a removed favorite resumes the first remaining track from its beginning`() = runTest {
+        val repo = object : FakeMusicRepository() {
+            override suspend fun favoriteTracks() = listOf(stubTrack("remaining"))
+        }
+        val queue = loader(repo).restore(ResumptionState(MediaId.Track("removed", MediaId.HomeFavoriteSongs).encode(), 120_000))!!
+        assertEquals(0, queue.startIndex)
+        assertEquals(0L, queue.startPositionMs)
+        assertEquals(MediaId.Track("remaining", MediaId.HomeFavoriteSongs).encode(), queue.mediaItems.single().mediaId)
+    }
+
+    @Test
+    fun `a saved track still in the container retains its position`() = runTest {
+        val repo = object : FakeMusicRepository() {
+            override suspend fun favoriteTracks() = listOf(stubTrack("first"), stubTrack("saved"))
+        }
+        val queue = loader(repo).restore(ResumptionState(MediaId.Track("saved", MediaId.HomeFavoriteSongs).encode(), 120_000))!!
+        assertEquals(1, queue.startIndex)
+        assertEquals(120_000L, queue.startPositionMs)
     }
 }

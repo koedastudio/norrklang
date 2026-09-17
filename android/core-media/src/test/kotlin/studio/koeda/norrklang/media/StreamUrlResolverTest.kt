@@ -31,18 +31,18 @@ class StreamUrlResolverTest {
 
     @Test
     fun `non-canonical uris pass through as null`() {
-        assertNull(resolver.resolveUrl("https://server/stream/direct.mp3"))
+        assertNull(resolver.createResolver().resolveUrl("https://server/stream/direct.mp3"))
     }
 
     @Test
     fun `resolves at original quality on the wifi tier by default`() {
-        assertEquals("https://server/stream/42?kbps=original", resolver.resolveUrl(uri))
+        assertEquals("https://server/stream/42?kbps=original", resolver.createResolver().resolveUrl(uri))
     }
 
     @Test
     fun `cellular defaults to the capped tier before settings arrive`() {
         resolver.onCellular = true
-        assertEquals("https://server/stream/42?kbps=320", resolver.resolveUrl(uri))
+        assertEquals("https://server/stream/42?kbps=320", resolver.createResolver().resolveUrl(uri))
     }
 
     @Test
@@ -51,21 +51,46 @@ class StreamUrlResolverTest {
         resolver.cellularQuality = StreamQuality.HIGH
 
         resolver.onCellular = true
-        assertEquals("https://server/stream/42?kbps=320", resolver.resolveUrl(uri))
+        assertEquals("https://server/stream/42?kbps=320", resolver.createResolver().resolveUrl(uri))
 
         resolver.onCellular = false
-        assertEquals("https://server/stream/42?kbps=original", resolver.resolveUrl(uri))
+        assertEquals("https://server/stream/42?kbps=original", resolver.createResolver().resolveUrl(uri))
     }
 
     @Test
     fun `signed out resolves to a load error, not a crash`() {
         session = null
-        assertFailsWith<IOException> { resolver.resolveUrl(uri) }
+        assertFailsWith<IOException> { resolver.createResolver().resolveUrl(uri) }
     }
 
     @Test
     fun `a queue left over from another provider resolves to a load error`() {
         session = FakeSession(MusicProvider.PLEX)
-        assertFailsWith<IOException> { resolver.resolveUrl(uri) }
+        assertFailsWith<IOException> { resolver.createResolver().resolveUrl(uri) }
+    }
+
+    @Test
+    fun `retry and seek retain the original encoding after a network or setting change`() {
+        val source = resolver.createResolver()
+        val firstUrl = source.resolveUrl(uri)
+        resolver.onCellular = true
+        resolver.cellularQuality = StreamQuality.LOW
+        assertEquals(firstUrl, source.resolveUrl(uri))
+        assertEquals("https://server/stream/42?kbps=128", resolver.createResolver().resolveUrl(uri))
+    }
+
+    @Test
+    fun `an old source cannot resolve against a replacement account of the same provider`() {
+        val source = resolver.createResolver()
+        source.resolveUrl(uri)
+        session = FakeSession(MusicProvider.SUBSONIC)
+        assertFailsWith<IOException> { source.resolveUrl(uri) }
+    }
+
+    @Test
+    fun `a source created before sign-out cannot start loading afterwards`() {
+        val source = resolver.createResolver()
+        session = null
+        assertFailsWith<IOException> { source.resolveUrl(uri) }
     }
 }

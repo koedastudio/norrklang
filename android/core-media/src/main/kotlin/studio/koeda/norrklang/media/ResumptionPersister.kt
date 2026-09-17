@@ -23,6 +23,7 @@ internal class ResumptionPersister(
     private val scope: CoroutineScope,
     private val settings: ServerSettingsRepository,
     private val player: Player,
+    private val accountRevision: String,
 ) : Player.Listener {
 
     private var periodicSave: Job? = null
@@ -56,7 +57,7 @@ internal class ResumptionPersister(
         // cancel() lands — a dispatched launch would die queued, uninvoked.
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             withContext(NonCancellable) {
-                runCatching { settings.saveResumptionState(mediaId, position) }
+                runCatching { settings.saveResumptionState(mediaId, position, accountRevision) }
             }
         }
     }

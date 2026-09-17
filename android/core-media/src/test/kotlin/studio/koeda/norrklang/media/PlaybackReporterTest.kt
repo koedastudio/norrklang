@@ -23,6 +23,7 @@ import androidx.media3.common.util.UnstableApi
 import java.lang.reflect.Proxy
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.delay
@@ -32,6 +33,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import studio.koeda.norrklang.data.repo.PlayState
+import studio.koeda.norrklang.data.session.ProviderSession
 import studio.koeda.norrklang.data.settings.CredentialCipher
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository.ScrobbleSettings
@@ -99,7 +101,7 @@ internal class RecordingMusicRepository(
 
     val calls = mutableListOf<String>()
 
-    override suspend fun scrobble(trackId: String, submission: Boolean) {
+    override suspend fun scrobble(trackId: String, submission: Boolean, expectedSession: ProviderSession?) {
         if (callDelayMs > 0) delay(callDelayMs)
         calls += "scrobble $trackId submission=$submission"
     }
@@ -109,6 +111,7 @@ internal class RecordingMusicRepository(
         state: PlayState,
         positionMs: Long,
         durationMs: Long?,
+        expectedSession: ProviderSession?,
     ) {
         if (callDelayMs > 0) delay(callDelayMs)
         calls += "$state $trackId@$positionMs"
@@ -155,14 +158,15 @@ internal open class FakePlayer : Player {
     var currentItem: MediaItem? = null
     var state: Int = Player.STATE_IDLE
     var positionMs: Long = 0L
+    var listeningClockMs: Long = 0L
 
     override fun getCurrentMediaItem(): MediaItem? = currentItem
     override fun getPlaybackState(): Int = state
     override fun getCurrentPosition(): Long = positionMs
 
     override fun getApplicationLooper(): Looper = error("unused")
-    override fun addListener(listener: Player.Listener) = error("unused")
-    override fun removeListener(listener: Player.Listener) = error("unused")
+    override fun addListener(listener: Player.Listener): Unit = error("unused")
+    override fun removeListener(listener: Player.Listener): Unit = error("unused")
     override fun setMediaItems(mediaItems: MutableList<MediaItem>) = error("unused")
     override fun setMediaItems(mediaItems: MutableList<MediaItem>, resetPosition: Boolean) =
         error("unused")
@@ -170,7 +174,7 @@ internal open class FakePlayer : Player {
         mediaItems: MutableList<MediaItem>,
         startIndex: Int,
         startPositionMs: Long,
-    ) = error("unused")
+    ): Unit = error("unused")
     override fun setMediaItem(mediaItem: MediaItem) = error("unused")
     override fun setMediaItem(mediaItem: MediaItem, startPositionMs: Long) = error("unused")
     override fun setMediaItem(mediaItem: MediaItem, resetPosition: Boolean) = error("unused")
@@ -189,16 +193,16 @@ internal open class FakePlayer : Player {
     ) = error("unused")
     override fun removeMediaItem(index: Int) = error("unused")
     override fun removeMediaItems(fromIndex: Int, toIndex: Int) = error("unused")
-    override fun clearMediaItems() = error("unused")
+    override fun clearMediaItems(): Unit = error("unused")
     override fun isCommandAvailable(command: Int): Boolean = error("unused")
     override fun canAdvertiseSession(): Boolean = error("unused")
     override fun getAvailableCommands(): Player.Commands = error("unused")
-    override fun prepare() = error("unused")
+    override fun prepare(): Unit = error("unused")
     override fun getPlaybackSuppressionReason(): Int = error("unused")
     override fun isPlaying(): Boolean = error("unused")
     override fun getPlayerError(): PlaybackException? = error("unused")
     override fun play() = error("unused")
-    override fun pause() = error("unused")
+    override fun pause(): Unit = error("unused")
     override fun setPlayWhenReady(playWhenReady: Boolean) = error("unused")
     override fun getPlayWhenReady(): Boolean = error("unused")
     override fun setRepeatMode(repeatMode: Int) = error("unused")
@@ -224,7 +228,7 @@ internal open class FakePlayer : Player {
     override fun setPlaybackParameters(playbackParameters: PlaybackParameters) = error("unused")
     override fun setPlaybackSpeed(speed: Float) = error("unused")
     override fun getPlaybackParameters(): PlaybackParameters = error("unused")
-    override fun stop() = error("unused")
+    override fun stop(): Unit = error("unused")
     override fun release() = error("unused")
     override fun getCurrentTracks(): Tracks = error("unused")
     override fun getTrackSelectionParameters(): TrackSelectionParameters = error("unused")
@@ -303,6 +307,7 @@ internal open class FakePlayer : Player {
         error("unused")
 }
 
+@kotlin.OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @OptIn(UnstableApi::class)
 class PlaybackReporterReportingTest {
 
@@ -330,7 +335,7 @@ class PlaybackReporterReportingTest {
     private fun TestScope.reporter(
         repository: RecordingMusicRepository,
         player: FakePlayer,
-    ) = PlaybackReporter(backgroundScope, repository, defaultSettingsRepository(), player)
+    ) = PlaybackReporter(backgroundScope, repository, defaultSettingsRepository(), player, FakeProviderSession()) { player.listeningClockMs }
 
     // Track ends naturally: STATE_ENDED arrives with no discontinuity.
     @Test
@@ -344,6 +349,7 @@ class PlaybackReporterReportingTest {
         player.state = Player.STATE_READY
         reporter.onIsPlayingChanged(true)
 
+        player.listeningClockMs = 200_000
         player.positionMs = 200_000
         player.state = Player.STATE_ENDED
         reporter.onPlaybackStateChanged(Player.STATE_ENDED)
@@ -470,6 +476,7 @@ class PlaybackReporterReportingTest {
         reporter.onIsPlayingChanged(false) // pause at READY: still nothing
         reporter.onIsPlayingChanged(true)
 
+        player.listeningClockMs = 200_000
         player.positionMs = 200_000
         player.state = Player.STATE_ENDED
         reporter.onPlaybackStateChanged(Player.STATE_ENDED)
@@ -502,6 +509,7 @@ class PlaybackReporterReportingTest {
 
         // Auto transition A -> B: STOPPED + submission for A, now-playing
         // scrobble for B, then the still-running ticker picks up B.
+        player.listeningClockMs = 200_000
         reporter.onPositionDiscontinuity(
             positionInfo(itemA, 200_000),
             positionInfo(itemB, 0),
@@ -528,5 +536,64 @@ class PlaybackReporterReportingTest {
             ),
             repo.calls,
         )
+    }
+
+    @Test
+    fun `seeking past the threshold does not count as listening`() = runTest {
+        val repo = RecordingMusicRepository(null)
+        val player = FakePlayer()
+        val reporter = reporter(repo, player)
+        val a = trackItem("a", 200_000)
+        player.currentItem = a
+        player.state = Player.STATE_READY
+        reporter.onIsPlayingChanged(true)
+        player.listeningClockMs = 5_000
+        reporter.onPositionDiscontinuity(positionInfo(a, 5_000), positionInfo(a, 180_000), Player.DISCONTINUITY_REASON_SEEK)
+        reporter.onPositionDiscontinuity(positionInfo(a, 180_000), positionInfo(trackItem("b"), 0), Player.DISCONTINUITY_REASON_SEEK)
+        runCurrent()
+        assertTrue(repo.calls.isEmpty())
+    }
+
+    @Test
+    fun `pauses and buffering do not add listening time`() = runTest {
+        val repo = RecordingMusicRepository(null)
+        val player = FakePlayer()
+        val reporter = reporter(repo, player)
+        val a = trackItem("a", 200_000)
+        player.currentItem = a
+        player.state = Player.STATE_READY
+        reporter.onIsPlayingChanged(true)
+        player.listeningClockMs = 10_000
+        reporter.onIsPlayingChanged(false)
+        player.listeningClockMs = 500_000
+        reporter.onIsPlayingChanged(true)
+        player.listeningClockMs = 510_000
+        reporter.onPlaybackStateChanged(Player.STATE_BUFFERING)
+        reporter.onIsPlayingChanged(false)
+        player.listeningClockMs = 900_000
+        reporter.onPlaybackStateChanged(Player.STATE_ENDED)
+        runCurrent()
+        assertTrue(repo.calls.isEmpty())
+    }
+
+    @Test
+    fun `repeat-one submits each completed listen and resets its elapsed time`() = runTest {
+        val repo = RecordingMusicRepository(null)
+        val player = FakePlayer()
+        val reporter = reporter(repo, player)
+        val a = trackItem("a", 200_000)
+        player.currentItem = a
+        player.state = Player.STATE_READY
+        reporter.onIsPlayingChanged(true)
+        repeat(2) { iteration ->
+            player.listeningClockMs = (iteration + 1) * 200_000L
+            reporter.onPositionDiscontinuity(positionInfo(a, 200_000), positionInfo(a, 0), Player.DISCONTINUITY_REASON_AUTO_TRANSITION)
+            reporter.onMediaItemTransition(a, Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT)
+        }
+        // A short third listen must not inherit time from either earlier play.
+        player.listeningClockMs += 5_000
+        reporter.onPositionDiscontinuity(positionInfo(a, 5_000), positionInfo(trackItem("b"), 0), Player.DISCONTINUITY_REASON_SEEK)
+        runCurrent()
+        assertEquals(2, repo.calls.count { it == "scrobble a submission=true" })
     }
 }

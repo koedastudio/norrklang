@@ -10,6 +10,7 @@ import studio.koeda.norrklang.data.model.PlaylistDetail
 import studio.koeda.norrklang.data.model.SearchResults
 import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.repo.MusicRepository
+import studio.koeda.norrklang.data.session.ProviderSession
 
 /**
  * Base fake for the session tests: every member fails as "unused", so each
@@ -56,7 +57,7 @@ internal open class FakeMusicRepository : MusicRepository {
     override suspend fun track(id: String): Track = error("unused")
     override suspend fun search(query: String): SearchResults = error("unused")
     // Explicit Unit: an inferred Nothing return would block overriding.
-    override suspend fun scrobble(trackId: String, submission: Boolean): Unit = error("unused")
+    override suspend fun scrobble(trackId: String, submission: Boolean, expectedSession: ProviderSession?): Unit = error("unused")
     override fun invalidateCache() = error("unused")
 }
 

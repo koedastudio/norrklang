@@ -352,8 +352,37 @@ class SessionManagerTest {
         manager.resolvedState()
         manager.signIn("https://music.example.com", "demo", "secret")
 
-        manager.onAuthRejected()
+        manager.onAuthRejected(manager.connectedOrNull()!!.session)
 
         assertIs<SessionManager.SessionState.SignedOut>(manager.state.value)
+    }
+
+    @Test
+    fun `a late auth failure cannot sign out a replacement account`() = runTest {
+        val manager = SessionManager(settings(backgroundScope), backgroundScope, clientFactory(okBody))
+        manager.resolvedState()
+        manager.signIn("https://one.example.com", "alice", "secret")
+        val oldSession = manager.connectedOrNull()!!.session
+        manager.signIn("https://two.example.com", "bob", "secret")
+        val replacement = manager.connectedOrNull()!!.session
+
+        manager.onAuthRejected(oldSession)
+
+        assertTrue(manager.connectedOrNull()!!.session === replacement)
+    }
+
+    @Test
+    fun `queued playback reports cannot target a new account`() = runTest {
+        val manager = SessionManager(settings(backgroundScope), backgroundScope, clientFactory(okBody))
+        manager.resolvedState()
+        manager.signIn("https://one.example.com", "alice", "secret")
+        val oldSession = manager.connectedOrNull()!!.session
+        val repository = studio.koeda.norrklang.data.repo.SubsonicMusicRepository(manager, "test", backgroundScope)
+        manager.signIn("https://two.example.com", "bob", "secret")
+
+        val result = runCatching { repository.scrobble("old-track", true, oldSession) }
+
+        assertIs<studio.koeda.norrklang.data.repo.MusicException.AuthFailed>(result.exceptionOrNull())
+        assertEquals("bob", manager.connectedOrNull()!!.session.accountLabel)
     }
 }
