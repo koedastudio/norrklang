@@ -11,8 +11,9 @@ import androidx.media3.exoplayer.source.WrappingMediaSource
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 
 /**
- * Fills a prepared window's unknown duration from the item's
- * [androidx.media3.common.MediaMetadata.durationMs] and clears the live flag.
+ * Fills a window's unknown duration from the item's
+ * [androidx.media3.common.MediaMetadata.durationMs] and keeps these finite
+ * library tracks classified as on-demand on every source update.
  *
  * A capped tier is a chunked server transcode — no length, no seek table —
  * which ExoPlayer classifies as a LIVE stream (ProgressiveMediaPeriod:
@@ -72,9 +73,9 @@ internal class MetadataDurationTimeline(
         // play, with the server's Content-Length) is the better truth.
         if (window.durationUs == C.TIME_UNSET) {
             window.durationUs = durationUs
-            window.liveConfiguration = null
-            window.isDynamic = false
         }
+        window.liveConfiguration = null
+        window.isDynamic = false
         return window
     }
 }
