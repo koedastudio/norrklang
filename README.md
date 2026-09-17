@@ -1,28 +1,31 @@
 # Norrklang
 
-A family of music clients for self-hosted music — [Navidrome](https://www.navidrome.org/), other Subsonic-compatible servers, and [Plex](https://www.plex.tv/).
+A family of music clients for self-hosted music — [Navidrome](https://www.navidrome.org/), other Subsonic-compatible servers, [Plex](https://www.plex.tv/), and [Jellyfin](https://jellyfin.org/).
 
 The first project is a **car media app** for **Android Automotive OS** — it runs natively in cars like the Polestar 2.
 
 The repo also contains `app-mobile`, a phone APK that hosts **Android Auto** projection from the same Kotlin codebase. It builds, passes the same tests, and shares all the core modules — but it has not had the same real-world testing as the car app, so it is not yet published. The first Play release is Android Automotive OS only; Android Auto will follow once it has been proven out.
 
-**Status: 1.1.** The app is feature-complete for everyday in-car listening
+**Status: 1.2.** The app is feature-complete for everyday in-car listening
 and hardened for distribution (signed releases, encrypted credential storage,
 per-account caches), but it has seen a small number of servers and cars.
 Expect rough edges; please report them.
 
 - **Server requirements**: Navidrome (current stable releases) or any server
   implementing **Subsonic API 1.16.1** with token authentication; or a
-  **Plex Media Server** with a music library, linked with a Plex account.
+  **Plex Media Server** with a music library, linked with a Plex account; or
+  **Jellyfin** with a music library accessible to the signed-in user.
 - **HTTPS required**: release builds refuse cleartext HTTP — put your server
   behind TLS (a reverse proxy with Let's Encrypt is enough). Plain HTTP works
   only in debug builds against local test servers. Plex connections come with
   Plex's own `plex.direct` TLS, so nothing extra to set up there.
 - **Known limitations**: no offline/downloaded playback; gapless playback
-  only when streaming original files (the default setting) — server
-  transcoding reintroduces gaps; Plex playback is direct play only (no
-  transcoding fallback); no multi-server profiles (one signed-in provider
-  and server at a time); search results are capped at 50 per category.
+  only when streaming original files (the Wi-Fi default) — server
+  transcoding reintroduces gaps; no automatic transcoding fallback when an
+  original file cannot be decoded;
+  no multi-server profiles (one signed-in provider and server at a time);
+  Plex and Jellyfin select the first music library; the car search view shows
+  up to 6 artists, 6 albums and 8 tracks per query.
 - **Install**: [Google Play](https://play.google.com/store/apps/details?id=studio.koeda.norrklang)
   (Android Automotive OS).
 - **Support**: [GitHub issues](https://github.com/koedastudio/norrklang/issues).
@@ -41,6 +44,7 @@ norrklang/
 │   ├── app-mobile/           # Phone APK hosting Android Auto projection (not in the initial release)
 │   ├── core-subsonic/        # Pure-JVM Subsonic/OpenSubsonic API client (Ktor)
 │   ├── core-plex/            # Pure-JVM Plex client (plex.tv link + Plex Media Server)
+│   ├── core-jellyfin/        # Pure-JVM Jellyfin client
 │   ├── core-data/            # Session, settings (DataStore), repositories
 │   ├── core-media/           # Media3 MediaLibraryService — browse tree + playback
 │   ├── core-ui/              # Shared Compose UI (sign-in, settings, theme)
@@ -55,15 +59,18 @@ template from the browse tree that `core-media` serves. That's a platform
 requirement for driver safety, and it's also why the same `core-media` browse
 tree drives Android Auto head units unchanged when that form factor ships.
 
-`core-subsonic` and `core-plex` are deliberately free of Android dependencies
-so they can become the shared kernel (KMP) for future phone/desktop clients in
-this monorepo.
+`core-subsonic`, `core-plex`, and `core-jellyfin` are deliberately free of
+Android dependencies so they can become the shared kernel (KMP) for future
+phone/desktop clients in this monorepo.
 
 ## Features
 
 - Sign in to a Navidrome/Subsonic server (token auth; the password is never
   stored) or link a Plex account with a code or QR scan — no password typed
-  in the car
+  in the car; or sign in to Jellyfin with server address, username and password
+- Streaming quality: Original / 320 / 192 / 128 kbps, independently for Wi-Fi
+  and cellular. New track loads use the current tier; retries and seeks retain
+  the same encoding so byte offsets stay valid
 - Browse: Home with Quick play, Made for you (Best of / Similar to), Genre and
   Decade mixes, favourite artists and recently added tracks; Playlists;
   Library with all artists, all albums and the recently/most played, new and
@@ -71,7 +78,7 @@ this monorepo.
 - Full playback via ExoPlayer: queue, shuffle, seek, audio focus, artwork
 - Favourites from the car UI: heart the playing track, heart albums while browsing
 - Voice/keyboard search across artists, albums and tracks
-- Play reporting back to the server (Navidrome scrobbles, Plex timelines),
+- Play reporting back to the server (Navidrome scrobbles, Plex timelines, Jellyfin sessions),
   with on/off and per-artist/per-playlist exclusions
 - Playback resumption after restarts; automatic recovery from network dropouts
 

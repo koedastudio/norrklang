@@ -2,7 +2,7 @@
 layout: ../layouts/Legal.astro
 title: Privacy Policy
 description: What Norrklang stores, what it sends, and to whom. No analytics, no third parties.
-effectiveDate: 2026-09-06
+effectiveDate: 2026-09-17
 ---
 
 Norrklang is a music player for [Navidrome](https://www.navidrome.org/) and
@@ -24,8 +24,9 @@ All data the app stores stays **on your device**:
   plex.tv issues when you link the device (the app never sees your Plex
   password at all). Whichever token it is, it is encrypted with a key that never
   leaves the device's Android Keystore, so the stored value is useless
-  anywhere else. The app also opts out of Android's automatic backup, so none
-  of its data is copied into cloud backups.
+  anywhere else. The app also opts out of Android's automatic backup and
+  device-to-device transfer, so none of its data is copied into cloud backups
+  or onto a new device.
 - **Playback state** — the last played track and position, so playback can
   resume after a restart.
 - **Your settings** — whether scrobbling is on, any artists or playlists you

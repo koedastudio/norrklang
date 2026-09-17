@@ -5,6 +5,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow semver (`norrklang.version` in `android/gradle.properties`
 is the single source of truth).
 
+## [1.2.1] — 2026-09-17
+
+### Changed
+
+- Add explicit exclusions for Android cloud backup and device-to-device
+  transfer; privacy policy updated to say so.
+- Update the README for Jellyfin, streaming quality and current limitations.
+- Add regression coverage for playback account lifecycle, connectivity
+  recovery, resumption, reporting and cache races.
+
+### Fixed
+
+- Keep each track's stream encoding stable across retries and seeks after a
+  Wi-Fi/mobile-data handoff or a quality-setting change.
+- Keep capped-bitrate (transcoded) tracks seekable with their real duration
+  after a retry or seek, instead of ExoPlayer re-classifying them as live.
+- Stop and clear playback when signing out or switching accounts; cancel
+  the old account's background work and reject delayed reports, auth
+  failures and resumption saves from that account.
+- Count actual listening time for scrobbles, excluding seeks, pauses and
+  buffering; submit completed repeat-one plays.
+- Start at the beginning when a saved track has disappeared from its
+  playlist or collection.
+- Retry home mixes and eager queue restoration after connectivity returns,
+  without replacing a queue the user has selected meanwhile.
+- Prevent in-flight cache loads from undoing invalidation, and release
+  per-key locks when their loads and waiters finish.
+
 ## [1.2.0] — 2026-09-06
 
 ### Added

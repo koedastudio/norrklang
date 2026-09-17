@@ -76,6 +76,20 @@ Privacy policy: https://norrklang.app/privacy
 
 ## Release notes ("What's new", ≤ 500 characters)
 
+For the 1.2.1 release:
+
+```
+Stability fixes:
+• Switching between Wi-Fi and mobile data, or changing the quality tier, no
+longer breaks the track that is playing
+• Capped-bitrate tracks keep a proper duration and stay seekable
+• Signing out or switching accounts stops playback cleanly
+• Scrobbles count real listening time, not seeks, pauses or buffering; songs
+on repeat are reported every time
+• Home mixes and your saved queue reload on their own once the network is
+back
+```
+
 For the 1.2.0 release:
 
 ```
