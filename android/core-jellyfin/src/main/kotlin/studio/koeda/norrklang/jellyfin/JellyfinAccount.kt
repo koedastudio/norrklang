@@ -4,8 +4,8 @@ import java.security.MessageDigest
 
 /**
  * Everything needed to talk to one Jellyfin server: the normalized base URL
- * (no trailing slash, may carry a path prefix), the user's access token, and
- * the music library (view) to browse.
+ * (no trailing slash, may carry a path prefix) and the user's access token.
+ * Which music libraries to browse is a setting, not part of the account.
  */
 data class JellyfinAccount(
     val baseUrl: String,
@@ -13,13 +13,11 @@ data class JellyfinAccount(
     val userId: String,
     val username: String,
     val token: String,
-    val libraryId: String,
 ) {
     init {
         require(baseUrl.isNotBlank()) { "baseUrl must not be blank" }
         require(userId.isNotBlank()) { "userId must not be blank" }
         require(token.isNotBlank()) { "token must not be blank" }
-        require(libraryId.isNotBlank()) { "libraryId must not be blank" }
     }
 
     /**
@@ -37,8 +35,7 @@ data class JellyfinAccount(
     // toString can't leak it into logs or crash reports.
     override fun toString(): String =
         "JellyfinAccount(baseUrl=$baseUrl, serverName=$serverName, " +
-            "userId=$userId, username=$username, token=<redacted>, " +
-            "libraryId=$libraryId)"
+            "userId=$userId, username=$username, token=<redacted>)"
 
     companion object {
         /**

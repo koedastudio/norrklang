@@ -119,6 +119,7 @@ class CatalogMixesSessionTest {
         val repository = repositoryWithCatalog()
         repository.genreList += genre("Spoken Word", CatalogMixesSession.MIN_GENRE_SONGS - 1)
         repository.genreList += (1..10).map { genre("Filler $it", songCount = 50 + it) }
+        for (i in 1..10) repository.albumsByGenreName["Filler $i"] = listOf(stubAlbum("al-filler-$i"))
         val mixes = session(repository)
 
         mixes.refresh("fp")
@@ -127,6 +128,17 @@ class CatalogMixesSessionTest {
         assertFalse("Spoken Word" in names)
         // Biggest first: the three real genres outrank the filler.
         assertEquals(listOf("Rock", "Pop", "Jazz"), names.take(3))
+    }
+
+    @Test
+    fun `a genre with no albums in the selected libraries gets no tile`() = runTest {
+        val repository = repositoryWithCatalog()
+        // Subsonic genre counts are library-wide; the scoped album list is what decides.
+        repository.albumsByGenreName.remove("Pop")
+        val mixes = session(repository)
+
+        mixes.refresh("fp")
+        assertEquals(listOf("Rock", "Jazz"), mixes.currentGenreMixes().map { it.name })
     }
 
     @Test

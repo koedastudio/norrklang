@@ -115,15 +115,18 @@ class SessionManager(
     }
 
     /**
-     * Validates the linked server + music section in one round-trip, then
-     * persists and connects. Replaces any previous provider's sign-in
-     * (single active server).
+     * Validates the token and that the server has a music library, then
+     * persists account + library selection atomically and connects. Replaces
+     * any previous provider's sign-in (single active server).
      */
-    suspend fun signInPlex(account: PlexAccount): Result<Unit> {
+    suspend fun signInPlex(
+        account: PlexAccount,
+        excludedLibraryIds: Set<String> = emptySet(),
+    ): Result<Unit> {
         val candidate = SessionState.Connected(plexSession(account))
         return try {
-            (candidate.session as PlexSession).client.validateSection(account.sectionId)
-            settings.savePlex(account)
+            (candidate.session as PlexSession).client.validateMusicLibraries()
+            settings.savePlex(account, excludedLibraryIds)
             replaceState(candidate)
             Result.success(Unit)
         } catch (e: PlexException) {
@@ -141,17 +144,15 @@ class SessionManager(
         }
     }
 
-    /**
-     * Validates the token + music library in one round-trip, then persists
-     * and connects. Replaces any previous provider's sign-in (single active
-     * server).
-     */
-    suspend fun signInJellyfin(account: JellyfinAccount): Result<Unit> {
+    /** See [signInPlex]. */
+    suspend fun signInJellyfin(
+        account: JellyfinAccount,
+        excludedLibraryIds: Set<String> = emptySet(),
+    ): Result<Unit> {
         val candidate = SessionState.Connected(jellyfinSession(account))
         return try {
-            (candidate.session as JellyfinSession)
-                .client.validateLibrary(account.userId, account.libraryId)
-            settings.saveJellyfin(account)
+            (candidate.session as JellyfinSession).client.validateMusicLibraries(account.userId)
+            settings.saveJellyfin(account, excludedLibraryIds)
             replaceState(candidate)
             Result.success(Unit)
         } catch (e: JellyfinException) {

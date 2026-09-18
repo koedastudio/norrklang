@@ -36,6 +36,7 @@ import studio.koeda.norrklang.plex.model.PlexConnection
 import studio.koeda.norrklang.plex.model.PlexResource
 import studio.koeda.norrklang.ui.R
 import studio.koeda.norrklang.ui.components.BackButton
+import studio.koeda.norrklang.ui.components.LibraryChecklist
 import studio.koeda.norrklang.ui.theme.LocalFormDimens
 
 /*
@@ -48,6 +49,8 @@ internal fun PlexSignInPage(
     state: PlexSignInViewModel.UiState,
     onSelectServer: (PlexResource) -> Unit,
     onSelectConnection: (PlexResource, PlexConnection) -> Unit,
+    onToggleLibrary: (String, Boolean) -> Unit,
+    onConfirmLibraries: () -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
@@ -92,6 +95,9 @@ internal fun PlexSignInPage(
 
                 is PlexSignInViewModel.UiState.PickConnection ->
                     ConnectionsBody(state, onSelectConnection)
+
+                is PlexSignInViewModel.UiState.PickLibraries ->
+                    LibrariesBody(state, onToggleLibrary, onConfirmLibraries)
 
                 is PlexSignInViewModel.UiState.Validating ->
                     LoadingBody(stringResource(R.string.plex_validating))
@@ -264,6 +270,44 @@ private fun ConnectionsBody(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun LibrariesBody(
+    state: PlexSignInViewModel.UiState.PickLibraries,
+    onToggle: (String, Boolean) -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val dimens = LocalFormDimens.current
+    PageTitle(stringResource(R.string.plex_pick_libraries_title))
+    Text(
+        text = state.server.name,
+        style = MaterialTheme.typography.bodyLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Text(
+        text = stringResource(R.string.signin_pick_libraries_subtitle),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    LibraryChecklist(
+        libraries = state.libraries,
+        selectedIds = state.selected,
+        onToggle = onToggle,
+    )
+    Button(
+        onClick = onConfirm,
+        enabled = state.selected.isNotEmpty(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = dimens.controlMinHeight),
+    ) {
+        Text(
+            text = stringResource(R.string.signin_continue),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+        )
     }
 }
 

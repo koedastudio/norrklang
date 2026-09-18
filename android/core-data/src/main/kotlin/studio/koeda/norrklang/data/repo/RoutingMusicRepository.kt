@@ -7,6 +7,7 @@ import studio.koeda.norrklang.data.model.AlbumDetail
 import studio.koeda.norrklang.data.model.Artist
 import studio.koeda.norrklang.data.model.ArtistDetail
 import studio.koeda.norrklang.data.model.Genre
+import studio.koeda.norrklang.data.model.MusicLibrary
 import studio.koeda.norrklang.data.model.Playlist
 import studio.koeda.norrklang.data.model.PlaylistDetail
 import studio.koeda.norrklang.data.model.SearchResults
@@ -55,6 +56,9 @@ class RoutingMusicRepository @Inject constructor(
     override suspend fun mostPlayedAlbums(size: Int): List<Album> =
         active().mostPlayedAlbums(size)
     override suspend fun genres(): List<Genre> = active().genres()
+    override suspend fun libraries(): List<MusicLibrary> = active().libraries()
+    override suspend fun trackLibraryId(trackId: String, candidates: Set<String>): String? =
+        active().trackLibraryId(trackId, candidates)
     override suspend fun albumsByGenre(genre: String, size: Int): List<Album> =
         active().albumsByGenre(genre, size)
     override suspend fun albumsByYearRange(fromYear: Int, toYear: Int, size: Int): List<Album> =

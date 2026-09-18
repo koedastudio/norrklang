@@ -4,6 +4,7 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.Url
 import io.ktor.http.headersOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -30,6 +31,9 @@ class SubsonicClientTest {
         )
 
     private var lastRequestUrl: String = ""
+
+    private fun lastRequestParams(name: String): List<String> =
+        Url(lastRequestUrl).parameters.getAll(name).orEmpty()
 
     @Test
     fun `ping succeeds on ok envelope`() = runTest {
@@ -352,5 +356,83 @@ class SubsonicClientTest {
         val albums = client.getAlbumList2(SubsonicClient.AlbumListType.ALPHABETICAL)
         assertEquals("2026-07-01T18:04:00Z", albums[0].starred)
         assertEquals(null, albums[1].starred)
+    }
+
+    @Test
+    fun `getMusicFolders parses id and name`() = runTest {
+        val client = clientReturning(
+            """{"subsonic-response":{"status":"ok","musicFolders":{"musicFolder":[
+                 {"id":1,"name":"Music"},{"id":3,"name":"Kids"}
+               ]}}}""",
+        )
+        val folders = client.getMusicFolders()
+        assertTrue("/rest/getMusicFolders.view" in lastRequestUrl)
+        assertEquals(listOf(1 to "Music", 3 to "Kids"), folders.map { it.id to it.name })
+    }
+
+    @Test
+    fun `getMusicFolders defaults to empty on missing payload`() = runTest {
+        val client = clientReturning("""{"subsonic-response":{"status":"ok"}}""")
+        assertEquals(emptyList(), client.getMusicFolders())
+    }
+
+    @Test
+    fun `library-scoped endpoints repeat musicFolderId once per id`() = runTest {
+        val client = clientReturning("""{"subsonic-response":{"status":"ok"}}""")
+        val ids = listOf("1", "3")
+
+        client.getArtists(ids)
+        assertTrue("/rest/getArtists.view" in lastRequestUrl)
+        assertEquals(ids, lastRequestParams("musicFolderId"))
+
+        client.getAlbumList2(SubsonicClient.AlbumListType.NEWEST, size = 5, musicFolderIds = ids)
+        assertTrue("/rest/getAlbumList2.view" in lastRequestUrl)
+        assertEquals(ids, lastRequestParams("musicFolderId"))
+
+        client.getAlbumList2ByYear(1980, 1989, musicFolderIds = ids)
+        assertEquals(ids, lastRequestParams("musicFolderId"))
+
+        client.getAlbumList2ByGenre("Jazz", musicFolderIds = ids)
+        assertEquals(ids, lastRequestParams("musicFolderId"))
+
+        client.getStarred2(ids)
+        assertTrue("/rest/getStarred2.view" in lastRequestUrl)
+        assertEquals(ids, lastRequestParams("musicFolderId"))
+
+        client.getRandomSongs(size = 10, musicFolderIds = ids)
+        assertTrue("/rest/getRandomSongs.view" in lastRequestUrl)
+        assertEquals(ids, lastRequestParams("musicFolderId"))
+
+        client.search3("bowie", musicFolderIds = ids)
+        assertTrue("/rest/search3.view" in lastRequestUrl)
+        assertEquals(ids, lastRequestParams("musicFolderId"))
+    }
+
+    @Test
+    fun `an empty musicFolderIds list sends no musicFolderId at all`() = runTest {
+        val client = clientReturning("""{"subsonic-response":{"status":"ok"}}""")
+
+        client.getArtists()
+        assertTrue("musicFolderId" !in lastRequestUrl)
+        client.getAlbumList2(SubsonicClient.AlbumListType.NEWEST)
+        assertTrue("musicFolderId" !in lastRequestUrl)
+        client.getStarred2()
+        assertTrue("musicFolderId" !in lastRequestUrl)
+        client.getRandomSongs()
+        assertTrue("musicFolderId" !in lastRequestUrl)
+        client.search3("bowie")
+        assertTrue("musicFolderId" !in lastRequestUrl)
+    }
+
+    @Test
+    fun `search3 sends the per-type counts`() = runTest {
+        val client = clientReturning("""{"subsonic-response":{"status":"ok"}}""")
+
+        client.search3("Hunky Dory", artistCount = 0, albumCount = 100, songCount = 0)
+
+        assertEquals(listOf("0"), lastRequestParams("artistCount"))
+        assertEquals(listOf("100"), lastRequestParams("albumCount"))
+        assertEquals(listOf("0"), lastRequestParams("songCount"))
+        assertEquals(listOf("Hunky Dory"), lastRequestParams("query"))
     }
 }

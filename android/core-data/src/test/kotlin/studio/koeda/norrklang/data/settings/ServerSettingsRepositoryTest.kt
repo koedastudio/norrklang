@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -121,6 +122,8 @@ class ServerSettingsRepositoryTest {
         repo.saveResumptionState("track/1", 1234L)
         repo.setArtistScrobbleExcluded("artist/1", true)
         repo.setPlaylistScrobbleExcluded("playlist/1", true)
+        repo.setLibraryScrobbleExcluded("lib/1", true)
+        repo.setLibraryExcluded("lib/2", true)
 
         repo.clearAccount()
 
@@ -129,6 +132,8 @@ class ServerSettingsRepositoryTest {
         val scrobble = repo.scrobbleSettings.first()
         assertTrue(scrobble.excludedArtistIds.isEmpty())
         assertTrue(scrobble.excludedPlaylistIds.isEmpty())
+        assertTrue(scrobble.excludedLibraryIds.isEmpty())
+        assertTrue(repo.excludedLibraryIds.first().isEmpty())
     }
 
     @Test
@@ -152,7 +157,6 @@ class ServerSettingsRepositoryTest {
         serverName = "Vault",
         machineIdentifier = "m1",
         token = "plex-token",
-        sectionId = "5",
         username = "demo",
     )
 
@@ -203,7 +207,6 @@ class ServerSettingsRepositoryTest {
         userId = "u1",
         username = "demo",
         token = "jf-token",
-        libraryId = "lib1",
     )
 
     @Test
@@ -330,10 +333,114 @@ class ServerSettingsRepositoryTest {
         val revision = repo.accountRevision()!!
         repo.saveResumptionState("track/old", 12_000, revision)
         repo.setArtistScrobbleExcluded("old-artist", true)
+        repo.setLibraryExcluded("old-lib", true)
         repo.save(SubsonicCredentials.fromInput("https://other.example.com", "bob", "secret"))
         repo.saveResumptionState("track/old", 20_000, revision)
         assertNull(repo.resumptionState())
         assertTrue(repo.scrobbleSettings.first().excludedArtistIds.isEmpty())
+        assertTrue(repo.excludedLibraryIds.first().isEmpty())
         assertNotEquals(revision, repo.accountRevision())
+    }
+
+    // --- Libraries ---
+
+    private val excludedKey = stringSetPreferencesKey("libraries_excluded")
+    private val plexSectionKey = stringPreferencesKey("plex_section_id")
+    private val jellyfinLibraryKey = stringPreferencesKey("jellyfin_library_id")
+
+    @Test
+    fun `library exclusions default to empty and round-trip`() = runTest {
+        val repo = ServerSettingsRepository(dataStore(backgroundScope), FakeCipher())
+        assertTrue(repo.excludedLibraryIds.first().isEmpty())
+
+        repo.setLibraryExcluded("2", true)
+        repo.setLibraryExcluded("3", true)
+        repo.setLibraryExcluded("2", false)
+
+        assertEquals(setOf("3"), repo.excludedLibraryIds.first())
+    }
+
+    @Test
+    fun `library scrobble exclusions round-trip`() = runTest {
+        val repo = ServerSettingsRepository(dataStore(backgroundScope), FakeCipher())
+        repo.setLibraryScrobbleExcluded("2", true)
+        assertEquals(setOf("2"), repo.scrobbleSettings.first().excludedLibraryIds)
+    }
+
+    @Test
+    fun `savePlex stores the picker selection despite clearing the old account`() = runTest {
+        val store = dataStore(backgroundScope)
+        val repo = ServerSettingsRepository(store, FakeCipher())
+        repo.save(credentials)
+        repo.setLibraryExcluded("old", true)
+
+        repo.savePlex(plexAccount, excludedLibraryIds = setOf("6"))
+
+        assertEquals(setOf("6"), repo.excludedLibraryIds.first())
+        assertNull(store.data.first()[plexSectionKey])
+    }
+
+    @Test
+    fun `re-saving the same account with an empty selection clears it`() = runTest {
+        val repo = ServerSettingsRepository(dataStore(backgroundScope), FakeCipher())
+        repo.saveJellyfin(jellyfinAccount, excludedLibraryIds = setOf("lib2"))
+        repo.saveJellyfin(jellyfinAccount)
+        assertTrue(repo.excludedLibraryIds.first().isEmpty())
+    }
+
+    @Test
+    fun `legacy plex section seeds the exclusion set and drops the key`() = runTest {
+        val store = dataStore(backgroundScope)
+        val repo = ServerSettingsRepository(store, FakeCipher())
+        repo.savePlex(plexAccount)
+        store.edit { it[plexSectionKey] = "5" }
+
+        repo.migrateLegacyLibrarySelection(listOf("5", "6", "7"))
+
+        assertEquals(setOf("6", "7"), repo.excludedLibraryIds.first())
+        assertNull(store.data.first()[plexSectionKey])
+        // Idempotent: a second run has nothing to migrate.
+        repo.setLibraryExcluded("6", false)
+        repo.migrateLegacyLibrarySelection(listOf("5", "6", "7"))
+        assertEquals(setOf("7"), repo.excludedLibraryIds.first())
+    }
+
+    @Test
+    fun `legacy jellyfin library missing on the server only drops the key`() = runTest {
+        val store = dataStore(backgroundScope)
+        val repo = ServerSettingsRepository(store, FakeCipher())
+        repo.saveJellyfin(jellyfinAccount)
+        store.edit { it[jellyfinLibraryKey] = "gone" }
+
+        repo.migrateLegacyLibrarySelection(listOf("lib1", "lib2"))
+
+        assertTrue(repo.excludedLibraryIds.first().isEmpty())
+        assertNull(store.data.first()[jellyfinLibraryKey])
+    }
+
+    @Test
+    fun `legacy migration never overwrites an existing selection`() = runTest {
+        val store = dataStore(backgroundScope)
+        val repo = ServerSettingsRepository(store, FakeCipher())
+        repo.savePlex(plexAccount, excludedLibraryIds = setOf("7"))
+        store.edit { it[plexSectionKey] = "5" }
+
+        repo.migrateLegacyLibrarySelection(listOf("5", "6", "7"))
+
+        assertEquals(setOf("7"), repo.excludedLibraryIds.first())
+        assertNull(store.data.first()[plexSectionKey])
+    }
+
+    @Test
+    fun `legacy migration is a no-op for subsonic`() = runTest {
+        val store = dataStore(backgroundScope)
+        val repo = ServerSettingsRepository(store, FakeCipher())
+        repo.save(credentials)
+        store.edit { it[plexSectionKey] = "5" }
+
+        repo.migrateLegacyLibrarySelection(listOf("5", "6"))
+
+        assertTrue(repo.excludedLibraryIds.first().isEmpty())
+        assertEquals("5", store.data.first()[plexSectionKey])
     }
 }

@@ -53,6 +53,14 @@ data class Track(
     val durationSec: Int?,
     val artworkUrl: String?,
     val streamUrl: String,
+    /** Owning library when known (see MusicRepository.trackLibraryId); null = unknown. */
+    val libraryId: String? = null,
+)
+
+/** A music library/section/folder as the server reports it; [id] is the server's opaque id. */
+data class MusicLibrary(
+    val id: String,
+    val name: String,
 )
 
 /** A genre as aggregated by the server, with its library-wide song count. */

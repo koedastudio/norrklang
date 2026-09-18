@@ -9,6 +9,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.launch
+import studio.koeda.norrklang.data.model.MusicLibrary
 import studio.koeda.norrklang.data.repo.MusicException
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
@@ -20,9 +21,10 @@ import studio.koeda.norrklang.ui.signin.SignInViewModel.ErrorKind
 import studio.koeda.norrklang.ui.signin.SignInViewModel.UiState
 
 /**
- * Drives the Jellyfin sign-in form: authenticate by name → pick the first
- * music library → [SessionManager.signInJellyfin]. Reuses [SignInViewModel]'s
- * state types so the shared form renders both providers.
+ * Drives the Jellyfin sign-in form: authenticate by name → library pick
+ * (only with several music libraries) → [SessionManager.signInJellyfin].
+ * Reuses [SignInViewModel]'s state types so the shared form renders both
+ * providers; the library pick rides beside them in [libraryPick].
  */
 @HiltViewModel
 class JellyfinSignInViewModel internal constructor(
@@ -48,6 +50,15 @@ class JellyfinSignInViewModel internal constructor(
         private set
     var state by mutableStateOf<UiState>(UiState.Idle)
         private set
+
+    /** Shown when the server has several music libraries; all pre-selected. */
+    data class LibraryPick(val libraries: List<MusicLibrary>, val selected: Set<String>)
+
+    var libraryPick by mutableStateOf<LibraryPick?>(null)
+        private set
+
+    /** The authenticated account awaiting the library pick. */
+    private var pendingAccount: JellyfinAccount? = null
 
     fun onServerUrlChange(value: String) {
         serverUrl = value
@@ -95,9 +106,12 @@ class JellyfinSignInViewModel internal constructor(
         val auth = clientFactory(base, null, info).use { client ->
             client.authenticate(username.trim(), password)
         }
-        val account = clientFactory(base, auth.accessToken, info).use { client ->
-            val library = client.musicLibraries(auth.user.id).firstOrNull { it.id != null }
-                ?: return UiState.Error(ErrorKind.NO_MUSIC_LIBRARY, null)
+        val (account, libraries) = clientFactory(base, auth.accessToken, info).use { client ->
+            val libraries = client.musicLibraries(auth.user.id)
+                .mapNotNull { view -> view.id?.let { MusicLibrary(it, view.name) } }
+            if (libraries.isEmpty()) {
+                return UiState.Error(ErrorKind.NO_MUSIC_LIBRARY, null)
+            }
             // Cosmetic only — a failed lookup falls back to the URL label.
             val serverName = try {
                 client.publicSystemInfo().serverName
@@ -112,14 +126,57 @@ class JellyfinSignInViewModel internal constructor(
                 userId = auth.user.id,
                 username = auth.user.name.ifBlank { username.trim() },
                 token = auth.accessToken.orEmpty(),
-                libraryId = library.id.orEmpty(),
-            )
+            ) to libraries
         }
-        return sessionManager.signInJellyfin(account).fold(
+        if (libraries.size > 1) {
+            pendingAccount = account
+            libraryPick = LibraryPick(libraries, libraries.mapTo(mutableSetOf()) { it.id })
+            return UiState.Idle
+        }
+        return complete(account, excludedLibraryIds = emptySet())
+    }
+
+    /** Refuses to empty the selection: the last library stays selected. */
+    fun toggleLibrary(libraryId: String, selected: Boolean) {
+        val pick = libraryPick ?: return
+        val next = if (selected) pick.selected + libraryId else pick.selected - libraryId
+        if (next.isEmpty()) return
+        libraryPick = pick.copy(selected = next)
+    }
+
+    fun confirmLibraries() {
+        if (state is UiState.Connecting) return
+        val pick = libraryPick ?: return
+        val account = pendingAccount ?: return
+        state = UiState.Connecting
+        viewModelScope.launch {
+            state = try {
+                complete(account, pick.libraries.mapTo(mutableSetOf()) { it.id } - pick.selected)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                UiState.Error(ErrorKind.GENERIC, e.message)
+            }
+            // The form shows the message; the pick is rebuilt on the next connect.
+            if (state is UiState.Error) libraryPick = null
+        }
+    }
+
+    /** Back from the picker: the form keeps its fields. */
+    fun cancelLibraryPick() {
+        libraryPick = null
+        pendingAccount = null
+        state = UiState.Idle
+    }
+
+    private suspend fun complete(account: JellyfinAccount, excludedLibraryIds: Set<String>): UiState =
+        sessionManager.signInJellyfin(account, excludedLibraryIds).fold(
             onSuccess = {
                 // Only the token is persisted — don't let the plaintext
                 // password linger for the ViewModel's lifetime.
                 password = ""
+                pendingAccount = null
+                libraryPick = null
                 UiState.Done
             },
             onFailure = { e ->
@@ -130,5 +187,4 @@ class JellyfinSignInViewModel internal constructor(
                 }
             },
         )
-    }
 }

@@ -48,6 +48,8 @@ internal class BrowseTree(
     private val similarMixes: SimilarMixesSession,
     private val bestOfMixes: BestOfMixesSession,
     private val catalogMixes: CatalogMixesSession,
+    /** Version segment for tile artwork URIs; changes with the library selection. */
+    private val tileVersion: suspend () -> String = { "" },
 ) {
 
     private val quickPlayGroup = context.getString(R.string.browse_group_quick_play)
@@ -229,26 +231,26 @@ internal class BrowseTree(
             MediaId.HomeRecentlyPlayed, MediaId.HomeMostPlayed,
             MediaId.HomeFavoriteSongs, MediaId.HomeRecentlyAddedSongs,
             MediaId.HomeRandomMix,
-            -> HomeTile.forMediaId(id)?.let(::staticTile)
+            -> HomeTile.forMediaId(id)?.let { staticTile(it, tileVersion()) }
             is MediaId.HomeSimilar ->
                 similarMixes.currentMixes()
                     .firstOrNull { it.artist.id == id.artistId }
-                    ?.let(::similarMixButton)
+                    ?.let { similarMixButton(it, tileVersion()) }
             is MediaId.HomeBestOf ->
                 bestOfMixes.currentMixes()
                     .firstOrNull { it.artist.id == id.artistId }
-                    ?.let(::bestOfMixButton)
+                    ?.let { bestOfMixButton(it, tileVersion()) }
             is MediaId.HomeGenre ->
                 catalogMixes.currentGenreMixes()
                     .firstOrNull { it.name == id.name }
-                    ?.let(::genreMixButton)
+                    ?.let { genreMixButton(it, tileVersion()) }
             is MediaId.HomeDecade ->
                 catalogMixes.currentDecadeMixes()
                     .firstOrNull { it.startYear == id.startYear }
-                    ?.let(::decadeMixButton)
+                    ?.let { decadeMixButton(it, tileVersion()) }
             MediaId.TabLibrary -> libraryTab()
-            MediaId.TabArtists -> staticTile(HomeTile.ALL_ARTISTS)
-            MediaId.TabAlbums -> staticTile(HomeTile.ALL_ALBUMS)
+            MediaId.TabArtists -> staticTile(HomeTile.ALL_ARTISTS, tileVersion())
+            MediaId.TabAlbums -> staticTile(HomeTile.ALL_ALBUMS, tileVersion())
             MediaId.TabPlaylists -> playlistsTab()
             is MediaId.ArtistBucket -> Buckets.labelFor(id.key)?.let { label ->
                 MediaItemFactory.browsable(
@@ -288,8 +290,11 @@ internal class BrowseTree(
      * the full album catalog under "Albums", the artist catalog under
      * "Artists".
      */
-    private fun libraryChildren(): List<MediaItem> =
-        staticTiles(HomeTile.Section.ALBUMS) + staticTiles(HomeTile.Section.ARTISTS)
+    private suspend fun libraryChildren(): List<MediaItem> {
+        val version = tileVersion()
+        return staticTiles(HomeTile.Section.ALBUMS, version) +
+            staticTiles(HomeTile.Section.ARTISTS, version)
+    }
 
     /**
      * The home tab's grid of square buttons in headed sections. Items sharing
@@ -300,27 +305,29 @@ internal class BrowseTree(
      * which notifies this tab when tiles are ready. No snapshot, or a library
      * without the needed data, just means no section.
      */
-    private suspend fun homeButtons(): List<MediaItem> =
-        staticTiles(HomeTile.Section.QUICK_PLAY) +
+    private suspend fun homeButtons(): List<MediaItem> {
+        val version = tileVersion()
+        return staticTiles(HomeTile.Section.QUICK_PLAY, version) +
             // The take()s pin the 3 + 3 tile budget at the display site too.
             bestOfMixes.currentMixes()
                 .take(BestOfMixesSession.MAX_MIXES)
-                .map(::bestOfMixButton) +
+                .map { bestOfMixButton(it, version) } +
             similarMixes.currentMixes()
                 .take(SimilarMixesSession.MAX_MIXES)
-                .map(::similarMixButton) +
-            catalogMixes.currentGenreMixes().map(::genreMixButton) +
-            catalogMixes.currentDecadeMixes().map(::decadeMixButton)
+                .map { similarMixButton(it, version) } +
+            catalogMixes.currentGenreMixes().map { genreMixButton(it, version) } +
+            catalogMixes.currentDecadeMixes().map { decadeMixButton(it, version) }
+    }
 
     /** [section]'s static tiles in [HomeTile]'s declaration (= display) order. */
-    private fun staticTiles(section: HomeTile.Section): List<MediaItem> =
-        HomeTile.entries.filter { it.section == section }.map(::staticTile)
+    private fun staticTiles(section: HomeTile.Section, version: String): List<MediaItem> =
+        HomeTile.entries.filter { it.section == section }.map { staticTile(it, version) }
 
     /** The browse item for one static tile (generated collage artwork). */
-    private fun staticTile(tile: HomeTile): MediaItem {
+    private fun staticTile(tile: HomeTile, version: String): MediaItem {
         val title = context.getString(tile.titleRes)
         // Collage served by ArtworkProvider — see HomeButtonArtwork.
-        val artwork = ArtworkContract.homeUri(context.packageName, tile.artworkKey)
+        val artwork = ArtworkContract.homeUri(context.packageName, tile.artworkKey, version)
         return when (tile.section) {
             HomeTile.Section.QUICK_PLAY ->
                 trackListTile(tile.mediaId, title, artwork, quickPlayGroup)
@@ -367,36 +374,36 @@ internal class BrowseTree(
         )
 
     // Mix tile images served by ArtworkProvider — see HomeButtonArtwork.
-    private fun similarMixButton(mix: ArtistMixesSession.Mix) = trackListTile(
+    private fun similarMixButton(mix: ArtistMixesSession.Mix, version: String) = trackListTile(
         MediaId.HomeSimilar(mix.artist.id),
         context.getString(R.string.browse_home_similar_to, mix.artist.name),
-        mixCollageUri(HomeMixKind.SIMILAR, mix.artist.id),
+        mixCollageUri(HomeMixKind.SIMILAR, mix.artist.id, version),
         madeForYouGroup,
     )
 
-    private fun bestOfMixButton(mix: ArtistMixesSession.Mix) = trackListTile(
+    private fun bestOfMixButton(mix: ArtistMixesSession.Mix, version: String) = trackListTile(
         MediaId.HomeBestOf(mix.artist.id),
         context.getString(R.string.browse_home_best_of, mix.artist.name),
-        mixCollageUri(HomeMixKind.BEST_OF, mix.artist.id),
+        mixCollageUri(HomeMixKind.BEST_OF, mix.artist.id, version),
         madeForYouGroup,
     )
 
-    private fun genreMixButton(mix: CatalogMixesSession.GenreMix) = trackListTile(
+    private fun genreMixButton(mix: CatalogMixesSession.GenreMix, version: String) = trackListTile(
         MediaId.HomeGenre(mix.name),
         mix.name,
-        mixCollageUri(HomeMixKind.GENRE, mix.name),
+        mixCollageUri(HomeMixKind.GENRE, mix.name, version),
         genreMixesGroup,
     )
 
-    private fun decadeMixButton(mix: CatalogMixesSession.DecadeMix) = trackListTile(
+    private fun decadeMixButton(mix: CatalogMixesSession.DecadeMix, version: String) = trackListTile(
         MediaId.HomeDecade(mix.startYear),
         context.getString(R.string.browse_home_decade_mix, mix.startYear),
-        mixCollageUri(HomeMixKind.DECADE, mix.startYear.toString()),
+        mixCollageUri(HomeMixKind.DECADE, mix.startYear.toString(), version),
         decadeMixesGroup,
     )
 
-    private fun mixCollageUri(kind: HomeMixKind, key: String): String =
-        ArtworkContract.homeMixUri(context.packageName, kind.pathSegment, key)
+    private fun mixCollageUri(kind: HomeMixKind, key: String, version: String): String =
+        ArtworkContract.homeMixUri(context.packageName, kind.pathSegment, key, version)
 
     private fun homeTab() = MediaItemFactory.browsable(
         mediaId = MediaId.TabHome,

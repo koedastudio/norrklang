@@ -44,13 +44,11 @@ class PlexServerClient(
     suspend fun musicSections(): List<PlexDirectory> =
         container("/library/sections").directory.filter { it.type == "artist" }
 
-    /**
-     * Validates the token and the music section in one round-trip — the
-     * sign-in check.
-     */
-    suspend fun validateSection(sectionId: String) {
-        container("/library/sections/$sectionId")
-    }
+    /** Validates the token and that a music section exists — the sign-in check. */
+    suspend fun validateMusicLibraries(): List<PlexDirectory> =
+        musicSections().ifEmpty {
+            throw PlexException.NotFound("No music library on this server")
+        }
 
     /**
      * Items of [type] in the section. [filters] are Plex filter params —

@@ -113,6 +113,8 @@ data class PlexMetadata(
     /** Album count for artists. */
     val childCount: Int? = null,
     val playlistType: String? = null,
+    /** Owning section; present on metadata/hub/playlist items, absent on some section listings. */
+    @SerialName("librarySectionID") val librarySectionId: Int? = null,
     @SerialName("Genre") val genres: List<PlexTag> = emptyList(),
     @SerialName("Media") val media: List<PlexMedia> = emptyList(),
 )

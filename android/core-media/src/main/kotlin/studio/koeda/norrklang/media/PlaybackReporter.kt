@@ -88,6 +88,7 @@ internal class PlaybackReporter(
     private data class QueuedReport(
         val mediaId: MediaId.Track,
         val artistId: String?,
+        val libraryId: String?,
         val report: Report,
     )
 
@@ -97,13 +98,14 @@ internal class PlaybackReporter(
         // The single consumer: applies the settings gate and talks to the
         // server one report at a time, preserving enqueue order on the wire.
         scope.launch {
-            for ((mediaId, artistId, report) in reports) {
+            for ((mediaId, artistId, libraryId, report) in reports) {
                 // Each event belongs to this reporter's account. The repository
                 // rejects it if that account has been replaced before delivery.
                 try {
-                    val allowed = settings.scrobbleSettings.first()
-                        .allowsScrobble(mediaId, artistId)
-                    if (!allowed) continue
+                    val scrobble = settings.scrobbleSettings.first()
+                    val library = libraryId
+                        ?: resolveLibraryId(mediaId.id, scrobble.excludedLibraryIds)
+                    if (!scrobble.allowsScrobble(mediaId, artistId, library)) continue
                     when (report) {
                         is Report.Scrobble ->
                             repository.scrobble(mediaId.id, report.submission, account)
@@ -240,8 +242,25 @@ internal class PlaybackReporter(
 
     private fun enqueue(item: MediaItem, report: Report) {
         val mediaId = MediaId.parse(item.mediaId) as? MediaId.Track ?: return
-        val artistId = item.mediaMetadata.extras?.getString(MediaItemFactory.EXTRA_ARTIST_ID)
-        reports.trySend(QueuedReport(mediaId, artistId, report))
+        val extras = item.mediaMetadata.extras
+        val artistId = extras?.getString(MediaItemFactory.EXTRA_ARTIST_ID)
+        val libraryId = extras?.getString(MediaItemFactory.EXTRA_LIBRARY_ID)
+        reports.trySend(QueuedReport(mediaId, artistId, libraryId, report))
+    }
+
+    /**
+     * Server lookup only while the library exclusion is in use; a failed
+     * lookup means unknown, and unknown is allowed — never drop a report.
+     */
+    private suspend fun resolveLibraryId(trackId: String, excluded: Set<String>): String? {
+        if (excluded.isEmpty()) return null
+        return try {
+            repository.trackLibraryId(trackId, excluded)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private companion object {
@@ -250,16 +269,19 @@ internal class PlaybackReporter(
 }
 
 /**
- * Whether a play of [mediaId] may be reported. Artist exclusion applies to
- * any play; playlist exclusion only to plays whose queue context is that
- * playlist — the same track from its album still scrobbles.
+ * Whether a play of [mediaId] may be reported. Artist and library exclusion
+ * apply to any play (unknown ids are allowed); playlist exclusion only to
+ * plays whose queue context is that playlist — the same track from its album
+ * still scrobbles.
  */
 internal fun ScrobbleSettings.allowsScrobble(
     mediaId: MediaId.Track,
     artistId: String?,
+    libraryId: String? = null,
 ): Boolean {
     if (!enabled) return false
     if (artistId != null && artistId in excludedArtistIds) return false
+    if (libraryId != null && libraryId in excludedLibraryIds) return false
     val playlist = mediaId.container as? MediaId.Playlist ?: return true
     return playlist.id !in excludedPlaylistIds
 }

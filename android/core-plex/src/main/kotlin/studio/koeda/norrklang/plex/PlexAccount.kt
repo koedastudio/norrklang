@@ -4,21 +4,19 @@ import java.security.MessageDigest
 
 /**
  * Everything needed to talk to one Plex Media Server: the chosen connection
- * URI (no trailing slash), the server's per-user access token, and the music
- * library section to browse.
+ * URI (no trailing slash) and the server's per-user access token. Which
+ * music sections to browse is a setting, not part of the account.
  */
 data class PlexAccount(
     val serverUri: String,
     val serverName: String,
     val machineIdentifier: String,
     val token: String,
-    val sectionId: String,
     val username: String,
 ) {
     init {
         require(serverUri.isNotBlank()) { "serverUri must not be blank" }
         require(token.isNotBlank()) { "token must not be blank" }
-        require(sectionId.isNotBlank()) { "sectionId must not be blank" }
     }
 
     /**
@@ -36,6 +34,5 @@ data class PlexAccount(
     // toString can't leak it into logs or crash reports.
     override fun toString(): String =
         "PlexAccount(serverUri=$serverUri, serverName=$serverName, " +
-            "machineIdentifier=$machineIdentifier, token=<redacted>, " +
-            "sectionId=$sectionId, username=$username)"
+            "machineIdentifier=$machineIdentifier, token=<redacted>, username=$username)"
 }

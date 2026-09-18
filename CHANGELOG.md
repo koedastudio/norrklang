@@ -5,6 +5,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow semver (`norrklang.version` in `android/gradle.properties`
 is the single source of truth).
 
+## [Unreleased]
+
+### Added
+
+- Library selection: choose which of the server's music libraries to show
+  (Navidrome 0.58+ libraries, Plex music sections, Jellyfin music
+  libraries) under Settings → Libraries; browsing, search, mixes and voice
+  search follow the selection, playlists always show every library.
+- Plex and Jellyfin sign-in asks which libraries to show when the server
+  has several; existing sign-ins keep showing the one library they had
+  until the selection is changed.
+- Per-library play reporting exclusion next to the artist and playlist
+  exclusions.
+
 ## [1.2.1] — 2026-09-17
 
 ### Changed

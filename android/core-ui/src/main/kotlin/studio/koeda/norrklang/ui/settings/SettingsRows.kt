@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -32,6 +33,17 @@ import studio.koeda.norrklang.ui.R
 import studio.koeda.norrklang.ui.theme.LocalFormDimens
 
 /** Building-block rows for [SettingsScreen]'s main page. */
+
+/** Centres a loading/empty/error state in the remaining page area. */
+@Composable
+internal fun CenteredBox(content: @Composable () -> Unit) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        content()
+    }
+}
 
 /** Avatar + who's signed in. */
 @Composable

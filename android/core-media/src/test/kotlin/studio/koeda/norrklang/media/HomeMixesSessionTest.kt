@@ -20,6 +20,19 @@ class HomeMixesSessionTest {
     }
 
     @Test
+    fun `a changed library selection regenerates under the new fingerprint`() = runTest {
+        var generations = 0
+        val mixes = Mixes { listOf("mix-${++generations}") }
+
+        assertTrue(mixes.refresh("acct/all"))
+        assertFalse(mixes.refresh("acct/all"))
+        assertTrue(mixes.refresh("acct/2"))
+
+        assertEquals(2, generations)
+        assertEquals(listOf("mix-2"), mixes.current())
+    }
+
+    @Test
     fun `a late generation cannot overwrite the replacement account's mixes`() = runTest {
         val oldStarted = CompletableDeferred<Unit>()
         val oldResponse = CompletableDeferred<List<String>>()

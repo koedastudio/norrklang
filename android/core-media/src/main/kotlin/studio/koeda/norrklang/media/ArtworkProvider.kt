@@ -96,6 +96,7 @@ class ArtworkProvider : ContentProvider() {
                     session,
                     accountDir,
                     segments[1],
+                    uri,
                 )
             segments.size == 3 && segments[0] == ArtworkContract.PATH_HOME ->
                 homeMixFile(
@@ -105,6 +106,7 @@ class ArtworkProvider : ContentProvider() {
                     accountDir,
                     kind = segments[1],
                     key = segments[2],
+                    uri = uri,
                 )
             else -> throw FileNotFoundException("Unsupported artwork uri: $uri")
         }
@@ -156,6 +158,10 @@ class ArtworkProvider : ContentProvider() {
         }
     }
 
+    /** The library-selection version in the URI: a stale render is never served across a change. */
+    private fun tileVersion(uri: Uri): String =
+        uri.getQueryParameter(ArtworkContract.PARAM_VERSION).orEmpty()
+
     /** The composed image for a static home button (`home/<key>`). */
     private fun homeButtonFile(
         context: Context,
@@ -164,6 +170,7 @@ class ArtworkProvider : ContentProvider() {
         session: ProviderSession,
         accountDir: File,
         key: String,
+        uri: Uri,
     ): File {
         val tile = HomeTile.forKey(key)
             ?: throw FileNotFoundException("Unknown home button: $key")
@@ -171,7 +178,7 @@ class ArtworkProvider : ContentProvider() {
             context,
             session,
             accountDir,
-            cacheKey = "home-button/$key",
+            cacheKey = "home-button/${tileVersion(uri)}/$key",
             iconRes = tile.iconRes,
         ) { HomeButtonArtwork.coverIds(tile, repository, randomMix) }
     }
@@ -191,6 +198,7 @@ class ArtworkProvider : ContentProvider() {
         accountDir: File,
         kind: String,
         key: String,
+        uri: Uri,
     ): File {
         val mixKind = HomeMixKind.forPath(kind)
             ?: throw FileNotFoundException("Unknown mix kind: $kind")
@@ -198,7 +206,7 @@ class ArtworkProvider : ContentProvider() {
             context,
             session,
             accountDir,
-            cacheKey = "home-button/$kind/$key",
+            cacheKey = "home-button/${tileVersion(uri)}/$kind/$key",
             iconRes = mixKind.iconRes,
         ) {
             val urls = when (mixKind) {

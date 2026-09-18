@@ -1,6 +1,10 @@
 package studio.koeda.norrklang.data.repo
 
+import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
@@ -11,6 +15,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
@@ -47,7 +52,6 @@ class JellyfinMusicRepositoryTest {
         userId = "u1",
         username = "demo",
         token = "jf-token",
-        libraryId = "lib1",
     )
 
     private val requests = mutableListOf<String>()
@@ -73,15 +77,15 @@ class JellyfinMusicRepositoryTest {
     private class TestEnv(
         val sessionManager: SessionManager,
         val repository: JellyfinMusicRepository,
+        val settings: ServerSettingsRepository,
+        val store: DataStore<Preferences>,
     )
 
     private fun env(scope: CoroutineScope): TestEnv {
-        val settings = ServerSettingsRepository(
-            PreferenceDataStoreFactory.create(scope = scope) {
-                File(tmp.root, "test.preferences_pb")
-            },
-            PassthroughJellyfinCipher(),
-        )
+        val store = PreferenceDataStoreFactory.create(scope = scope) {
+            File(tmp.root, "test.preferences_pb")
+        }
+        val settings = ServerSettingsRepository(store, PassthroughJellyfinCipher())
         val sessionManager = SessionManager(
             settings,
             scope,
@@ -92,23 +96,39 @@ class JellyfinMusicRepositoryTest {
         )
         return TestEnv(
             sessionManager,
-            JellyfinMusicRepository(sessionManager, "studio.koeda.norrklang", scope),
+            JellyfinMusicRepository(sessionManager, settings, "studio.koeda.norrklang", scope),
+            settings,
+            store,
         )
     }
 
-    private suspend fun TestEnv.signedIn(): JellyfinMusicRepository {
-        routes["/Items/lib1"] = """{"Id":"lib1","Name":"Music"}"""
+    private suspend fun TestEnv.signedIn(libraryIds: List<String> = listOf("lib1")): JellyfinMusicRepository {
+        routes["/Users/u1/Views"] = items(
+            *libraryIds.map { """{"Id":"$it","Name":"Music $it","CollectionType":"music"}""" }
+                .toTypedArray(),
+        )
         sessionManager.signInJellyfin(account).getOrThrow()
         return repository
     }
 
-    private fun track(id: String, name: String, albumId: String = "70") =
+    private fun track(id: String, name: String, albumId: String = "70", extra: String = "") =
         """{"Id":"$id","Type":"Audio","Name":"$name",
             "ArtistItems":[{"Name":"Artist","Id":"7"}],
             "AlbumArtists":[{"Name":"Artist","Id":"7"}],
             "Album":"The Album","AlbumId":"$albumId",
             "IndexNumber":3,"ParentIndexNumber":1,"RunTimeTicks":2150000000,
-            "AlbumPrimaryImageTag":"tag1"}"""
+            "AlbumPrimaryImageTag":"tag1"$extra}"""
+
+    private fun album(id: String, name: String, extra: String = "") =
+        """{"Id":"$id","Type":"MusicAlbum","Name":"$name",
+            "AlbumArtists":[{"Name":"Artist","Id":"7"}]$extra}"""
+
+    private fun artist(id: String, name: String) =
+        """{"Id":"$id","Type":"MusicArtist","Name":"$name"}"""
+
+    /** Substring of an `/Items` query scoped to [lib] and [type] (userId, ParentId, type, Recursive lead). */
+    private fun scopedItems(lib: String, type: String) =
+        "/Items?userId=u1&ParentId=$lib&IncludeItemTypes=$type&Recursive=true"
 
     private fun items(vararg entries: String) =
         """{"Items":[${entries.joinToString(",")}]}"""
@@ -419,5 +439,182 @@ class JellyfinMusicRepositoryTest {
 
         // The default route answers an id-less body — not addressable.
         assertFailsWith<MusicException.NotFound> { repo.playlist("999") }
+    }
+
+    // --- Library scope: fan-out over the selected music libraries ---
+
+    @Test
+    fun `artists fan out over every selected library, merged by sort name`() = runTest {
+        routes["/Artists/AlbumArtists?userId=u1&ParentId=lib1"] = items(artist("7", "Zed"))
+        routes["/Artists/AlbumArtists?userId=u1&ParentId=lib2"] = items(artist("8", "Abba"))
+        val repo = env(backgroundScope).signedIn(listOf("lib1", "lib2"))
+
+        assertEquals(listOf("Abba", "Zed"), repo.artists().map { it.name })
+        val artistRequests = requests.filter { "/Artists/AlbumArtists" in it }
+        assertEquals(2, artistRequests.size)
+        assertTrue(artistRequests.any { "ParentId=lib1" in it })
+        assertTrue(artistRequests.any { "ParentId=lib2" in it })
+    }
+
+    @Test
+    fun `an excluded library is never requested`() = runTest {
+        val env = env(backgroundScope)
+        val repo = env.signedIn(listOf("lib1", "lib2"))
+        env.settings.setLibraryExcluded("lib2", true)
+
+        repo.artists()
+        repo.recentlyAdded(5)
+        repo.randomTracks(3)
+        repo.search("q")
+        repo.genres()
+
+        assertTrue(requests.any { "ParentId=lib1" in it })
+        assertTrue(requests.none { "ParentId=lib2" in it })
+    }
+
+    @Test
+    fun `recently added merges libraries by DateCreated, newest first`() = runTest {
+        routes[scopedItems("lib1", "MusicAlbum")] =
+            items(album("70", "Old", ""","DateCreated":"2024-01-01T00:00:00Z""""))
+        routes[scopedItems("lib2", "MusicAlbum")] =
+            items(album("71", "New", ""","DateCreated":"2025-06-01T00:00:00Z""""))
+        val repo = env(backgroundScope).signedIn(listOf("lib1", "lib2"))
+
+        assertEquals(listOf("New", "Old"), repo.recentlyAdded(10).map { it.title })
+    }
+
+    @Test
+    fun `played albums merge libraries by LastPlayedDate`() = runTest {
+        routes[scopedItems("lib1", "Audio")] = items(
+            track("100", "A", albumId = "70", extra = ""","UserData":{"LastPlayedDate":"2024-01-01T00:00:00Z"}"""),
+        )
+        routes[scopedItems("lib2", "Audio")] = items(
+            track("102", "B", albumId = "71", extra = ""","UserData":{"LastPlayedDate":"2025-01-01T00:00:00Z"}"""),
+        )
+        val repo = env(backgroundScope).signedIn(listOf("lib1", "lib2"))
+
+        assertEquals(listOf("71", "70"), repo.recentlyPlayedAlbums(10).map { it.id })
+        assertTrue(requests.any { "ParentId=lib1" in it && "SortBy=DatePlayed" in it })
+        assertTrue(requests.any { "ParentId=lib2" in it && "SortBy=DatePlayed" in it })
+    }
+
+    @Test
+    fun `albums page the merged list of several libraries in memory`() = runTest {
+        routes[scopedItems("lib1", "MusicAlbum")] = items(album("70", "B"))
+        routes[scopedItems("lib2", "MusicAlbum")] = items(album("71", "A"), album("72", "C"))
+        val repo = env(backgroundScope).signedIn(listOf("lib1", "lib2"))
+
+        assertEquals(listOf("A", "B"), repo.albums(0, 2).map { it.title })
+        val albumRequests = requests.filter { "IncludeItemTypes=MusicAlbum" in it }
+        // One unpaged request per library.
+        assertEquals(2, albumRequests.size)
+        assertTrue(albumRequests.none { "Limit=" in it })
+
+        assertEquals(listOf("C"), repo.albums(2, 2).map { it.title })
+        // The second page is sliced off the cached merge.
+        assertEquals(2, requests.count { "IncludeItemTypes=MusicAlbum" in it })
+    }
+
+    @Test
+    fun `random tracks are drawn in proportion to library size`() = runTest {
+        routes["${scopedItems("lib1", "Audio")}&StartIndex=0&Limit=0"] = """{"Items":[],"TotalRecordCount":90}"""
+        routes["${scopedItems("lib2", "Audio")}&StartIndex=0&Limit=0"] = """{"Items":[],"TotalRecordCount":10}"""
+        routes["${scopedItems("lib1", "Audio")}&SortBy=Random"] = items(track("100", "One"))
+        routes["${scopedItems("lib2", "Audio")}&SortBy=Random"] = items(track("200", "Two"))
+        val repo = env(backgroundScope).signedIn(listOf("lib1", "lib2"))
+
+        assertEquals(setOf("100", "200"), repo.randomTracks(10).map { it.id }.toSet())
+        assertTrue("Limit=9" in requests.last { "ParentId=lib1" in it && "SortBy=Random" in it })
+        assertTrue("Limit=1" in requests.last { "ParentId=lib2" in it && "SortBy=Random" in it })
+    }
+
+    @Test
+    fun `genres aggregate counts by name and filter only the libraries that have them`() = runTest {
+        routes["/MusicGenres?userId=u1&ParentId=lib1"] = items("""{"Id":"g42","Name":"Jazz"}""")
+        routes["/MusicGenres?userId=u1&ParentId=lib2"] =
+            items("""{"Id":"g42","Name":"Jazz"}""", """{"Id":"g50","Name":"Rock"}""")
+        routes["${scopedItems("lib1", "Audio")}&GenreIds=g42"] = """{"Items":[],"TotalRecordCount":5}"""
+        routes["${scopedItems("lib2", "Audio")}&GenreIds=g42"] = """{"Items":[],"TotalRecordCount":7}"""
+        routes["${scopedItems("lib2", "Audio")}&GenreIds=g50"] = """{"Items":[],"TotalRecordCount":1}"""
+        val repo = env(backgroundScope).signedIn(listOf("lib1", "lib2"))
+
+        val genres = repo.genres().associate { it.name to it.songCount }
+        assertEquals(mapOf("Jazz" to 12, "Rock" to 1), genres)
+
+        repo.albumsByGenre("rock", 5)
+        val byGenre = requests.filter { "IncludeItemTypes=MusicAlbum" in it && "GenreIds=g50" in it }
+        assertEquals(1, byGenre.size)
+        assertTrue("ParentId=lib2" in byGenre.single())
+    }
+
+    @Test
+    fun `search interleaves each library's relevance order`() = runTest {
+        routes["${scopedItems("lib1", "Audio")}&SearchTerm=q"] = items(track("1", "a"), track("2", "b"))
+        routes["${scopedItems("lib2", "Audio")}&SearchTerm=q"] = items(track("3", "c"), track("4", "d"))
+        val repo = env(backgroundScope).signedIn(listOf("lib1", "lib2"))
+
+        assertEquals(listOf("1", "3", "2", "4"), repo.search("q").tracks.map { it.id })
+    }
+
+    @Test
+    fun `playlists and the favourite lookup stay unscoped`() = runTest {
+        routes["Filters=IsFavorite"] = items(track("100", "Loved"))
+        val repo = env(backgroundScope).signedIn(listOf("lib1", "lib2"))
+
+        repo.playlists()
+        val playlists = requests.single { "IncludeItemTypes=Playlist" in it }
+        assertTrue("ParentId" !in playlists)
+
+        assertTrue(repo.isFavoriteTrack("100"))
+        val favorites = requests.single { "Filters=IsFavorite" in it }
+        assertTrue("ParentId" !in favorites)
+    }
+
+    @Test
+    fun `tracks carry the library they were requested from`() = runTest {
+        routes[scopedItems("lib1", "Audio")] = items(track("100", "One"))
+        routes[scopedItems("lib2", "Audio")] = items(track("200", "Two"))
+        routes["/Items/100?"] = track("100", "One")
+        val repo = env(backgroundScope).signedIn(listOf("lib1", "lib2"))
+
+        val byLibrary = repo.recentlyAddedTracks(10).associate { it.id to it.libraryId }
+        assertEquals(mapOf("100" to "lib1", "200" to "lib2"), byLibrary)
+        // By-id lookups have no ParentId to stamp.
+        assertNull(repo.track("100").libraryId)
+    }
+
+    @Test
+    fun `trackLibraryId resolves the album's collection folder once`() = runTest {
+        routes["/Items/70/Ancestors"] = """[
+            {"Id":"art","Type":"MusicArtist","Name":"Artist"},
+            {"Id":"lib2","Type":"CollectionFolder","Name":"Music lib2"},
+            {"Id":"root","Type":"AggregateFolder"}]"""
+        routes["/Items/71/Ancestors"] = "[]"
+        routes["/Items/100?"] = track("100", "One", albumId = "70")
+        routes["/Items/101?"] = track("101", "Two", albumId = "71")
+        val repo = env(backgroundScope).signedIn(listOf("lib1", "lib2"))
+
+        assertEquals("lib2", repo.trackLibraryId("100", setOf("lib1", "lib2")))
+        assertEquals("lib2", repo.trackLibraryId("100", setOf("lib1", "lib2")))
+        assertEquals(1, requests.count { "/Items/70/Ancestors" in it })
+
+        // No collection folder among the ancestors: unknown, not a guess.
+        assertNull(repo.trackLibraryId("101", setOf("lib1", "lib2")))
+    }
+
+    @Test
+    fun `legacy single-library selection is migrated to an exclusion set`() = runTest {
+        val env = env(backgroundScope)
+        val repo = env.signedIn(listOf("lib1", "lib2"))
+        // Sign-in drops the key, so the pre-1.3 state is seeded afterwards.
+        val legacyKey = stringPreferencesKey("jellyfin_library_id")
+        env.store.edit { it[legacyKey] = "lib1" }
+
+        repo.artists()
+
+        assertEquals(setOf("lib2"), env.settings.excludedLibraryIds.first())
+        assertNull(env.store.data.first()[legacyKey])
+        assertTrue(requests.any { "ParentId=lib1" in it })
+        assertTrue(requests.none { "ParentId=lib2" in it })
     }
 }

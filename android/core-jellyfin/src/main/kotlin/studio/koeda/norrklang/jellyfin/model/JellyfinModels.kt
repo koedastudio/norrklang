@@ -57,6 +57,8 @@ data class JellyfinItem(
     /** Disc number for tracks. */
     @SerialName("ParentIndexNumber") val parentIndexNumber: Int? = null,
     @SerialName("ProductionYear") val productionYear: Int? = null,
+    /** ISO-8601; lexicographic order is chronological. */
+    @SerialName("DateCreated") val dateCreated: String? = null,
     /** Runtime in ticks; 1 tick = 100 ns. */
     @SerialName("RunTimeTicks") val runTimeTicks: Long? = null,
     /** Album count for artists, track count for albums (when the server sends it). */
@@ -78,6 +80,8 @@ data class JellyfinNameId(
 data class JellyfinUserData(
     @SerialName("IsFavorite") val isFavorite: Boolean = false,
     @SerialName("PlayCount") val playCount: Int? = null,
+    /** ISO-8601; lexicographic order is chronological. */
+    @SerialName("LastPlayedDate") val lastPlayedDate: String? = null,
     @SerialName("Played") val played: Boolean = false,
 )
 

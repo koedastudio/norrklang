@@ -37,7 +37,15 @@ internal data class SubsonicResponse(
     val artistInfo2: ArtistInfo2? = null,
     val similarSongs2: Songs? = null,
     val topSongs: Songs? = null,
+    val musicFolders: MusicFolders? = null,
 )
+
+/** Libraries (Navidrome ≥0.58) or music folders; ids are what musicFolderId takes. */
+@Serializable
+data class MusicFolders(val musicFolder: List<MusicFolder> = emptyList())
+
+@Serializable
+data class MusicFolder(val id: Int, val name: String = "")
 
 @Serializable
 data class SubsonicError(val code: Int, val message: String? = null)

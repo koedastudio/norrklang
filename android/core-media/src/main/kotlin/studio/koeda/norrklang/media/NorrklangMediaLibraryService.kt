@@ -33,10 +33,13 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import studio.koeda.norrklang.data.diagnostics.Diagnostics
 import studio.koeda.norrklang.data.repo.MusicRepository
 import studio.koeda.norrklang.data.session.ProviderSession
+import studio.koeda.norrklang.data.model.LibraryScope
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
 
@@ -92,8 +95,15 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
         player.addListener(PlaybackErrorRecorder())
         player.addListener(RandomMixPlaySourceListener(randomMix))
 
-        val browseTree =
-            BrowseTree(this, repository, randomMix, similarMixes, bestOfMixes, catalogMixes)
+        val browseTree = BrowseTree(
+            this,
+            repository,
+            randomMix,
+            similarMixes,
+            bestOfMixes,
+            catalogMixes,
+            tileVersion = { LibraryScope.exclusionKey(settings.excludedLibraryIds.first()) },
+        )
         val resumptionLoader = ResumptionQueueLoader(
             settings,
             repository,
@@ -259,8 +269,13 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
                         player = player,
                     )
                     var homeNotify: Job? = null
+                    // The raw setting, not the resolved scope: no network, and it
+                    // changes exactly when the user changes the selection.
+                    suspend fun mixFingerprint(): String =
+                        account.cacheFingerprint + "/" +
+                            LibraryScope.exclusionKey(settings.excludedLibraryIds.first())
                     suspend fun refreshIntoHome(mixes: HomeMixesSession<*, *>) {
-                        if (mixes.refresh(account.cacheFingerprint)) {
+                        if (mixes.refresh(mixFingerprint())) {
                             homeNotify?.cancel()
                             homeNotify = launch {
                                 delay(HOME_NOTIFY_COALESCE_MS)
@@ -288,6 +303,16 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
                     val listeners = listOfNotNull(reporter, recovery, persister, radio, initialization)
                     listeners.forEach(player::addListener)
                     resumptionPersister = persister
+                    // A library selection change re-scopes browse + home under
+                    // the new fingerprint; the player's queue is untouched.
+                    // distinctUntilChanged: DataStore re-emits on every write.
+                    launch {
+                        settings.excludedLibraryIds.distinctUntilChanged().drop(1).collect {
+                            randomMix.clear()
+                            notifyLibraryScopeChanged(session)
+                            initialization.retry()
+                        }
+                    }
                     try {
                         initialization.retry()
                         monitor.isConnected.collect { connected ->
@@ -301,6 +326,25 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
                 },
             )
         }
+    }
+
+    /** Every scoped browse node, like the favourite-toggle refresh in LibrarySessionCallback. */
+    private fun notifyLibraryScopeChanged(session: MediaLibrarySession) {
+        session.notifyChildrenChanged(MediaId.Root.encode(), 3, null)
+        listOf(
+            MediaId.TabHome,
+            MediaId.TabLibrary,
+            MediaId.TabArtists,
+            MediaId.TabAlbums,
+            MediaId.HomeRecentlyAdded,
+            MediaId.HomeFavoriteAlbums,
+            MediaId.HomeFavoriteArtists,
+            MediaId.HomeRecentlyPlayed,
+            MediaId.HomeMostPlayed,
+            MediaId.HomeFavoriteSongs,
+            MediaId.HomeRecentlyAddedSongs,
+            MediaId.HomeRandomMix,
+        ).forEach { session.notifyChildrenChanged(it.encode(), Int.MAX_VALUE, null) }
     }
 
     override fun onGetSession(controllerInfo: ControllerInfo): MediaLibrarySession? = mediaSession

@@ -24,8 +24,9 @@ Expect rough edges; please report them.
   transcoding reintroduces gaps; no automatic transcoding fallback when an
   original file cannot be decoded;
   no multi-server profiles (one signed-in provider and server at a time);
-  Plex and Jellyfin select the first music library; the car search view shows
-  up to 6 artists, 6 albums and 8 tracks per query.
+  selecting several Navidrome libraries needs Navidrome 0.58+ (other
+  Subsonic servers honour only the first); the car search view shows up to
+  6 artists, 6 albums and 8 tracks per query.
 - **Install**: [Google Play](https://play.google.com/store/apps/details?id=studio.koeda.norrklang)
   (Android Automotive OS).
 - **Support**: [GitHub issues](https://github.com/koedastudio/norrklang/issues).
@@ -75,11 +76,15 @@ phone/desktop clients in this monorepo.
   Decade mixes, favourite artists and recently added tracks; Playlists;
   Library with all artists, all albums and the recently/most played, new and
   favourite album collections
+- Libraries: choose which of the server's music libraries to show (Navidrome
+  0.58+ libraries, Plex music sections, Jellyfin music libraries) — picked at
+  sign-in when there are several, changed any time in Settings; playlists
+  always show every library
 - Full playback via ExoPlayer: queue, shuffle, seek, audio focus, artwork
 - Favourites from the car UI: heart the playing track, heart albums while browsing
 - Voice/keyboard search across artists, albums and tracks
 - Play reporting back to the server (Navidrome scrobbles, Plex timelines, Jellyfin sessions),
-  with on/off and per-artist/per-playlist exclusions
+  with on/off and per-artist/per-playlist/per-library exclusions
 - Playback resumption after restarts; automatic recovery from network dropouts
 
 ## Guides

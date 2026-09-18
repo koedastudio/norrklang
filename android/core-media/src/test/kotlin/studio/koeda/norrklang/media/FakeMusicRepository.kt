@@ -5,6 +5,7 @@ import studio.koeda.norrklang.data.model.AlbumDetail
 import studio.koeda.norrklang.data.model.Artist
 import studio.koeda.norrklang.data.model.ArtistDetail
 import studio.koeda.norrklang.data.model.Genre
+import studio.koeda.norrklang.data.model.MusicLibrary
 import studio.koeda.norrklang.data.model.Playlist
 import studio.koeda.norrklang.data.model.PlaylistDetail
 import studio.koeda.norrklang.data.model.SearchResults
@@ -30,6 +31,7 @@ internal open class FakeMusicRepository : MusicRepository {
     override suspend fun recentlyPlayedAlbums(size: Int): List<Album> = error("unused")
     override suspend fun mostPlayedAlbums(size: Int): List<Album> = error("unused")
     override suspend fun genres(): List<Genre> = error("unused")
+    override suspend fun libraries(): List<MusicLibrary> = error("unused")
     override suspend fun albumsByGenre(genre: String, size: Int): List<Album> = error("unused")
     override suspend fun albumsByYearRange(fromYear: Int, toYear: Int, size: Int): List<Album> =
         error("unused")

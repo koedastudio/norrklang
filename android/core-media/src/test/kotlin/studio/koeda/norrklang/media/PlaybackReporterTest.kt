@@ -44,6 +44,7 @@ class PlaybackReporterTest {
         enabled = true,
         excludedArtistIds = setOf("ar-bad"),
         excludedPlaylistIds = setOf("pl-sleep"),
+        excludedLibraryIds = setOf("lib-kids"),
     )
 
     private fun track(container: MediaId.Container? = null) = MediaId.Track("tr-1", container)
@@ -70,6 +71,20 @@ class PlaybackReporterTest {
         assertTrue(settings.allowsScrobble(track(MediaId.Album("al-1")), artistId = "ar-ok"))
         assertTrue(settings.allowsScrobble(track(MediaId.Playlist("pl-ok")), artistId = "ar-ok"))
         assertTrue(settings.allowsScrobble(track(), artistId = "ar-ok"))
+    }
+
+    @Test
+    fun `excluded library blocks plays in any context`() {
+        assertFalse(settings.allowsScrobble(track(), artistId = "ar-ok", libraryId = "lib-kids"))
+        assertFalse(
+            settings.allowsScrobble(track(MediaId.Playlist("pl-ok")), artistId = "ar-ok", libraryId = "lib-kids"),
+        )
+        assertTrue(settings.allowsScrobble(track(), artistId = "ar-ok", libraryId = "lib-main"))
+    }
+
+    @Test
+    fun `unknown library is not treated as excluded`() {
+        assertTrue(settings.allowsScrobble(track(), artistId = "ar-ok", libraryId = null))
     }
 
     @Test
@@ -101,6 +116,15 @@ internal class RecordingMusicRepository(
 
     val calls = mutableListOf<String>()
 
+    /** Library lookups made by the reporter's exclusion gate, and what they answer. */
+    val libraryLookups = mutableListOf<String>()
+    var libraryOf: (String) -> String? = { null }
+
+    override suspend fun trackLibraryId(trackId: String, candidates: Set<String>): String? {
+        libraryLookups += trackId
+        return libraryOf(trackId)
+    }
+
     override suspend fun scrobble(trackId: String, submission: Boolean, expectedSession: ProviderSession?) {
         if (callDelayMs > 0) delay(callDelayMs)
         calls += "scrobble $trackId submission=$submission"
@@ -119,19 +143,31 @@ internal class RecordingMusicRepository(
 }
 
 /**
- * A real [ServerSettingsRepository] (it is final) over an empty in-memory
- * DataStore, so `scrobbleSettings` yields [ScrobbleSettings.DEFAULT] —
- * everything allowed. DataStore is an `implementation` dependency of
+ * A real [ServerSettingsRepository] (it is final) over an in-memory
+ * DataStore holding only [excludedLibraryIds] (empty = [ScrobbleSettings.DEFAULT],
+ * everything allowed). DataStore is an `implementation` dependency of
  * core-data and thus absent from this module's test compile classpath, so
  * the wiring is reflective; the classes are on the runtime classpath.
  */
-internal fun defaultSettingsRepository(): ServerSettingsRepository {
+internal fun defaultSettingsRepository(
+    excludedLibraryIds: Set<String> = emptySet(),
+): ServerSettingsRepository {
     val dataStoreInterface = Class.forName("androidx.datastore.core.DataStore")
-    val emptyPreferences = Class
+    val pairClass = Class.forName("androidx.datastore.preferences.core.Preferences\$Pair")
+    val noPairs = java.lang.reflect.Array.newInstance(pairClass, 0)
+    val preferences = Class
         .forName("androidx.datastore.preferences.core.PreferencesFactory")
-        .getMethod("createEmpty")
-        .invoke(null)
-    val dataFlow = flowOf(emptyPreferences)
+        .getMethod("createMutable", noPairs.javaClass)
+        .invoke(null, noPairs)
+    if (excludedLibraryIds.isNotEmpty()) {
+        val key = Class.forName("androidx.datastore.preferences.core.PreferencesKeys")
+            .getMethod("stringSetKey", String::class.java)
+            .invoke(null, "scrobble_excluded_libraries")
+        val keyClass = Class.forName("androidx.datastore.preferences.core.Preferences\$Key")
+        preferences.javaClass.getMethod("set", keyClass, Any::class.java)
+            .invoke(preferences, key, excludedLibraryIds)
+    }
+    val dataFlow = flowOf(preferences)
     val dataStore = Proxy.newProxyInstance(
         dataStoreInterface.classLoader,
         arrayOf(dataStoreInterface),
@@ -335,7 +371,76 @@ class PlaybackReporterReportingTest {
     private fun TestScope.reporter(
         repository: RecordingMusicRepository,
         player: FakePlayer,
-    ) = PlaybackReporter(backgroundScope, repository, defaultSettingsRepository(), player, FakeProviderSession()) { player.listeningClockMs }
+        excludedLibraryIds: Set<String> = emptySet(),
+    ) = PlaybackReporter(
+        backgroundScope,
+        repository,
+        defaultSettingsRepository(excludedLibraryIds),
+        player,
+        FakeProviderSession(),
+    ) { player.listeningClockMs }
+
+    @Test
+    fun `library exclusion looks the track up and blocks a match`() = runTest {
+        val repo = RecordingMusicRepository(playbackReportIntervalMs = 15_000)
+        repo.libraryOf = { "lib-kids" }
+        val player = FakePlayer()
+        val reporter = reporter(repo, player, excludedLibraryIds = setOf("lib-kids"))
+
+        player.currentItem = trackItem("tr-a", durationMs = 200_000)
+        player.state = Player.STATE_READY
+        reporter.onIsPlayingChanged(true)
+        runCurrent()
+
+        assertContentEquals(listOf("tr-a"), repo.libraryLookups)
+        assertContentEquals(emptyList(), repo.calls)
+    }
+
+    @Test
+    fun `library exclusion lets other libraries through`() = runTest {
+        val repo = RecordingMusicRepository(playbackReportIntervalMs = 15_000)
+        repo.libraryOf = { "lib-main" }
+        val player = FakePlayer()
+        val reporter = reporter(repo, player, excludedLibraryIds = setOf("lib-kids"))
+
+        player.currentItem = trackItem("tr-a", durationMs = 200_000)
+        player.state = Player.STATE_READY
+        reporter.onIsPlayingChanged(true)
+        runCurrent()
+
+        assertContentEquals(listOf("PLAYING tr-a@0"), repo.calls)
+    }
+
+    @Test
+    fun `no library exclusion means no lookup`() = runTest {
+        val repo = RecordingMusicRepository(playbackReportIntervalMs = 15_000)
+        repo.libraryOf = { "lib-kids" }
+        val player = FakePlayer()
+        val reporter = reporter(repo, player)
+
+        player.currentItem = trackItem("tr-a", durationMs = 200_000)
+        player.state = Player.STATE_READY
+        reporter.onIsPlayingChanged(true)
+        runCurrent()
+
+        assertContentEquals(emptyList(), repo.libraryLookups)
+        assertContentEquals(listOf("PLAYING tr-a@0"), repo.calls)
+    }
+
+    @Test
+    fun `a failing library lookup still reports`() = runTest {
+        val repo = RecordingMusicRepository(playbackReportIntervalMs = 15_000)
+        repo.libraryOf = { error("server down") }
+        val player = FakePlayer()
+        val reporter = reporter(repo, player, excludedLibraryIds = setOf("lib-kids"))
+
+        player.currentItem = trackItem("tr-a", durationMs = 200_000)
+        player.state = Player.STATE_READY
+        reporter.onIsPlayingChanged(true)
+        runCurrent()
+
+        assertContentEquals(listOf("PLAYING tr-a@0"), repo.calls)
+    }
 
     // Track ends naturally: STATE_ENDED arrives with no discontinuity.
     @Test

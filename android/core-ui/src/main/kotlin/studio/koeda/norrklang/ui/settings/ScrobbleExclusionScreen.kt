@@ -1,20 +1,15 @@
 package studio.koeda.norrklang.ui.settings
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.selection.toggleable
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -30,11 +25,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import studio.koeda.norrklang.ui.R
 import studio.koeda.norrklang.ui.components.BackButton
+import studio.koeda.norrklang.ui.components.CheckboxRow
 import studio.koeda.norrklang.ui.settings.SettingsViewModel.PickerItem
 import studio.koeda.norrklang.ui.settings.SettingsViewModel.PickerState
 import studio.koeda.norrklang.ui.theme.LocalFormDimens
@@ -184,40 +179,4 @@ private fun PickerRow(
     item: PickerItem,
     checked: Boolean,
     onToggle: (String, Boolean) -> Unit,
-) {
-    val dimens = LocalFormDimens.current
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-        modifier = Modifier
-            .fillMaxWidth()
-            // Whole row toggles: one large car-touchscreen hit target and a
-            // single accessibility node (same pattern as the settings rows).
-            .toggleable(
-                value = checked,
-                onValueChange = { onToggle(item.id, it) },
-                role = Role.Checkbox,
-            )
-            .heightIn(min = dimens.controlMinHeight)
-            .padding(vertical = dimens.itemSpacing / 2),
-    ) {
-        Text(
-            text = item.name,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.weight(1f),
-        )
-        // null: the row owns the toggle semantics and the click handling.
-        Checkbox(checked = checked, onCheckedChange = null)
-    }
-}
-
-@Composable
-private fun CenteredBox(content: @Composable () -> Unit) {
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        content()
-    }
-}
+) = CheckboxRow(name = item.name, checked = checked, onToggle = { onToggle(item.id, it) })

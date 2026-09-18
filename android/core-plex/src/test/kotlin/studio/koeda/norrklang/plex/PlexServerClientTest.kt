@@ -221,7 +221,36 @@ class PlexServerClientTest {
     @Test
     fun `http 404 maps to NotFound`() = runTest {
         val client = clientReturning("", HttpStatusCode.NotFound)
-        assertFailsWith<PlexException.NotFound> { client.validateSection("99") }
+        assertFailsWith<PlexException.NotFound> { client.validateMusicLibraries() }
+    }
+
+    @Test
+    fun `validateMusicLibraries rejects a server without music sections`() = runTest {
+        val client = clientReturning(
+            container(""""Directory":[{"key":"1","type":"movie","title":"Movies"}]"""),
+        )
+        assertFailsWith<PlexException.NotFound> { client.validateMusicLibraries() }
+    }
+
+    @Test
+    fun `validateMusicLibraries returns the music sections`() = runTest {
+        val sections = clientReturning(
+            container(
+                """"Directory":[
+                  {"key":"5","type":"artist","title":"Music"},
+                  {"key":"6","type":"artist","title":"Audiobooks"}
+                ]""",
+            ),
+        ).validateMusicLibraries()
+        assertEquals(listOf("5", "6"), sections.map { it.key })
+    }
+
+    @Test
+    fun `metadata parses the owning section`() = runTest {
+        val item = clientReturning(
+            container(""""Metadata":[{"ratingKey":"101","title":"Song","type":"track","librarySectionID":6}]"""),
+        ).metadata("101")
+        assertEquals(6, item.librarySectionId)
     }
 
     @Test

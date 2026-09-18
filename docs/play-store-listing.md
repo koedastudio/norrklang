@@ -44,8 +44,10 @@ and generated mixes — Best of, Similar to, genres and decades
 • Ask the car's assistant to play an artist, album, song or playlist
 • Streaming quality per connection: original files on Wi-Fi, a capped
 bitrate on mobile data — or pick your own tiers
-• Play counts reported to your own server, with per-artist and per-playlist
-exclusions — or turned off entirely
+• Choose which of your server's music libraries to show — the rest stay
+out of browsing, search and mixes
+• Play counts reported to your own server, with per-artist, per-playlist and
+per-library exclusions — or turned off entirely
 • Picks up where you left off after the car restarts
 
 Navidrome and Subsonic
@@ -75,6 +77,17 @@ Privacy policy: https://norrklang.app/privacy
 ```
 
 ## Release notes ("What's new", ≤ 500 characters)
+
+For the next release:
+
+```
+• Libraries: choose which of your server's music libraries to show
+(Navidrome 0.58+, Plex music sections, Jellyfin libraries) — at sign-in or
+any time in Settings
+• Per-library "don't report plays" next to the artist and playlist exclusions
+• Existing Plex and Jellyfin sign-ins keep the library they had until you
+change it
+```
 
 For the 1.2.1 release:
 

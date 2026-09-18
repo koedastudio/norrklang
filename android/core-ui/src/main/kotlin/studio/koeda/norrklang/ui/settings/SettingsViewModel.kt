@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import studio.koeda.norrklang.data.diagnostics.Diagnostics
@@ -66,9 +67,46 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { settings.setAutoplaySimilar(enabled) }
     }
 
+    // --- Libraries ---
+
+    /** See [ServerSettingsRepository.excludedLibraryIds] — hidden server libraries. */
+    val excludedLibraryIds: StateFlow<Set<String>> = settings.excludedLibraryIds
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    private val _libraryPicker = MutableStateFlow<PickerState>(PickerState.Loading)
+
+    /** The server's libraries; shared by the main-page summary and both library pages. */
+    val libraryPicker: StateFlow<PickerState> = _libraryPicker.asStateFlow()
+
+    /** (Re)fetches the library list; a loaded list is kept unless [force]. */
+    fun loadLibraryPicker(force: Boolean = false) {
+        if (!force && _libraryPicker.value is PickerState.Loaded) return
+        load(_libraryPicker) { repository.libraries().map { PickerItem(it.id, it.name) } }
+    }
+
+    /** What the Libraries row reads: "All", "n of m", or nothing known yet. */
+    sealed interface LibrariesSummary {
+        data object Unknown : LibrariesSummary
+        data object All : LibrariesSummary
+        data class Some(val selected: Int, val total: Int) : LibrariesSummary
+    }
+
+    val librariesSummary: StateFlow<LibrariesSummary> =
+        combine(libraryPicker, excludedLibraryIds, ::summarizeLibraries)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LibrariesSummary.Unknown)
+
+    /** [selected] false excludes the library from browsing (see LibraryScope). */
+    fun setLibrarySelected(libraryId: String, selected: Boolean) {
+        viewModelScope.launch { settings.setLibraryExcluded(libraryId, !selected) }
+    }
+
+    fun setLibraryScrobbleExcluded(libraryId: String, excluded: Boolean) {
+        viewModelScope.launch { settings.setLibraryScrobbleExcluded(libraryId, excluded) }
+    }
+
     // --- Scrobbling ---
 
-    /** An artist or playlist as shown in the exclusion picker screens. */
+    /** An artist, playlist or library as shown in the picker screens. */
     data class PickerItem(val id: String, val name: String)
 
     /** Server-fetched contents of one exclusion picker screen. */
@@ -155,5 +193,21 @@ class SettingsViewModel @Inject constructor(
         Diagnostics.clear()
         _diagnostics.value = ""
         _reportUrl.value = null
+    }
+}
+
+/** Pure: stale excluded ids don't count; one library, or nothing left, reads as "All". */
+internal fun summarizeLibraries(
+    picker: SettingsViewModel.PickerState,
+    excludedIds: Set<String>,
+): SettingsViewModel.LibrariesSummary {
+    val items = (picker as? SettingsViewModel.PickerState.Loaded)?.items
+        ?: return SettingsViewModel.LibrariesSummary.Unknown
+    val total = items.size
+    val selected = items.count { it.id !in excludedIds }
+    return if (total <= 1 || selected == total || selected == 0) {
+        SettingsViewModel.LibrariesSummary.All
+    } else {
+        SettingsViewModel.LibrariesSummary.Some(selected, total)
     }
 }

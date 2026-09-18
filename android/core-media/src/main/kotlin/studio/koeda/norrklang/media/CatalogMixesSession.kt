@@ -68,10 +68,12 @@ internal class CatalogMixesSession(
         return coroutineScope {
             top.map { genre ->
                 async {
+                    // Genre counts are library-wide on Subsonic; a genre with no
+                    // albums in the selected libraries gets no tile.
                     val albums = repository.albumsByGenre(genre.name, ARTWORK_CANDIDATES)
-                    GenreMix(genre.name, collageUrls(albums))
+                    if (albums.isEmpty()) null else GenreMix(genre.name, collageUrls(albums))
                 }
-            }.awaitAll()
+            }.awaitAll().filterNotNull()
         }
     }
 

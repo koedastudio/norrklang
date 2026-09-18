@@ -17,7 +17,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.newSingleThreadContext
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -116,18 +118,25 @@ class PlexSignInViewModelTest {
         }
     }
 
+    /** The server's music sections (key to title). */
+    private var sections = listOf("5" to "Music")
+
     private fun serverEngine() = MockEngine { request ->
         val url = request.url.toString()
         val body = when {
-            "/library/sections" in url ->
-                """{"MediaContainer":{"Directory":[{"key":"5","type":"artist","title":"Music"}]}}"""
+            "/library/sections" in url -> sections.joinToString(
+                prefix = """{"MediaContainer":{"Directory":[""",
+                postfix = "]}}",
+            ) { (key, title) -> """{"key":"$key","type":"artist","title":"$title"}""" }
             else -> "{}"
         }
         respond(body, headers = headersOf(HttpHeaders.ContentType, "application/json"))
     }
 
+    private lateinit var settings: ServerSettingsRepository
+
     private fun viewModel(): PlexSignInViewModel {
-        val settings = ServerSettingsRepository(
+        settings = ServerSettingsRepository(
             PreferenceDataStoreFactory.create(scope = ioScope) {
                 File(tmp.root, "test.preferences_pb")
             },
@@ -182,6 +191,34 @@ class PlexSignInViewModelTest {
 
         vm.selectConnection(pick.server, pick.probes.first().connection)
         awaitState(vm) { vm.state is PlexSignInViewModel.UiState.Done }
+    }
+
+    @Test
+    fun `several music sections land on the picker and the choice is persisted`() {
+        sections = listOf("5" to "Music", "6" to "Audiobooks")
+        val vm = viewModel()
+
+        vm.start()
+        awaitState(vm) {
+            (vm.state as? PlexSignInViewModel.UiState.PickConnection)?.probing == false
+        }
+        val pick = assertIs<PlexSignInViewModel.UiState.PickConnection>(vm.state)
+        vm.selectConnection(pick.server, pick.probes.first().connection)
+        awaitState(vm) { vm.state is PlexSignInViewModel.UiState.PickLibraries }
+
+        val libraries = assertIs<PlexSignInViewModel.UiState.PickLibraries>(vm.state)
+        assertEquals(listOf("Music", "Audiobooks"), libraries.libraries.map { it.name })
+        assertEquals(setOf("5", "6"), libraries.selected)
+
+        vm.toggleLibrary("6", false)
+        assertEquals(setOf("5"), assertIs<PlexSignInViewModel.UiState.PickLibraries>(vm.state).selected)
+        // The last selected library cannot be deselected.
+        vm.toggleLibrary("5", false)
+        assertEquals(setOf("5"), assertIs<PlexSignInViewModel.UiState.PickLibraries>(vm.state).selected)
+
+        vm.confirmLibraries()
+        awaitState(vm) { vm.state is PlexSignInViewModel.UiState.Done }
+        assertEquals(setOf("6"), runBlocking { settings.excludedLibraryIds.first() })
     }
 
     @Test

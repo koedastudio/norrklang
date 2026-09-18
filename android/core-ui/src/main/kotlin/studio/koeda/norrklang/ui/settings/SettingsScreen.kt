@@ -38,7 +38,9 @@ import studio.koeda.norrklang.ui.components.QrCode
 import studio.koeda.norrklang.ui.theme.LocalFormDimens
 
 /** Which page of the settings UI is showing; sub-pages return to [Main]. */
-private enum class SettingsPage { Main, Quality, ScrobbleArtists, ScrobblePlaylists, Diagnostics }
+private enum class SettingsPage {
+    Main, Libraries, Quality, ScrobbleArtists, ScrobblePlaylists, ScrobbleLibraries, Diagnostics,
+}
 
 /**
  * Server info + sign-out, reached via the car's APPLICATION_PREFERENCES entry.
@@ -61,6 +63,7 @@ fun SettingsScreen(
     val qualityCellular by viewModel.qualityCellular.collectAsStateWithLifecycle()
     val autoplaySimilar by viewModel.autoplaySimilar.collectAsStateWithLifecycle()
     val scrobble by viewModel.scrobbleSettings.collectAsStateWithLifecycle()
+    val librariesSummary by viewModel.librariesSummary.collectAsStateWithLifecycle()
     val dimens = LocalFormDimens.current
     var page by rememberSaveable { mutableStateOf(SettingsPage.Main) }
 
@@ -72,6 +75,20 @@ fun SettingsScreen(
             text = diagnostics,
             reportUrl = reportUrl,
             onClear = viewModel::clearDiagnostics,
+            onBack = { page = SettingsPage.Main },
+            modifier = modifier,
+        )
+        return
+    }
+    if (page == SettingsPage.Libraries) {
+        LaunchedEffect(Unit) { viewModel.loadLibraryPicker() }
+        val picker by viewModel.libraryPicker.collectAsStateWithLifecycle()
+        val excluded by viewModel.excludedLibraryIds.collectAsStateWithLifecycle()
+        LibrariesPage(
+            state = picker,
+            excludedIds = excluded,
+            onToggle = viewModel::setLibrarySelected,
+            onRetry = { viewModel.loadLibraryPicker(force = true) },
             onBack = { page = SettingsPage.Main },
             modifier = modifier,
         )
@@ -123,9 +140,29 @@ fun SettingsScreen(
 
         when (val s = state) {
             is SessionManager.SessionState.Connected -> {
+                // The summary needs the server's library list; cached 5 min.
+                LaunchedEffect(Unit) { viewModel.loadLibraryPicker() }
                 AccountHeader(
                     title = s.session.accountLabel,
                     subtitle = s.session.serverLabel,
+                )
+                HorizontalDivider()
+                // Which server libraries to browse (see LibraryScope); all providers.
+                NavigationRow(
+                    title = stringResource(R.string.settings_libraries),
+                    subtitle = when (val summary = librariesSummary) {
+                        SettingsViewModel.LibrariesSummary.All ->
+                            stringResource(R.string.settings_libraries_all)
+                        is SettingsViewModel.LibrariesSummary.Some ->
+                            stringResource(
+                                R.string.settings_libraries_count,
+                                summary.selected,
+                                summary.total,
+                            )
+                        SettingsViewModel.LibrariesSummary.Unknown ->
+                            stringResource(R.string.settings_libraries_hint)
+                    },
+                    onClick = { page = SettingsPage.Libraries },
                 )
                 HorizontalDivider()
                 // Per-network quality tiers (see StreamQualityPage), applied
@@ -180,6 +217,13 @@ fun SettingsScreen(
                     subtitle = stringResource(R.string.settings_scrobble_playlists_hint),
                     excludedCount = scrobble.excludedPlaylistIds.size,
                     onClick = { page = SettingsPage.ScrobblePlaylists },
+                )
+                HorizontalDivider()
+                ExclusionRow(
+                    title = stringResource(R.string.settings_scrobble_libraries),
+                    subtitle = stringResource(R.string.settings_scrobble_libraries_hint),
+                    excludedCount = scrobble.excludedLibraryIds.size,
+                    onClick = { page = SettingsPage.ScrobbleLibraries },
                 )
                 HorizontalDivider()
                 PrivacyPolicyRow()
@@ -275,7 +319,22 @@ private fun ScrobbleExclusionPage(
                 modifier = modifier,
             )
         }
-        SettingsPage.Main, SettingsPage.Quality, SettingsPage.Diagnostics -> Unit
+        SettingsPage.ScrobbleLibraries -> {
+            LaunchedEffect(Unit) { viewModel.loadLibraryPicker() }
+            val picker by viewModel.libraryPicker.collectAsStateWithLifecycle()
+            ScrobbleExclusionScreen(
+                title = stringResource(R.string.settings_scrobble_libraries),
+                emptyText = stringResource(R.string.settings_picker_no_libraries),
+                searchPlaceholder = null,
+                state = picker,
+                excludedIds = scrobble.excludedLibraryIds,
+                onToggle = viewModel::setLibraryScrobbleExcluded,
+                onRetry = { viewModel.loadLibraryPicker(force = true) },
+                onBack = onBack,
+                modifier = modifier,
+            )
+        }
+        SettingsPage.Main, SettingsPage.Libraries, SettingsPage.Quality, SettingsPage.Diagnostics -> Unit
     }
 }
 

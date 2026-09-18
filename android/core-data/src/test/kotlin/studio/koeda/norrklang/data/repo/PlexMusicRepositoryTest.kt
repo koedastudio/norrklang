@@ -1,6 +1,10 @@
 package studio.koeda.norrklang.data.repo
 
+import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
@@ -46,11 +50,14 @@ class PlexMusicRepositoryTest {
         serverName = "Vault",
         machineIdentifier = "m1",
         token = "plex-token",
-        sectionId = "5",
         username = "demo",
     )
 
     private val requests = mutableListOf<String>()
+
+    /** The server's section listing; tests add sections to exercise fan-out. */
+    private var sectionsBody =
+        """{"MediaContainer":{"Directory":[{"key":"5","type":"artist","title":"Music"}]}}"""
 
     /** Maps a URL substring to the MediaContainer JSON answering it. */
     private val routes = mutableMapOf<String, String>()
@@ -61,8 +68,13 @@ class PlexMusicRepositoryTest {
         val url = request.url.toString()
         requests.add(url)
         failWith?.let { return@MockEngine respond("", it) }
-        val body = routes.entries.firstOrNull { (pattern, _) -> pattern in url }?.value
-            ?: """{"MediaContainer":{}}"""
+        // Exact path: "/library/sections" is a substring of every item URL.
+        val body = if (request.url.encodedPath == "/library/sections") {
+            sectionsBody
+        } else {
+            routes.entries.firstOrNull { (pattern, _) -> pattern in url }?.value
+                ?: """{"MediaContainer":{}}"""
+        }
         respond(
             content = body,
             headers = headersOf(HttpHeaders.ContentType, "application/json"),
@@ -74,15 +86,15 @@ class PlexMusicRepositoryTest {
     private class TestEnv(
         val sessionManager: SessionManager,
         val repository: PlexMusicRepository,
+        val settings: ServerSettingsRepository,
+        val store: DataStore<Preferences>,
     )
 
     private fun env(scope: CoroutineScope): TestEnv {
-        val settings = ServerSettingsRepository(
-            PreferenceDataStoreFactory.create(scope = scope) {
-                File(tmp.root, "test.preferences_pb")
-            },
-            PassthroughCipher(),
-        )
+        val store = PreferenceDataStoreFactory.create(scope = scope) {
+            File(tmp.root, "test.preferences_pb")
+        }
+        val settings = ServerSettingsRepository(store, PassthroughCipher())
         val sessionManager = SessionManager(
             settings,
             scope,
@@ -91,9 +103,30 @@ class PlexMusicRepositoryTest {
         )
         return TestEnv(
             sessionManager,
-            PlexMusicRepository(sessionManager, "studio.koeda.norrklang", scope),
+            PlexMusicRepository(sessionManager, settings, "studio.koeda.norrklang", scope),
+            settings,
+            store,
         )
     }
+
+    /** Music (5) and Audiobooks (6): the fan-out fixture. */
+    private fun twoSections() {
+        sectionsBody = """{"MediaContainer":{"Directory":[
+            {"key":"5","type":"artist","title":"Music"},
+            {"key":"6","type":"artist","title":"Audiobooks"}]}}"""
+    }
+
+    private fun artist(ratingKey: String, title: String, titleSort: String = title) =
+        """{"ratingKey":"$ratingKey","type":"artist","title":"$title","titleSort":"$titleSort"}"""
+
+    private fun album(ratingKey: String, title: String, addedAt: Long = 0) =
+        """{"ratingKey":"$ratingKey","type":"album","title":"$title","addedAt":$addedAt}"""
+
+    private fun metadata(vararg items: String) =
+        """{"MediaContainer":{"Metadata":[${items.joinToString(",")}]}}"""
+
+    private fun containerSize(url: String): Int =
+        Regex("X-Plex-Container-Size=(\\d+)").find(url)!!.groupValues[1].toInt()
 
     private suspend fun TestEnv.signedIn(): PlexMusicRepository {
         sessionManager.signInPlex(account).getOrThrow()
@@ -412,5 +445,180 @@ class PlexMusicRepositoryTest {
         val repo = env(backgroundScope).signedIn()
 
         assertFailsWith<MusicException.NotFound> { repo.track("55") }
+    }
+
+    // --- Library fan-out ---
+
+    @Test
+    fun `artists fans out over every selected section and merges by titleSort`() = runTest {
+        twoSections()
+        routes["sections/5/all?type=8"] = metadata(artist("1", "Zed"), artist("2", "The Beatles", "Beatles"))
+        routes["sections/6/all?type=8"] = metadata(artist("3", "Dickens"), artist("4", "aesop"))
+        val repo = env(backgroundScope).signedIn()
+
+        val artists = repo.artists()
+
+        assertEquals(listOf("aesop", "The Beatles", "Dickens", "Zed"), artists.map { it.name })
+        assertTrue(requests.any { "/library/sections/5/all" in it })
+        assertTrue(requests.any { "/library/sections/6/all" in it })
+    }
+
+    @Test
+    fun `an excluded section is never requested`() = runTest {
+        twoSections()
+        routes["sections/5/all?type=8"] = metadata(artist("1", "Zed"))
+        routes["sections/6/all?type=8"] = metadata(artist("3", "Dickens"))
+        val env = env(backgroundScope)
+        val repo = env.signedIn()
+        env.settings.setLibraryExcluded("6", true)
+
+        assertEquals(listOf("Zed"), repo.artists().map { it.name })
+        assertTrue(requests.none { "/library/sections/6/" in it })
+    }
+
+    @Test
+    fun `recentlyAdded merges sections newest first`() = runTest {
+        twoSections()
+        routes["sections/5/all?type=9&sort=addedAt"] =
+            metadata(album("70", "Old", addedAt = 100), album("71", "Older", addedAt = 50))
+        routes["sections/6/all?type=9&sort=addedAt"] =
+            metadata(album("80", "New", addedAt = 300), album("81", "Mid", addedAt = 75))
+        val repo = env(backgroundScope).signedIn()
+
+        assertEquals(listOf("New", "Old", "Mid"), repo.recentlyAdded(3).map { it.title })
+    }
+
+    @Test
+    fun `albums over several sections slices one merged unpaged list`() = runTest {
+        twoSections()
+        routes["sections/5/all?type=9&sort=titleSort"] =
+            metadata(album("70", "Abbey Road"), album("71", "Revolver"))
+        routes["sections/6/all?type=9&sort=titleSort"] =
+            metadata(album("80", "Dune"), album("81", "Ulysses"))
+        val repo = env(backgroundScope).signedIn()
+
+        assertEquals(listOf("Abbey Road", "Dune"), repo.albums(0, 2).map { it.title })
+        val listing = requests.filter { "type=9&sort=titleSort" in it }
+        assertEquals(2, listing.size)
+        assertTrue(listing.none { "X-Plex-Container-Size" in it })
+
+        assertEquals(listOf("Revolver", "Ulysses"), repo.albums(2, 2).map { it.title })
+        // The second page is served from the merged list, not the server.
+        assertEquals(2, requests.count { "type=9&sort=titleSort" in it })
+    }
+
+    @Test
+    fun `randomTracks splits the draw across sections by track count`() = runTest {
+        twoSections()
+        routes["sections/5/all?type=10&X-Plex-Container-Start=0&X-Plex-Container-Size=0"] =
+            """{"MediaContainer":{"totalSize":300}}"""
+        routes["sections/6/all?type=10&X-Plex-Container-Start=0&X-Plex-Container-Size=0"] =
+            """{"MediaContainer":{"totalSize":100}}"""
+        routes["sections/5/all?type=10&sort=random"] = metadata(track("100", "Song"))
+        routes["sections/6/all?type=10&sort=random"] = metadata(track("200", "Chapter"))
+        val repo = env(backgroundScope).signedIn()
+
+        val tracks = repo.randomTracks(20)
+
+        assertEquals(setOf("100", "200"), tracks.map { it.id }.toSet())
+        val draws = requests.filter { "sort=random" in it }
+        assertEquals(20, draws.sumOf { containerSize(it) })
+        assertEquals(15, containerSize(draws.single { "/sections/5/" in it }))
+        assertEquals(5, containerSize(draws.single { "/sections/6/" in it }))
+    }
+
+    @Test
+    fun `genres sum counts by title across sections`() = runTest {
+        twoSections()
+        routes["/sections/5/genre"] = """{"MediaContainer":{"Directory":[{"key":"42","title":"Jazz"}]}}"""
+        routes["/sections/6/genre"] = """{"MediaContainer":{"Directory":[
+            {"key":"99","title":"jazz"},{"key":"43","title":"Ambient"}]}}"""
+        routes["sections/5/all?type=10&album.genre=42"] = """{"MediaContainer":{"totalSize":100}}"""
+        routes["sections/6/all?type=10&album.genre=99"] = """{"MediaContainer":{"totalSize":20}}"""
+        routes["sections/6/all?type=10&album.genre=43"] = """{"MediaContainer":{"totalSize":7}}"""
+        val repo = env(backgroundScope).signedIn()
+
+        val genres = repo.genres().sortedByDescending { it.songCount }
+
+        assertEquals(listOf("Jazz" to 120, "Ambient" to 7), genres.map { it.name to it.songCount })
+    }
+
+    @Test
+    fun `albumsByGenre only asks the sections that have the genre, with their own key`() = runTest {
+        twoSections()
+        routes["/sections/5/genre"] = """{"MediaContainer":{"Directory":[{"key":"42","title":"Jazz"}]}}"""
+        routes["/sections/6/genre"] = """{"MediaContainer":{"Directory":[{"key":"43","title":"Ambient"}]}}"""
+        routes["sections/5/all?type=9&genre=42"] = metadata(album("70", "Kind of Blue"))
+        val repo = env(backgroundScope).signedIn()
+
+        assertEquals(listOf("Kind of Blue"), repo.albumsByGenre("jazz", 20).map { it.title })
+        assertTrue(requests.none { "/sections/6/all" in it })
+    }
+
+    @Test
+    fun `search interleaves sections and dedupes by rating key`() = runTest {
+        twoSections()
+        routes["sectionId=5"] = """{"MediaContainer":{"Hub":[{"type":"artist","Metadata":[
+            ${artist("1", "A1")},${artist("2", "A2")}]}]}}"""
+        routes["sectionId=6"] = """{"MediaContainer":{"Hub":[{"type":"artist","Metadata":[
+            ${artist("3", "B1")},${artist("1", "A1")}]}]}}"""
+        val repo = env(backgroundScope).signedIn()
+
+        assertEquals(listOf("1", "3", "2"), repo.search("a").artists.map { it.id })
+    }
+
+    @Test
+    fun `isFavoriteTrack covers every section, excluded ones included`() = runTest {
+        twoSections()
+        routes["sections/5/all?type=10&userRating=10"] = metadata(track("100", "Loved"))
+        routes["sections/6/all?type=10&userRating=10"] = metadata(track("200", "Loved Chapter"))
+        val env = env(backgroundScope)
+        val repo = env.signedIn()
+        env.settings.setLibraryExcluded("6", true)
+
+        assertTrue(repo.isFavoriteTrack("200"))
+        assertTrue(repo.isFavoriteTrack("100"))
+        assertTrue(requests.any { "/sections/6/all" in it && "userRating=10" in it })
+    }
+
+    @Test
+    fun `tracks carry librarySectionID when present, else the requested section`() = runTest {
+        val tagged = track("101", "Tagged").replaceFirst("\"type\":\"track\"", "\"type\":\"track\",\"librarySectionID\":6")
+        routes["type=10"] = metadata(track("100", "Plain"), tagged)
+        routes["/library/metadata/100"] = metadata(tagged.replace("\"101\"", "\"100\""))
+        val repo = env(backgroundScope).signedIn()
+
+        val byId = repo.randomTracks(10).associate { it.id to it.libraryId }
+        assertEquals(mapOf("100" to "5", "101" to "6"), byId)
+
+        assertEquals("6", repo.trackLibraryId("100", setOf("5", "6")))
+    }
+
+    @Test
+    fun `legacy pinned section seeds the exclusion set once and drops the key`() = runTest {
+        twoSections()
+        val env = env(backgroundScope)
+        val repo = env.signedIn()
+        // savePlex removes the key, so the pre-1.3 state is seeded after sign-in.
+        env.store.edit { it[stringPreferencesKey("plex_section_id")] = "5" }
+
+        repo.artists()
+
+        assertEquals(setOf("6"), env.settings.excludedLibraryIds.first())
+        assertEquals(null, env.store.data.first()[stringPreferencesKey("plex_section_id")])
+        assertTrue(requests.none { "/library/sections/6/" in it })
+    }
+
+    @Test
+    fun `legacy section no longer on the server just drops the key`() = runTest {
+        twoSections()
+        val env = env(backgroundScope)
+        val repo = env.signedIn()
+        env.store.edit { it[stringPreferencesKey("plex_section_id")] = "9" }
+
+        repo.artists()
+
+        assertEquals(emptySet(), env.settings.excludedLibraryIds.first())
+        assertEquals(null, env.store.data.first()[stringPreferencesKey("plex_section_id")])
     }
 }

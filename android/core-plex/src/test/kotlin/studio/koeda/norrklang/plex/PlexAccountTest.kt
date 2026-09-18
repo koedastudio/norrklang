@@ -13,7 +13,6 @@ class PlexAccountTest {
             serverName = "Vault",
             machineIdentifier = "m1",
             token = "super-secret-token",
-            sectionId = "5",
             username = "demo",
         )
         assertTrue("super-secret-token" !in account.toString())
@@ -26,7 +25,6 @@ class PlexAccountTest {
             serverName = "Vault",
             machineIdentifier = "m1",
             token = token,
-            sectionId = "5",
             username = "demo",
         )
         assertEquals(account("t1").cacheFingerprint, account("t1").cacheFingerprint)

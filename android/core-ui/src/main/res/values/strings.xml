@@ -32,6 +32,10 @@
   <string name="plex_error_no_servers">No Plex Media Server on this account</string>
   <string name="plex_error_no_music_library">This server has no music library</string>
   <string name="plex_error_validation">Couldn\'t connect to the server — try another connection</string>
+  <string name="plex_pick_libraries_title">Choose libraries</string>
+  <string name="signin_pick_libraries_title">Choose libraries</string>
+  <string name="signin_pick_libraries_subtitle">Pick the music libraries to show — you can change this later in Settings</string>
+  <string name="signin_continue">Continue</string>
   <string name="plex_retry">Try again</string>
   <string name="signin_server_label">Server address</string>
   <string name="signin_server_placeholder">https://music.example.com</string>
@@ -73,6 +77,15 @@
   <string name="settings_scrobble_artists_hint">Plays by these artists are never reported</string>
   <string name="settings_scrobble_playlists">Excluded playlists</string>
   <string name="settings_scrobble_playlists_hint">Plays started from these playlists are never reported</string>
+  <string name="settings_scrobble_libraries">Excluded libraries</string>
+  <string name="settings_scrobble_libraries_hint">Plays from these libraries are never reported</string>
+  <string name="settings_libraries">Libraries</string>
+  <string name="settings_libraries_hint">Choose which of your server\'s music libraries to show</string>
+  <string name="settings_libraries_all">All libraries</string>
+  <!-- %1$d selected of %2$d libraries on the server -->
+  <string name="settings_libraries_count">%1$d of %2$d libraries</string>
+  <string name="settings_libraries_playlists_note">Playlists always show every library</string>
+  <string name="settings_picker_no_libraries">No music libraries on the server</string>
   <string name="settings_picker_search_artists">Search artists</string>
   <string name="settings_picker_excluded_group">Excluded (%1$d)</string>
   <string name="settings_picker_no_artists">No artists in the library</string>

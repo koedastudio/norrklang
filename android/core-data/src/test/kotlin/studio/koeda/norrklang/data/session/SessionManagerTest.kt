@@ -73,7 +73,6 @@ class SessionManagerTest {
         serverName = "Vault",
         machineIdentifier = "m1",
         token = "plex-token",
-        sectionId = "5",
         username = "demo",
     )
 
@@ -104,7 +103,6 @@ class SessionManagerTest {
         userId = "u1",
         username = "demo",
         token = "jf-token",
-        libraryId = "lib1",
     )
 
     /** Every Jellyfin client answers all calls with [body]. */
@@ -126,7 +124,8 @@ class SessionManagerTest {
         )
     }
 
-    private val libraryOkBody = """{"Id":"lib1","Name":"Music","CollectionType":"music"}"""
+    private val libraryOkBody =
+        """{"Items":[{"Id":"lib1","Name":"Music","CollectionType":"music"}]}"""
 
     private suspend fun SessionManager.resolvedState(): SessionManager.SessionState =
         state.first { it !is SessionManager.SessionState.Initializing }
@@ -373,11 +372,17 @@ class SessionManagerTest {
 
     @Test
     fun `queued playback reports cannot target a new account`() = runTest {
-        val manager = SessionManager(settings(backgroundScope), backgroundScope, clientFactory(okBody))
+        val settings = settings(backgroundScope)
+        val manager = SessionManager(settings, backgroundScope, clientFactory(okBody))
         manager.resolvedState()
         manager.signIn("https://one.example.com", "alice", "secret")
         val oldSession = manager.connectedOrNull()!!.session
-        val repository = studio.koeda.norrklang.data.repo.SubsonicMusicRepository(manager, "test", backgroundScope)
+        val repository = studio.koeda.norrklang.data.repo.SubsonicMusicRepository(
+            manager,
+            settings,
+            "test",
+            backgroundScope,
+        )
         manager.signIn("https://two.example.com", "bob", "secret")
 
         val result = runCatching { repository.scrobble("old-track", true, oldSession) }

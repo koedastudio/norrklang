@@ -11,13 +11,16 @@ import java.io.IOException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.newSingleThreadContext
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -65,6 +68,7 @@ class JellyfinSignInViewModelTest {
 
     private var rejectAuth = false
     private var withMusicView = true
+    private var withSecondMusicView = false
     private var dropRequests = false
 
     private val requests = mutableListOf<String>()
@@ -82,7 +86,12 @@ class JellyfinSignInViewModelTest {
                 else ok("""{"User":{"Id":"u1","Name":"demo"},"AccessToken":"tok"}""")
 
             "/Users/u1/Views" in url ->
-                if (withMusicView) {
+                if (withSecondMusicView) {
+                    ok(
+                        """{"Items":[{"Id":"lib1","Name":"Music","CollectionType":"music"},
+                            {"Id":"lib2","Name":"Audiobooks","CollectionType":"music"}]}""",
+                    )
+                } else if (withMusicView) {
                     ok("""{"Items":[{"Id":"lib1","Name":"Music","CollectionType":"music"}]}""")
                 } else {
                     ok("""{"Items":[{"Id":"v9","Name":"Movies","CollectionType":"movies"}]}""")
@@ -94,7 +103,11 @@ class JellyfinSignInViewModelTest {
         }
     }
 
-    private class TestEnv(val viewModel: JellyfinSignInViewModel, val sessionManager: SessionManager)
+    private class TestEnv(
+        val viewModel: JellyfinSignInViewModel,
+        val sessionManager: SessionManager,
+        val settings: ServerSettingsRepository,
+    )
 
     private fun env(): TestEnv {
         val settings = ServerSettingsRepository(
@@ -116,7 +129,13 @@ class JellyfinSignInViewModelTest {
             settings,
             { baseUrl, token, info -> JellyfinClient(baseUrl, token, info, engine()) },
         )
-        return TestEnv(viewModel, sessionManager)
+        return TestEnv(viewModel, sessionManager, settings)
+    }
+
+    private fun awaitPick(vm: JellyfinSignInViewModel) {
+        val deadline = System.currentTimeMillis() + 10_000
+        while (vm.libraryPick == null && System.currentTimeMillis() < deadline) Thread.sleep(20)
+        assertTrue(vm.libraryPick != null, "Timed out waiting for the picker; state is ${vm.state}")
     }
 
     private fun awaitSettled(vm: JellyfinSignInViewModel) {
@@ -171,6 +190,50 @@ class JellyfinSignInViewModelTest {
 
         assertIs<UiState.Done>(vm.state)
         assertTrue(requests.any { "/Users/AuthenticateByName" in it })
+    }
+
+    @Test
+    fun `several music libraries show the picker and the choice is persisted`() {
+        withSecondMusicView = true
+        val env = env()
+        val vm = env.viewModel
+
+        vm.onServerUrlChange("jf.example.com")
+        vm.onUsernameChange("demo")
+        vm.connect()
+        awaitPick(vm)
+
+        assertIs<UiState.Idle>(vm.state)
+        assertEquals(setOf("lib1", "lib2"), vm.libraryPick?.selected)
+        vm.toggleLibrary("lib1", false)
+        // The last selected library cannot be deselected.
+        vm.toggleLibrary("lib2", false)
+        assertEquals(setOf("lib2"), vm.libraryPick?.selected)
+
+        vm.confirmLibraries()
+        awaitSettled(vm)
+
+        assertIs<UiState.Done>(vm.state)
+        assertNull(vm.libraryPick)
+        assertEquals(setOf("lib1"), runBlocking { env.settings.excludedLibraryIds.first() })
+        assertIs<SessionManager.SessionState.Connected>(env.sessionManager.state.value)
+    }
+
+    @Test
+    fun `cancelling the picker returns to the form`() {
+        withSecondMusicView = true
+        val vm = env().viewModel
+
+        vm.onServerUrlChange("jf.example.com")
+        vm.onUsernameChange("demo")
+        vm.connect()
+        awaitPick(vm)
+
+        vm.cancelLibraryPick()
+
+        assertNull(vm.libraryPick)
+        assertIs<UiState.Idle>(vm.state)
+        assertEquals("jf.example.com", vm.serverUrl)
     }
 
     @Test

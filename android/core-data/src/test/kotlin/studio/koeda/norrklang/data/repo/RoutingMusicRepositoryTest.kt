@@ -46,7 +46,6 @@ class RoutingMusicRepositoryTest {
         serverName = "Vault",
         machineIdentifier = "m1",
         token = "plex-token",
-        sectionId = "5",
         username = "demo",
     )
 
@@ -56,7 +55,6 @@ class RoutingMusicRepositoryTest {
         userId = "u1",
         username = "demo",
         token = "jf-token",
-        libraryId = "lib1",
     )
 
     private val requests = mutableListOf<String>()
@@ -64,11 +62,12 @@ class RoutingMusicRepositoryTest {
     private fun engine() = MockEngine { request ->
         val url = request.url.toString()
         requests.add(url)
-        // A single body serves every provider: it parses as an empty Plex
-        // MediaContainer AND an empty Jellyfin items envelope, and carries
-        // the Id the Jellyfin sign-in's validateLibrary lookup requires.
+        // A single body serves every provider: it parses as a Plex
+        // MediaContainer with one music section AND a Jellyfin items envelope
+        // with one music view, so sign-in validation and library scoping pass.
         respond(
-            content = """{"MediaContainer":{},"Id":"lib1","Items":[]}""",
+            content = """{"MediaContainer":{"Directory":[{"key":"5","type":"artist","title":"Music"}]},
+                "Items":[{"Id":"lib1","Name":"Music","CollectionType":"music"}]}""",
             headers = headersOf(HttpHeaders.ContentType, "application/json"),
         )
     }
@@ -94,9 +93,9 @@ class RoutingMusicRepositoryTest {
         )
         val repository = RoutingMusicRepository(
             sessionManager,
-            SubsonicMusicRepository(sessionManager, "studio.koeda.norrklang", scope),
-            PlexMusicRepository(sessionManager, "studio.koeda.norrklang", scope),
-            JellyfinMusicRepository(sessionManager, "studio.koeda.norrklang", scope),
+            SubsonicMusicRepository(sessionManager, settings, "studio.koeda.norrklang", scope),
+            PlexMusicRepository(sessionManager, settings, "studio.koeda.norrklang", scope),
+            JellyfinMusicRepository(sessionManager, settings, "studio.koeda.norrklang", scope),
         )
         return TestEnv(sessionManager, repository)
     }

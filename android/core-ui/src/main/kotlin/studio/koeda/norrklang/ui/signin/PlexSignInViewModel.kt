@@ -10,6 +10,7 @@ import javax.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import studio.koeda.norrklang.data.model.MusicLibrary
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
 import studio.koeda.norrklang.plex.ConnectionProber
@@ -23,7 +24,8 @@ import studio.koeda.norrklang.plex.model.PlexResource
 
 /**
  * Drives the Plex sign-in flow: PIN link → server pick → connection pick →
- * validate + connect. The final validated [PlexAccount] goes to
+ * library pick (only with several music sections) → validate + connect. The
+ * final validated [PlexAccount] and the library choice go to
  * [SessionManager.signInPlex]; everything before that is UI-local state.
  */
 @HiltViewModel
@@ -59,6 +61,14 @@ class PlexSignInViewModel internal constructor(
             val probing: Boolean,
         ) : UiState
 
+        /** Several music sections: all pre-selected, at least one must stay. */
+        data class PickLibraries(
+            val server: PlexResource,
+            val connection: PlexConnection,
+            val libraries: List<MusicLibrary>,
+            val selected: Set<String>,
+        ) : UiState
+
         data object Validating : UiState
         data class Error(val kind: ErrorKind) : UiState
         data object Done : UiState
@@ -75,6 +85,9 @@ class PlexSignInViewModel internal constructor(
     private var accountToken: String? = null
     private var username: String = ""
     private var flowJob: Job? = null
+
+    /** The account awaiting the library pick. */
+    private var pendingAccount: PlexAccount? = null
 
     /** Starts (or restarts) the PIN link flow. */
     fun start() {
@@ -175,15 +188,15 @@ class PlexSignInViewModel internal constructor(
         flowJob?.cancel()
         flowJob = viewModelScope.launch {
             val uri = connection.uri.trimEnd('/')
-            val section = try {
+            val sections = try {
                 serverClientFactory(uri, token, info()).use { client ->
-                    client.musicSections().firstOrNull()
+                    client.musicSections()
                 }
             } catch (_: PlexException) {
                 state = UiState.Error(ErrorKind.VALIDATION_FAILED)
                 return@launch
             }
-            if (section == null) {
+            if (sections.isEmpty()) {
                 state = UiState.Error(ErrorKind.NO_MUSIC_LIBRARY)
                 return@launch
             }
@@ -192,14 +205,49 @@ class PlexSignInViewModel internal constructor(
                 serverName = server.name.ifEmpty { uri },
                 machineIdentifier = server.clientIdentifier,
                 token = token,
-                sectionId = section.key,
                 username = username,
             )
-            sessionManager.signInPlex(account).fold(
-                onSuccess = { state = UiState.Done },
-                onFailure = { state = UiState.Error(ErrorKind.VALIDATION_FAILED) },
-            )
+            val libraries = sections.map { MusicLibrary(it.key, it.title) }
+            if (libraries.size > 1) {
+                pendingAccount = account
+                state = UiState.PickLibraries(
+                    server,
+                    connection,
+                    libraries,
+                    selected = libraries.mapTo(mutableSetOf()) { it.id },
+                )
+                return@launch
+            }
+            signIn(account, excludedLibraryIds = emptySet())
         }
+    }
+
+    /** Refuses to empty the selection: the last library stays selected. */
+    fun toggleLibrary(libraryId: String, selected: Boolean) {
+        val pick = state as? UiState.PickLibraries ?: return
+        val next = if (selected) pick.selected + libraryId else pick.selected - libraryId
+        if (next.isEmpty()) return
+        state = pick.copy(selected = next)
+    }
+
+    fun confirmLibraries() {
+        val pick = state as? UiState.PickLibraries ?: return
+        val account = pendingAccount ?: return
+        state = UiState.Validating
+        flowJob?.cancel()
+        flowJob = viewModelScope.launch {
+            signIn(account, pick.libraries.mapTo(mutableSetOf()) { it.id } - pick.selected)
+        }
+    }
+
+    private suspend fun signIn(account: PlexAccount, excludedLibraryIds: Set<String>) {
+        sessionManager.signInPlex(account, excludedLibraryIds).fold(
+            onSuccess = {
+                pendingAccount = null
+                state = UiState.Done
+            },
+            onFailure = { state = UiState.Error(ErrorKind.VALIDATION_FAILED) },
+        )
     }
 
     fun retry() {
@@ -210,6 +258,7 @@ class PlexSignInViewModel internal constructor(
     fun cancel() {
         flowJob?.cancel()
         flowJob = null
+        pendingAccount = null
         state = UiState.Idle
     }
 

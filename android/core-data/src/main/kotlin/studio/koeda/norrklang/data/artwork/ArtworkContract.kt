@@ -29,12 +29,17 @@ object ArtworkContract {
         return "content://$packageName$AUTHORITY_SUFFIX/$PATH_COVER/${encode(coverArtId)}"
     }
 
+    /** Query parameter carrying the tile version (see [homeUri]). */
+    const val PARAM_VERSION = "v"
+
     /**
      * A content URI resolving to the generated image for a home-tab button.
      * Valid keys are fixed in the provider — no registration needed.
+     * [version] changes the URI when the library selection changes: car
+     * hosts cache bitmaps per URI string and would keep a stale collage.
      */
-    fun homeUri(packageName: String, key: String): String =
-        "content://$packageName$AUTHORITY_SUFFIX/$PATH_HOME/${encode(key)}"
+    fun homeUri(packageName: String, key: String, version: String? = null): String =
+        "content://$packageName$AUTHORITY_SUFFIX/$PATH_HOME/${encode(key)}" + versionQuery(version)
 
     /**
      * A content URI resolving to the generated collage for a dynamic catalog
@@ -42,8 +47,12 @@ object ArtworkContract {
      * in the provider; the key is validated against the current mix snapshot
      * there, so no registration is needed here either.
      */
-    fun homeMixUri(packageName: String, kind: String, key: String): String =
-        "content://$packageName$AUTHORITY_SUFFIX/$PATH_HOME/$kind/${encode(key)}"
+    fun homeMixUri(packageName: String, kind: String, key: String, version: String? = null): String =
+        "content://$packageName$AUTHORITY_SUFFIX/$PATH_HOME/$kind/${encode(key)}" +
+            versionQuery(version)
+
+    private fun versionQuery(version: String?): String =
+        if (version.isNullOrEmpty()) "" else "?$PARAM_VERSION=${encode(version)}"
 
     /**
      * Percent-encodes a path segment with android.net.Uri.encode's exact

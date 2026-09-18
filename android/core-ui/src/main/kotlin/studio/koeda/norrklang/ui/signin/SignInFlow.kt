@@ -93,6 +93,8 @@ fun SignInFlow(
             state = plexViewModel.state,
             onSelectServer = plexViewModel::selectServer,
             onSelectConnection = plexViewModel::selectConnection,
+            onToggleLibrary = plexViewModel::toggleLibrary,
+            onConfirmLibraries = plexViewModel::confirmLibraries,
             onRetry = plexViewModel::retry,
             modifier = modifier,
             onBack = {
@@ -101,19 +103,34 @@ fun SignInFlow(
             },
         )
 
-        SignInPage.JellyfinForm -> SignInScreen(
-            serverUrl = jellyfinViewModel.serverUrl,
-            username = jellyfinViewModel.username,
-            password = jellyfinViewModel.password,
-            state = jellyfinViewModel.state,
-            onServerUrlChange = jellyfinViewModel::onServerUrlChange,
-            onUsernameChange = jellyfinViewModel::onUsernameChange,
-            onPasswordChange = jellyfinViewModel::onPasswordChange,
-            onConnect = jellyfinViewModel::connect,
-            modifier = modifier,
-            onBack = { page = SignInPage.ProviderPicker },
-            subtitle = stringResource(R.string.signin_subtitle_jellyfin),
-        )
+        SignInPage.JellyfinForm -> {
+            val pick = jellyfinViewModel.libraryPick
+            if (pick != null) {
+                LibraryPickerPage(
+                    libraries = pick.libraries,
+                    selectedIds = pick.selected,
+                    onToggle = jellyfinViewModel::toggleLibrary,
+                    onContinue = jellyfinViewModel::confirmLibraries,
+                    continuing = jellyfinViewModel.state is SignInViewModel.UiState.Connecting,
+                    onBack = jellyfinViewModel::cancelLibraryPick,
+                    modifier = modifier,
+                )
+            } else {
+                SignInScreen(
+                    serverUrl = jellyfinViewModel.serverUrl,
+                    username = jellyfinViewModel.username,
+                    password = jellyfinViewModel.password,
+                    state = jellyfinViewModel.state,
+                    onServerUrlChange = jellyfinViewModel::onServerUrlChange,
+                    onUsernameChange = jellyfinViewModel::onUsernameChange,
+                    onPasswordChange = jellyfinViewModel::onPasswordChange,
+                    onConnect = jellyfinViewModel::connect,
+                    modifier = modifier,
+                    onBack = { page = SignInPage.ProviderPicker },
+                    subtitle = stringResource(R.string.signin_subtitle_jellyfin),
+                )
+            }
+        }
     }
 }
 

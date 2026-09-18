@@ -64,6 +64,10 @@ class ServerSettingsRepository @Inject constructor(
         val PLEX_SERVER_URI = stringPreferencesKey("plex_server_uri")
         val PLEX_SERVER_NAME = stringPreferencesKey("plex_server_name")
         val PLEX_MACHINE_ID = stringPreferencesKey("plex_machine_id")
+        /**
+         * Legacy: pre-1.3 installs pinned one library here. Read once by
+         * [migrateLegacyLibrarySelection] to seed [LIBRARIES_EXCLUDED], then removed.
+         */
         val PLEX_SECTION_ID = stringPreferencesKey("plex_section_id")
         val PLEX_USERNAME = stringPreferencesKey("plex_username")
 
@@ -78,7 +82,11 @@ class ServerSettingsRepository @Inject constructor(
         val JELLYFIN_SERVER_NAME = stringPreferencesKey("jellyfin_server_name")
         val JELLYFIN_USER_ID = stringPreferencesKey("jellyfin_user_id")
         val JELLYFIN_USERNAME = stringPreferencesKey("jellyfin_username")
+        /** Legacy pinned library, like [PLEX_SECTION_ID]. */
         val JELLYFIN_LIBRARY_ID = stringPreferencesKey("jellyfin_library_id")
+
+        /** Library ids hidden from browsing; absent/empty means every library. */
+        val LIBRARIES_EXCLUDED = stringSetPreferencesKey("libraries_excluded")
         val LAST_MEDIA_ID = stringPreferencesKey("last_media_id")
         val LAST_POSITION_MS = longPreferencesKey("last_position_ms")
 
@@ -93,6 +101,7 @@ class ServerSettingsRepository @Inject constructor(
         val SCROBBLE_ENABLED = booleanPreferencesKey("scrobble_enabled")
         val SCROBBLE_EXCLUDED_ARTISTS = stringSetPreferencesKey("scrobble_excluded_artists")
         val SCROBBLE_EXCLUDED_PLAYLISTS = stringSetPreferencesKey("scrobble_excluded_playlists")
+        val SCROBBLE_EXCLUDED_LIBRARIES = stringSetPreferencesKey("scrobble_excluded_libraries")
 
         /** Pre-token builds stored the plaintext password under this key. */
         val LEGACY_PASSWORD = stringPreferencesKey("password")
@@ -150,7 +159,6 @@ class ServerSettingsRepository @Inject constructor(
 
     private fun decodePlex(prefs: Preferences): PlexAccount? {
         val uri = prefs[Keys.PLEX_SERVER_URI] ?: return null
-        val sectionId = prefs[Keys.PLEX_SECTION_ID] ?: return null
         // null (undecryptable — Keystore key gone) means signed out.
         val token = prefs[Keys.PLEX_TOKEN]?.let(cipher::decrypt) ?: return null
         return PlexAccount(
@@ -158,7 +166,6 @@ class ServerSettingsRepository @Inject constructor(
             serverName = prefs[Keys.PLEX_SERVER_NAME] ?: uri,
             machineIdentifier = prefs[Keys.PLEX_MACHINE_ID] ?: "",
             token = token,
-            sectionId = sectionId,
             username = prefs[Keys.PLEX_USERNAME] ?: "",
         )
     }
@@ -166,7 +173,6 @@ class ServerSettingsRepository @Inject constructor(
     private fun decodeJellyfin(prefs: Preferences): JellyfinAccount? {
         val baseUrl = prefs[Keys.JELLYFIN_BASE_URL] ?: return null
         val userId = prefs[Keys.JELLYFIN_USER_ID] ?: return null
-        val libraryId = prefs[Keys.JELLYFIN_LIBRARY_ID] ?: return null
         // null (undecryptable — Keystore key gone) means signed out.
         val token = prefs[Keys.JELLYFIN_TOKEN]?.let(cipher::decrypt) ?: return null
         return JellyfinAccount(
@@ -175,7 +181,6 @@ class ServerSettingsRepository @Inject constructor(
             userId = userId,
             username = prefs[Keys.JELLYFIN_USERNAME] ?: "",
             token = token,
-            libraryId = libraryId,
         )
     }
 
@@ -198,10 +203,14 @@ class ServerSettingsRepository @Inject constructor(
         }
     }
 
-    suspend fun savePlex(account: PlexAccount) {
+    /**
+     * Persists the account and, in the same write, the sign-in picker's
+     * library selection — written after [clearAccountPlayback] so a new
+     * server's choice survives the account switch.
+     */
+    suspend fun savePlex(account: PlexAccount, excludedLibraryIds: Set<String> = emptySet()) {
         dataStore.edit { prefs ->
             if (prefs[Keys.PLEX_SERVER_URI] != account.serverUri ||
-                prefs[Keys.PLEX_SECTION_ID] != account.sectionId ||
                 prefs[Keys.PLEX_USERNAME] != account.username
             ) {
                 clearAccountPlayback(prefs)
@@ -212,18 +221,19 @@ class ServerSettingsRepository @Inject constructor(
             prefs[Keys.PLEX_SERVER_URI] = account.serverUri
             prefs[Keys.PLEX_SERVER_NAME] = account.serverName
             prefs[Keys.PLEX_MACHINE_ID] = account.machineIdentifier
-            prefs[Keys.PLEX_SECTION_ID] = account.sectionId
             prefs[Keys.PLEX_USERNAME] = account.username
+            prefs.remove(Keys.PLEX_SECTION_ID)
+            prefs.putSet(Keys.LIBRARIES_EXCLUDED, excludedLibraryIds)
             removeSubsonicAccount(prefs)
             removeJellyfinAccount(prefs)
         }
     }
 
-    suspend fun saveJellyfin(account: JellyfinAccount) {
+    /** See [savePlex]. */
+    suspend fun saveJellyfin(account: JellyfinAccount, excludedLibraryIds: Set<String> = emptySet()) {
         dataStore.edit { prefs ->
             if (prefs[Keys.JELLYFIN_BASE_URL] != account.baseUrl ||
-                prefs[Keys.JELLYFIN_USER_ID] != account.userId ||
-                prefs[Keys.JELLYFIN_LIBRARY_ID] != account.libraryId
+                prefs[Keys.JELLYFIN_USER_ID] != account.userId
             ) {
                 clearAccountPlayback(prefs)
             }
@@ -234,7 +244,8 @@ class ServerSettingsRepository @Inject constructor(
             prefs[Keys.JELLYFIN_SERVER_NAME] = account.serverName
             prefs[Keys.JELLYFIN_USER_ID] = account.userId
             prefs[Keys.JELLYFIN_USERNAME] = account.username
-            prefs[Keys.JELLYFIN_LIBRARY_ID] = account.libraryId
+            prefs.remove(Keys.JELLYFIN_LIBRARY_ID)
+            prefs.putSet(Keys.LIBRARIES_EXCLUDED, excludedLibraryIds)
             removeSubsonicAccount(prefs)
             removePlexAccount(prefs)
         }
@@ -295,10 +306,10 @@ class ServerSettingsRepository @Inject constructor(
 
     /**
      * Removes everything tied to the signed-in account: credentials, the
-     * resumption pointer, and the scrobble exclusion sets (both hold ids
-     * minted by the old server). Device-wide state — the quality tiers, the
-     * scrobble master toggle, and the Plex/Jellyfin device ids — survives a
-     * sign-out or server switch.
+     * resumption pointer, the library selection and the scrobble exclusion
+     * sets (all hold ids minted by the old server). Device-wide state — the
+     * quality tiers, the scrobble master toggle, and the Plex/Jellyfin device
+     * ids — survives a sign-out or server switch.
      */
     suspend fun clearAccount() {
         dataStore.edit { prefs ->
@@ -316,6 +327,8 @@ class ServerSettingsRepository @Inject constructor(
         prefs.remove(Keys.LAST_POSITION_MS)
         prefs.remove(Keys.SCROBBLE_EXCLUDED_ARTISTS)
         prefs.remove(Keys.SCROBBLE_EXCLUDED_PLAYLISTS)
+        prefs.remove(Keys.SCROBBLE_EXCLUDED_LIBRARIES)
+        prefs.remove(Keys.LIBRARIES_EXCLUDED)
     }
 
     /** Mint a revision for older installs, without changing their saved queue. */
@@ -404,6 +417,43 @@ class ServerSettingsRepository @Inject constructor(
         dataStore.edit { it[Keys.AUTOPLAY_SIMILAR] = enabled }
     }
 
+    // --- Libraries ---
+
+    /**
+     * Server library ids hidden from browsing, search and mixes (see
+     * LibraryScope). Empty = every library; new server libraries show up
+     * automatically. Account-scoped.
+     */
+    val excludedLibraryIds: Flow<Set<String>> =
+        dataStore.data.map { it[Keys.LIBRARIES_EXCLUDED] ?: emptySet() }
+
+    suspend fun setLibraryExcluded(libraryId: String, excluded: Boolean) {
+        dataStore.edit { it.editSet(Keys.LIBRARIES_EXCLUDED, libraryId, excluded) }
+    }
+
+    /**
+     * One-shot upgrade seed: pre-1.3 Plex/Jellyfin installs browsed exactly
+     * one library, so every OTHER library in [availableIds] is excluded to
+     * keep showing the same content, then the legacy key is dropped. A
+     * legacy id no longer on the server just drops the key (all libraries).
+     */
+    suspend fun migrateLegacyLibrarySelection(availableIds: Collection<String>) {
+        val snapshot = dataStore.data.first()
+        val legacyKey = when (snapshot[Keys.PROVIDER]) {
+            PROVIDER_PLEX -> Keys.PLEX_SECTION_ID
+            PROVIDER_JELLYFIN -> Keys.JELLYFIN_LIBRARY_ID
+            else -> return
+        }
+        if (snapshot[legacyKey] == null) return
+        dataStore.edit { prefs ->
+            val legacy = prefs[legacyKey] ?: return@edit
+            if (legacy in availableIds && prefs[Keys.LIBRARIES_EXCLUDED] == null) {
+                prefs.putSet(Keys.LIBRARIES_EXCLUDED, availableIds.filterTo(mutableSetOf()) { it != legacy })
+            }
+            prefs.remove(legacyKey)
+        }
+    }
+
     // --- Scrobbling ---
 
     /**
@@ -419,10 +469,12 @@ class ServerSettingsRepository @Inject constructor(
         val excludedArtistIds: Set<String>,
         /** Plays started from these playlists are never reported. */
         val excludedPlaylistIds: Set<String>,
+        /** Plays of tracks in these server libraries are never reported. */
+        val excludedLibraryIds: Set<String> = emptySet(),
     ) {
         companion object {
             /** Fresh-install behavior: report plays, exclude nothing. */
-            val DEFAULT = ScrobbleSettings(enabled = true, emptySet(), emptySet())
+            val DEFAULT = ScrobbleSettings(enabled = true, emptySet(), emptySet(), emptySet())
         }
     }
 
@@ -433,6 +485,8 @@ class ServerSettingsRepository @Inject constructor(
                 ?: ScrobbleSettings.DEFAULT.excludedArtistIds,
             excludedPlaylistIds = prefs[Keys.SCROBBLE_EXCLUDED_PLAYLISTS]
                 ?: ScrobbleSettings.DEFAULT.excludedPlaylistIds,
+            excludedLibraryIds = prefs[Keys.SCROBBLE_EXCLUDED_LIBRARIES]
+                ?: ScrobbleSettings.DEFAULT.excludedLibraryIds,
         )
     }
 
@@ -446,6 +500,14 @@ class ServerSettingsRepository @Inject constructor(
 
     suspend fun setPlaylistScrobbleExcluded(playlistId: String, excluded: Boolean) {
         dataStore.edit { it.editSet(Keys.SCROBBLE_EXCLUDED_PLAYLISTS, playlistId, excluded) }
+    }
+
+    suspend fun setLibraryScrobbleExcluded(libraryId: String, excluded: Boolean) {
+        dataStore.edit { it.editSet(Keys.SCROBBLE_EXCLUDED_LIBRARIES, libraryId, excluded) }
+    }
+
+    private fun MutablePreferences.putSet(key: Preferences.Key<Set<String>>, value: Set<String>) {
+        if (value.isEmpty()) remove(key) else this[key] = value
     }
 
     private fun MutablePreferences.editSet(

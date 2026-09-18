@@ -5,6 +5,7 @@ import studio.koeda.norrklang.data.model.AlbumDetail
 import studio.koeda.norrklang.data.model.Artist
 import studio.koeda.norrklang.data.model.ArtistDetail
 import studio.koeda.norrklang.data.model.Genre
+import studio.koeda.norrklang.data.model.MusicLibrary
 import studio.koeda.norrklang.data.model.Playlist
 import studio.koeda.norrklang.data.model.PlaylistDetail
 import studio.koeda.norrklang.data.model.SearchResults
@@ -71,6 +72,20 @@ interface MusicRepository {
 
     /** All genres in the library with their song/album counts. */
     suspend fun genres(): List<Genre>
+
+    /**
+     * The music libraries the server reports for this account, server order
+     * (cached, never scoped). Browse/search/mix calls cover the subset left
+     * after ServerSettingsRepository.excludedLibraryIds.
+     */
+    suspend fun libraries(): List<MusicLibrary>
+
+    /**
+     * The library [trackId] belongs to, for the per-library scrobble
+     * exclusion; Subsonic can only test membership, against [candidates].
+     * Null = unknown (treated as allowed). Cached.
+     */
+    suspend fun trackLibraryId(trackId: String, candidates: Set<String>): String? = null
 
     /** Albums tagged with [genre] (exact name as reported by [genres]). */
     suspend fun albumsByGenre(genre: String, size: Int = 20): List<Album>

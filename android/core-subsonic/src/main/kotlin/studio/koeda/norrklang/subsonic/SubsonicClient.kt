@@ -21,6 +21,7 @@ import studio.koeda.norrklang.subsonic.model.ArtistWithAlbumsID3
 import studio.koeda.norrklang.subsonic.model.Child
 import studio.koeda.norrklang.subsonic.model.Genre
 import studio.koeda.norrklang.subsonic.model.IndexID3
+import studio.koeda.norrklang.subsonic.model.MusicFolder
 import studio.koeda.norrklang.subsonic.model.Playlist
 import studio.koeda.norrklang.subsonic.model.PlaylistWithSongs
 import studio.koeda.norrklang.subsonic.model.SearchResult3
@@ -77,9 +78,17 @@ class SubsonicClient(
         call("ping.view")
     }
 
-    /** The server's alphabetical artist index, bucket structure preserved. */
-    suspend fun getArtists(): List<IndexID3> =
-        call("getArtists.view").artists?.index.orEmpty()
+    /** The libraries the user can access; one entry on servers without multi-library. */
+    suspend fun getMusicFolders(): List<MusicFolder> =
+        call("getMusicFolders.view").musicFolders?.musicFolder.orEmpty()
+
+    /**
+     * The server's alphabetical artist index, bucket structure preserved.
+     * [musicFolderIds] scopes to those libraries (repeated `musicFolderId`,
+     * as Navidrome parses it); empty means every accessible library.
+     */
+    suspend fun getArtists(musicFolderIds: List<String> = emptyList()): List<IndexID3> =
+        call("getArtists.view", folderParams(musicFolderIds)).artists?.index.orEmpty()
 
     suspend fun getArtist(id: String): ArtistWithAlbumsID3 =
         call("getArtist.view", "id" to id).artist
@@ -89,40 +98,66 @@ class SubsonicClient(
         type: AlbumListType,
         size: Int = 100,
         offset: Int = 0,
+        musicFolderIds: List<String> = emptyList(),
     ): List<AlbumID3> =
         albumList2(
-            "type" to type.apiValue,
-            "size" to size.toString(),
-            "offset" to offset.toString(),
+            listOf(
+                "type" to type.apiValue,
+                "size" to size.toString(),
+                "offset" to offset.toString(),
+            ),
+            musicFolderIds,
         )
 
     /** Albums whose year falls in `[fromYear, toYear]` (inclusive). */
-    suspend fun getAlbumList2ByYear(fromYear: Int, toYear: Int, size: Int = 100): List<AlbumID3> =
+    suspend fun getAlbumList2ByYear(
+        fromYear: Int,
+        toYear: Int,
+        size: Int = 100,
+        musicFolderIds: List<String> = emptyList(),
+    ): List<AlbumID3> =
         albumList2(
-            "type" to "byYear",
-            "fromYear" to fromYear.toString(),
-            "toYear" to toYear.toString(),
-            "size" to size.toString(),
+            listOf(
+                "type" to "byYear",
+                "fromYear" to fromYear.toString(),
+                "toYear" to toYear.toString(),
+                "size" to size.toString(),
+            ),
+            musicFolderIds,
         )
 
     /** Albums tagged with [genre] (exact name as reported by [getGenres]). */
-    suspend fun getAlbumList2ByGenre(genre: String, size: Int = 100): List<AlbumID3> =
+    suspend fun getAlbumList2ByGenre(
+        genre: String,
+        size: Int = 100,
+        musicFolderIds: List<String> = emptyList(),
+    ): List<AlbumID3> =
         albumList2(
-            "type" to "byGenre",
-            "genre" to genre,
-            "size" to size.toString(),
+            listOf(
+                "type" to "byGenre",
+                "genre" to genre,
+                "size" to size.toString(),
+            ),
+            musicFolderIds,
         )
 
-    private suspend fun albumList2(vararg params: Pair<String, String>): List<AlbumID3> =
-        call("getAlbumList2.view", params.asList()).albumList2?.album.orEmpty()
+    private suspend fun albumList2(
+        params: List<Pair<String, String>>,
+        musicFolderIds: List<String>,
+    ): List<AlbumID3> =
+        call("getAlbumList2.view", params + folderParams(musicFolderIds)).albumList2?.album.orEmpty()
+
+    /** Repeated `musicFolderId` params; nothing when [ids] is empty. */
+    private fun folderParams(ids: List<String>): List<Pair<String, String>> =
+        ids.map { "musicFolderId" to it }
 
     suspend fun getAlbum(id: String): AlbumWithSongsID3 =
         call("getAlbum.view", "id" to id).album
             ?: throw SubsonicException.NotFound("Album $id not found")
 
     /** Everything the user has starred; empty lists when nothing is starred. */
-    suspend fun getStarred2(): Starred2 =
-        call("getStarred2.view").starred2 ?: Starred2()
+    suspend fun getStarred2(musicFolderIds: List<String> = emptyList()): Starred2 =
+        call("getStarred2.view", folderParams(musicFolderIds)).starred2 ?: Starred2()
 
     suspend fun getSong(id: String): Child =
         call("getSong.view", "id" to id).song
@@ -138,12 +173,14 @@ class SubsonicClient(
         genre: String? = null,
         fromYear: Int? = null,
         toYear: Int? = null,
+        musicFolderIds: List<String> = emptyList(),
     ): List<Child> {
         val params = buildList {
             add("size" to size.toString())
             genre?.let { add("genre" to it) }
             fromYear?.let { add("fromYear" to it.toString()) }
             toYear?.let { add("toYear" to it.toString()) }
+            addAll(folderParams(musicFolderIds))
         }
         return call("getRandomSongs.view", params).randomSongs?.song.orEmpty()
     }
@@ -183,13 +220,22 @@ class SubsonicClient(
         call("getPlaylist.view", "id" to id).playlist
             ?: throw SubsonicException.NotFound("Playlist $id not found")
 
-    suspend fun search3(query: String, count: Int = 20): SearchResult3 =
+    suspend fun search3(
+        query: String,
+        count: Int = 20,
+        artistCount: Int = count,
+        albumCount: Int = count,
+        songCount: Int = count,
+        musicFolderIds: List<String> = emptyList(),
+    ): SearchResult3 =
         call(
             "search3.view",
-            "query" to query,
-            "artistCount" to count.toString(),
-            "albumCount" to count.toString(),
-            "songCount" to count.toString(),
+            listOf(
+                "query" to query,
+                "artistCount" to artistCount.toString(),
+                "albumCount" to albumCount.toString(),
+                "songCount" to songCount.toString(),
+            ) + folderParams(musicFolderIds),
         ).searchResult3 ?: SearchResult3()
 
     /** Stars ("favorites") a song. Idempotent on the server. */

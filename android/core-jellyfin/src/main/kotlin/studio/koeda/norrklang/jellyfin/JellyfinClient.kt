@@ -73,12 +73,22 @@ class JellyfinClient(
     suspend fun musicLibraries(userId: String): List<JellyfinItem> =
         itemsResult("/Users/$userId/Views").items.filter { it.collectionType == "music" }
 
-    /**
-     * Validates the token and the music library in one round-trip — the
-     * sign-in and session-restore check.
-     */
-    suspend fun validateLibrary(userId: String, libraryId: String) {
-        item(userId, libraryId)
+    /** Validates the token and that the user sees a music library — the sign-in check. */
+    suspend fun validateMusicLibraries(userId: String): List<JellyfinItem> =
+        musicLibraries(userId).filter { it.id != null }.ifEmpty {
+            throw JellyfinException.NotFound("No music library for this user")
+        }
+
+    /** Ancestors of an item, nearest first; the `CollectionFolder` among them is its library. */
+    suspend fun ancestors(userId: String, itemId: String): List<JellyfinItem> {
+        val response = JellyfinHttp.request(baseUrl) {
+            http.get("$baseUrl/Items/$itemId/Ancestors") {
+                jellyfinHeaders(clientInfo, token)
+                parameter("userId", userId)
+            }
+        }
+        checkStatus(response)
+        return parse(response)
     }
 
     /** One item by id. */
@@ -259,7 +269,7 @@ class JellyfinClient(
 
     companion object {
         /** Extra fields beyond the list defaults that the mappers read. */
-        const val DEFAULT_FIELDS = "SortName,ChildCount"
+        const val DEFAULT_FIELDS = "SortName,ChildCount,DateCreated"
 
         /** Jellyfin runtimes are in ticks: 1 tick = 100 ns. */
         const val TICKS_PER_MS = 10_000L

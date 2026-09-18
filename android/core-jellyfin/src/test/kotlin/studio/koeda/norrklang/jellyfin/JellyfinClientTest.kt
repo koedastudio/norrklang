@@ -135,6 +135,44 @@ class JellyfinClientTest {
     }
 
     @Test
+    fun `validateMusicLibraries rejects a user without music views`() = runTest {
+        val client = clientReturning(
+            """{"Items":[{"Id":"v1","Name":"Movies","CollectionType":"movies"}]}""",
+        )
+        assertFailsWith<JellyfinException.NotFound> { client.validateMusicLibraries("u1") }
+    }
+
+    @Test
+    fun `validateMusicLibraries returns the music views`() = runTest {
+        val views = clientReturning(
+            """{"Items":[
+              {"Id":"v2","Name":"Music","CollectionType":"music"},
+              {"Id":"v3","Name":"Audiobooks","CollectionType":"music"}
+            ]}""",
+        ).validateMusicLibraries("u1")
+        assertEquals(listOf("v2", "v3"), views.map { it.id })
+    }
+
+    @Test
+    fun `ancestors parses the bare array and finds the collection folder`() = runTest {
+        val ancestors = clientReturning(
+            """[{"Id":"7","Name":"Artist","Type":"MusicArtist"},
+                {"Id":"lib2","Name":"Music","Type":"CollectionFolder","CollectionType":"music"},
+                {"Id":"root","Name":"Media Folders","Type":"AggregateFolder"}]""",
+        ).ancestors("u1", "70")
+
+        assertTrue("/Items/70/Ancestors" in lastRequestUrl)
+        assertTrue("userId=u1" in lastRequestUrl)
+        assertEquals("lib2", ancestors.first { it.type == "CollectionFolder" }.id)
+    }
+
+    @Test
+    fun `items requests DateCreated so recently-added merges can order`() = runTest {
+        clientReturning("""{"Items":[]}""").items("u1", parentId = "lib1")
+        assertTrue("DateCreated" in lastRequestUrl)
+    }
+
+    @Test
     fun `albumArtists sends favorite and search params`() = runTest {
         clientReturning("""{"Items":[]}""")
             .albumArtists("u1", "lib1", isFavorite = true, searchTerm = "abba", limit = 5)

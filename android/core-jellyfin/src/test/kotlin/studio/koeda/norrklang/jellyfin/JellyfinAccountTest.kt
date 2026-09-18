@@ -14,7 +14,6 @@ class JellyfinAccountTest {
             userId = "u1",
             username = "demo",
             token = "super-secret-token",
-            libraryId = "lib1",
         )
         assertTrue("super-secret-token" !in account.toString())
     }
@@ -27,7 +26,6 @@ class JellyfinAccountTest {
             userId = "u1",
             username = "demo",
             token = token,
-            libraryId = "lib1",
         )
         assertEquals(account("t1").cacheFingerprint, account("t1").cacheFingerprint)
         assertEquals(16, account("t1").cacheFingerprint.length)

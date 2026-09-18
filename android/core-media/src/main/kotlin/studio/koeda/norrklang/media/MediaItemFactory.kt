@@ -22,6 +22,9 @@ internal object MediaItemFactory {
      */
     const val EXTRA_ARTIST_ID = "studio.koeda.norrklang.extra.ARTIST_ID"
 
+    /** Extras key for the track's server library id, when the provider knew it (see PlaybackReporter). */
+    const val EXTRA_LIBRARY_ID = "studio.koeda.norrklang.extra.LIBRARY_ID"
+
     /** Extras that make a browsable node render its children as an artwork grid. */
     fun gridChildrenExtras(): Bundle = Bundle().apply {
         putInt(
@@ -181,6 +184,7 @@ internal object MediaItemFactory {
             .apply {
                 val extras = Bundle()
                 track.artistId?.let { extras.putString(EXTRA_ARTIST_ID, it) }
+                track.libraryId?.let { extras.putString(EXTRA_LIBRARY_ID, it) }
                 groupTitle?.let {
                     extras.putString(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_GROUP_TITLE, it)
                 }
