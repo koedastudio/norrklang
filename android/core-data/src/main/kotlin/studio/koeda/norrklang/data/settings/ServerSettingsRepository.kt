@@ -23,16 +23,19 @@ import studio.koeda.norrklang.data.diagnostics.Diagnostics
 import studio.koeda.norrklang.jellyfin.JellyfinAccount
 import studio.koeda.norrklang.plex.PlexAccount
 import studio.koeda.norrklang.subsonic.SubsonicCredentials
+import studio.koeda.norrklang.subsonic.SubsonicPasswordAuth
 import studio.koeda.norrklang.subsonic.SubsonicTokenAuth
 
 /**
  * Persists the configured server + account in Preferences DataStore.
  *
- * Only the fixed (salt, token) pair is stored — never the password (Subsonic
- * accepts a reused salt, see [SubsonicTokenAuth]). The token is
- * password-equivalent, so it is encrypted at rest with an Android Keystore
- * key ([CredentialCipher]); both app manifests set `allowBackup=false` so
- * nothing here ever leaves the device in a backup.
+ * For Subsonic, the fixed (salt, token) pair is stored rather than the
+ * password (Subsonic accepts a reused salt, see [SubsonicTokenAuth]) — except
+ * for servers that reject token auth, where the password itself is stored
+ * ([SubsonicPasswordAuth]). Either secret is password-equivalent, so it is
+ * encrypted at rest with an Android Keystore key ([CredentialCipher]); both
+ * app manifests set `allowBackup=false` so nothing here ever leaves the
+ * device in a backup.
  */
 @Singleton
 class ServerSettingsRepository @Inject constructor(
@@ -53,6 +56,12 @@ class ServerSettingsRepository @Inject constructor(
         val USERNAME = stringPreferencesKey("username")
         val AUTH_SALT = stringPreferencesKey("auth_salt")
         val AUTH_TOKEN = stringPreferencesKey("auth_token")
+
+        /**
+         * Password-auth sign-ins only; mutually exclusive with the pair
+         * above. Distinct from [LEGACY_PASSWORD], which triggers a migration.
+         */
+        val AUTH_PASSWORD = stringPreferencesKey("auth_password")
 
         /**
          * X-Plex-Client-Identifier — Plex's device identity for this install.
@@ -117,9 +126,14 @@ class ServerSettingsRepository @Inject constructor(
         val user = prefs[Keys.USERNAME] ?: return null
         // decrypt() passes legacy plaintext values through unchanged; null
         // (undecryptable — Keystore key gone) means signed out.
-        val salt = prefs[Keys.AUTH_SALT]?.let(cipher::decrypt) ?: return null
-        val token = prefs[Keys.AUTH_TOKEN]?.let(cipher::decrypt) ?: return null
-        return SubsonicCredentials(url, user, SubsonicTokenAuth(salt, token))
+        val auth = prefs[Keys.AUTH_PASSWORD]?.let { stored ->
+            SubsonicPasswordAuth(cipher.decrypt(stored) ?: return null)
+        } ?: run {
+            val salt = prefs[Keys.AUTH_SALT]?.let(cipher::decrypt) ?: return null
+            val token = prefs[Keys.AUTH_TOKEN]?.let(cipher::decrypt) ?: return null
+            SubsonicTokenAuth(salt, token)
+        }
+        return SubsonicCredentials(url, user, auth)
     }
 
     // Serializes the read-then-save migrations: concurrent first calls could
@@ -195,8 +209,18 @@ class ServerSettingsRepository @Inject constructor(
             prefs[Keys.PROVIDER] = PROVIDER_SUBSONIC
             prefs[Keys.SERVER_URL] = credentials.baseUrl
             prefs[Keys.USERNAME] = credentials.username
-            prefs[Keys.AUTH_SALT] = cipher.encrypt(credentials.auth.salt)
-            prefs[Keys.AUTH_TOKEN] = cipher.encrypt(credentials.auth.token)
+            when (val auth = credentials.auth) {
+                is SubsonicTokenAuth -> {
+                    prefs[Keys.AUTH_SALT] = cipher.encrypt(auth.salt)
+                    prefs[Keys.AUTH_TOKEN] = cipher.encrypt(auth.token)
+                    prefs.remove(Keys.AUTH_PASSWORD)
+                }
+                is SubsonicPasswordAuth -> {
+                    prefs[Keys.AUTH_PASSWORD] = cipher.encrypt(auth.password)
+                    prefs.remove(Keys.AUTH_SALT)
+                    prefs.remove(Keys.AUTH_TOKEN)
+                }
+            }
             prefs.remove(Keys.LEGACY_PASSWORD)
             removePlexAccount(prefs)
             removeJellyfinAccount(prefs)
@@ -345,6 +369,7 @@ class ServerSettingsRepository @Inject constructor(
         prefs.remove(Keys.USERNAME)
         prefs.remove(Keys.AUTH_SALT)
         prefs.remove(Keys.AUTH_TOKEN)
+        prefs.remove(Keys.AUTH_PASSWORD)
         prefs.remove(Keys.LEGACY_PASSWORD)
     }
 

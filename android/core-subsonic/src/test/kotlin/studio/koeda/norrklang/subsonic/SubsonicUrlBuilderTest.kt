@@ -55,6 +55,15 @@ class SubsonicUrlBuilderTest {
     fun `urls carry the credentials own salt and token verbatim`() {
         val url = builder.streamUrl("x")
         assertTrue("&s=c19b2d" in url)
-        assertTrue("&t=${credentials.auth.token}" in url)
+        assertTrue("&t=${(credentials.auth as SubsonicTokenAuth).token}" in url)
+    }
+
+
+    @Test
+    fun `password auth urls embed the encoded password instead of a token`() {
+        val url = SubsonicUrlBuilder(credentials.withPasswordAuth("secret")).streamUrl("x")
+        assertTrue("&p=enc%3A736563726574" in url)
+        assertTrue("&t=" !in url)
+        assertTrue("&s=" !in url)
     }
 }

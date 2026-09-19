@@ -51,8 +51,9 @@ per-library exclusions — or turned off entirely
 • Picks up where you left off after the car restarts
 
 Navidrome and Subsonic
-• Sign in with your server address and account. The password is never stored
-— only a token, encrypted on the device
+• Sign in with your server address and account. Only a token is stored,
+encrypted on the device; the password itself is kept (encrypted) only for
+servers such as Nextcloud Music that cannot verify tokens
 • HTTPS required
 
 Plex

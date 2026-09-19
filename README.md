@@ -12,7 +12,9 @@ per-account caches), but it has seen a small number of servers and cars.
 Expect rough edges; please report them.
 
 - **Server requirements**: Navidrome (current stable releases) or any server
-  implementing **Subsonic API 1.16.1** with token authentication; or a
+  implementing **Subsonic API 1.16.1** (token authentication preferred;
+  servers that only accept the password itself, such as Nextcloud Music or
+  LDAP-backed Subsonic, are detected and handled automatically); or a
   **Plex Media Server** with a music library, linked with a Plex account; or
   **Jellyfin** with a music library accessible to the signed-in user.
 - **HTTPS required**: release builds refuse cleartext HTTP — put your server
@@ -66,9 +68,10 @@ phone/desktop clients in this monorepo.
 
 ## Features
 
-- Sign in to a Navidrome/Subsonic server (token auth; the password is never
-  stored) or link a Plex account with a code or QR scan — no password typed
-  in the car; or sign in to Jellyfin with server address, username and password
+- Sign in to a Navidrome/Subsonic server (token auth; the password is only
+  stored, encrypted, for servers that cannot verify a token) or link a Plex
+  account with a code or QR scan — no password typed in the car; or sign in
+  to Jellyfin with server address, username and password
 - Streaming quality: Original / 320 / 192 / 128 kbps, independently for Wi-Fi
   and cellular. New track loads use the current tier; retries and seeks retain
   the same encoding so byte offsets stay valid

@@ -58,9 +58,8 @@ class SignInViewModel @Inject constructor(
             val result = sessionManager.signIn(serverUrl, username, password)
             state = result.fold(
                 onSuccess = {
-                    // Only the derived (salt, token) pair is persisted — don't
-                    // let the plaintext password linger for the ViewModel's
-                    // lifetime.
+                    // The session owns whatever it persisted — don't let the
+                    // plaintext password linger for the ViewModel's lifetime.
                     password = ""
                     UiState.Done
                 },

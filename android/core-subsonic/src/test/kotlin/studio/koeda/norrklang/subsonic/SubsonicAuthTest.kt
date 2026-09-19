@@ -33,4 +33,11 @@ class SubsonicAuthTest {
             SubsonicAuth.token("password", "bbbbbb"),
         )
     }
+
+
+    @Test
+    fun `encodePassword hex-encodes the utf-8 bytes behind the enc prefix`() {
+        assertEquals("enc:736573616d65", SubsonicAuth.encodePassword("sesame"))
+        assertEquals("enc:70c3a4", SubsonicAuth.encodePassword("pä"))
+    }
 }

@@ -86,31 +86,49 @@ class SessionManager(
         }
     }
 
-    /** Validates against the server with a ping, then persists and connects. */
+    /**
+     * Validates against the server with a ping, then persists and connects.
+     *
+     * Token auth is tried first. A server that cannot verify a salted token
+     * (Nextcloud Music, LDAP-backed Subsonic) says so with error 41/42, and
+     * only then is the password itself sent — and stored — instead.
+     */
     suspend fun signIn(url: String, username: String, password: String): Result<Unit> {
         val credentials = try {
             SubsonicCredentials.fromInput(url, username, password)
         } catch (e: IllegalArgumentException) {
             return Result.failure(e)
         }
-        val candidate = connectedState(credentials)
         return try {
-            (candidate.session as SubsonicSession).client.ping()
-            settings.save(credentials)
-            replaceState(candidate)
+            try {
+                connectSubsonic(credentials)
+            } catch (e: SubsonicException.AuthFailed) {
+                if (!e.isTokenAuthUnsupported) throw e
+                connectSubsonic(credentials.withPasswordAuth(password))
+            }
             Result.success(Unit)
         } catch (e: SubsonicException) {
-            candidate.session.close()
             Result.failure(e.toMusicException())
         } catch (e: CancellationException) {
-            candidate.session.close()
             throw e
         } catch (e: Exception) {
             // Broader than SubsonicException: save() can fail in the Keystore
             // encrypt, and the sign-in form must render that as an error, not
             // crash the caller's scope.
-            candidate.session.close()
             Result.failure(e)
+        }
+    }
+
+    /** Pings, persists and activates [credentials]; the candidate session is closed on any failure. */
+    private suspend fun connectSubsonic(credentials: SubsonicCredentials) {
+        val candidate = connectedState(credentials)
+        try {
+            (candidate.session as SubsonicSession).client.ping()
+            settings.save(credentials)
+            replaceState(candidate)
+        } catch (e: Throwable) {
+            candidate.session.close()
+            throw e
         }
     }
 

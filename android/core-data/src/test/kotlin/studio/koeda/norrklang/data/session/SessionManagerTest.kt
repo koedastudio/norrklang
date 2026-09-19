@@ -30,6 +30,8 @@ import studio.koeda.norrklang.plex.PlexClientInfo
 import studio.koeda.norrklang.plex.PlexServerClient
 import studio.koeda.norrklang.subsonic.SubsonicClient
 import studio.koeda.norrklang.subsonic.SubsonicCredentials
+import studio.koeda.norrklang.subsonic.SubsonicPasswordAuth
+import studio.koeda.norrklang.subsonic.SubsonicTokenAuth
 
 private class PassthroughCipher : CredentialCipher {
     override fun encrypt(plaintext: String) = "enc-test:$plaintext"
@@ -46,6 +48,9 @@ class SessionManagerTest {
     private val authFailedBody =
         """{"subsonic-response":{"status":"failed","version":"1.16.1",
             "error":{"code":40,"message":"Wrong username or password"}}}"""
+    private val tokenUnsupportedBody =
+        """{"subsonic-response":{"status":"failed","version":"1.16.1",
+            "error":{"code":41,"message":"Token-based authentication not supported"}}}"""
 
     /** Every client created by this factory answers all calls with [body]. */
     private fun clientFactory(body: String): (SubsonicCredentials) -> SubsonicClient = { creds ->
@@ -58,6 +63,24 @@ class SessionManagerTest {
                 )
             },
         )
+    }
+
+    /** Like Nextcloud Music: rejects every `t`/`s` request, accepts `p`. Counts requests. */
+    private class PasswordOnlyServer(private val okBody: String, private val rejectBody: String) {
+        var requests = 0
+        val factory: (SubsonicCredentials) -> SubsonicClient = { creds ->
+            SubsonicClient(
+                creds,
+                MockEngine { request ->
+                    requests++
+                    val body = if (request.url.parameters["t"] != null) rejectBody else okBody
+                    respond(
+                        content = body,
+                        headers = headersOf(HttpHeaders.ContentType, "application/json"),
+                    )
+                },
+            )
+        }
     }
 
     private fun dataStore(scope: CoroutineScope): DataStore<Preferences> =
@@ -389,5 +412,63 @@ class SessionManagerTest {
 
         assertIs<studio.koeda.norrklang.data.repo.MusicException.AuthFailed>(result.exceptionOrNull())
         assertEquals("bob", manager.connectedOrNull()!!.session.accountLabel)
+    }
+
+    @Test
+    fun `sign-in falls back to password auth when the server rejects tokens`() = runTest {
+        val settings = settings(backgroundScope)
+        val server = PasswordOnlyServer(okBody, tokenUnsupportedBody)
+        val manager = SessionManager(settings, backgroundScope, server.factory)
+        manager.resolvedState()
+
+        val result = manager.signIn("https://cloud.example.com/apps/music/subsonic", "demo", "secret")
+
+        assertTrue(result.isSuccess)
+        assertEquals(2, server.requests)
+        val session = assertIs<SubsonicSession>(manager.connectedOrNull()!!.session)
+        assertEquals(SubsonicPasswordAuth("secret"), session.credentials.auth)
+        assertEquals(SubsonicPasswordAuth("secret"), settings.currentCredentials()!!.auth)
+    }
+
+    @Test
+    fun `sign-in does not fall back to password auth on wrong credentials`() = runTest {
+        val settings = settings(backgroundScope)
+        val server = PasswordOnlyServer(okBody, authFailedBody)
+        val manager = SessionManager(settings, backgroundScope, server.factory)
+        manager.resolvedState()
+
+        val result = manager.signIn("https://music.example.com", "demo", "wrong")
+
+        assertTrue(result.isFailure)
+        assertEquals(1, server.requests)
+        assertNull(settings.currentCredentials())
+    }
+
+    @Test
+    fun `token auth stays the default when the server accepts it`() = runTest {
+        val settings = settings(backgroundScope)
+        val server = PasswordOnlyServer(okBody, okBody)
+        val manager = SessionManager(settings, backgroundScope, server.factory)
+        manager.resolvedState()
+
+        manager.signIn("https://music.example.com", "demo", "secret")
+
+        assertEquals(1, server.requests)
+        assertIs<SubsonicTokenAuth>(settings.currentCredentials()!!.auth)
+    }
+
+    @Test
+    fun `restores a stored password-auth account on start`() = runTest {
+        val settings = settings(backgroundScope)
+        settings.save(
+            SubsonicCredentials.fromInput("https://music.example.com", "demo", "secret")
+                .withPasswordAuth("secret"),
+        )
+
+        val manager = SessionManager(settings, backgroundScope, clientFactory(okBody))
+
+        val state = assertIs<SessionManager.SessionState.Connected>(manager.resolvedState())
+        val session = assertIs<SubsonicSession>(state.session)
+        assertEquals(SubsonicPasswordAuth("secret"), session.credentials.auth)
     }
 }

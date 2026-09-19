@@ -17,9 +17,10 @@ Only the **latest release** receives security fixes. There is no LTS.
 Norrklang is a client for a user-controlled Navidrome/Subsonic server.
 Reports of particular interest:
 
-- **Credential exposure**: the server auth token is stored encrypted
-  (Android Keystore) with backups disabled — anything that leaks the token,
-  the derived stream URLs, or the password (which must never be persisted).
+- **Credential exposure**: the server auth secret (a token, or the password
+  itself for servers that reject token auth) is stored encrypted (Android
+  Keystore) with backups disabled — anything that leaks that secret, the
+  derived stream URLs, or a password outside that encrypted store.
 - **Cross-account leakage**: caches (library data, artwork) are namespaced
   per server/account — any way to see a previous account's data after
   switching is a bug.

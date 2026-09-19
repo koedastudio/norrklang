@@ -18,6 +18,10 @@ is the single source of truth).
   until the selection is changed.
 - Per-library play reporting exclusion next to the artist and playlist
   exclusions.
+- Sign in to Subsonic servers that only accept the password itself, such as
+  Nextcloud Music or LDAP-backed Subsonic: token auth is tried first, and
+  the password is sent (and stored encrypted) only when the server rejects
+  tokens.
 
 ## [1.2.1] — 2026-09-17
 

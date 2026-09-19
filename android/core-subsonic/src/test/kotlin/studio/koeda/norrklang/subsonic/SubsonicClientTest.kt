@@ -8,6 +8,8 @@ import io.ktor.http.Url
 import io.ktor.http.headersOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
@@ -31,6 +33,7 @@ class SubsonicClientTest {
         )
 
     private var lastRequestUrl: String = ""
+    private val lastRequestParams get() = Url(lastRequestUrl).parameters
 
     private fun lastRequestParams(name: String): List<String> =
         Url(lastRequestUrl).parameters.getAll(name).orEmpty()
@@ -58,7 +61,7 @@ class SubsonicClientTest {
 
     @Test
     fun `credential toString never contains the token`() {
-        val token = credentials.auth.token
+        val token = (credentials.auth as SubsonicTokenAuth).token
         assertTrue(token !in credentials.toString())
         assertTrue(token !in credentials.auth.toString())
     }
@@ -434,5 +437,48 @@ class SubsonicClientTest {
         assertEquals(listOf("100"), lastRequestParams("albumCount"))
         assertEquals(listOf("0"), lastRequestParams("songCount"))
         assertEquals(listOf("Hunky Dory"), lastRequestParams("query"))
+    }
+
+    @Test
+    fun `wrong credentials are not flagged for password fallback`() = runTest {
+        val client = clientReturning(
+            """{"subsonic-response":{"status":"failed","version":"1.16.1",
+                "error":{"code":40,"message":"Wrong username or password"}}}""",
+        )
+        val e = assertFailsWith<SubsonicException.AuthFailed> { client.ping() }
+        assertEquals(40, e.code)
+        assertFalse(e.isTokenAuthUnsupported)
+    }
+
+    @Test
+    fun `token auth rejection maps to AuthFailed flagged for password fallback`() = runTest {
+        for (code in listOf(41, 42)) {
+            val client = clientReturning(
+                """{"subsonic-response":{"status":"failed","version":"1.16.1",
+                    "error":{"code":$code,"message":"Token-based authentication not supported"}}}""",
+            )
+            val e = assertFailsWith<SubsonicException.AuthFailed> { client.ping() }
+            assertEquals(code, e.code)
+            assertTrue(e.isTokenAuthUnsupported)
+        }
+    }
+
+    @Test
+    fun `password auth sends the encoded password and no token pair`() = runTest {
+        val client = SubsonicClient(
+            credentials.withPasswordAuth("secret"),
+            MockEngine { request ->
+                lastRequestUrl = request.url.toString()
+                respond(
+                    content = """{"subsonic-response":{"status":"ok","version":"1.16.1"}}""",
+                    headers = headersOf(HttpHeaders.ContentType, "application/json"),
+                )
+            },
+        )
+        client.ping()
+        assertEquals("enc:736563726574", lastRequestParams["p"])
+        assertEquals("demo", lastRequestParams["u"])
+        assertNull(lastRequestParams["t"])
+        assertNull(lastRequestParams["s"])
     }
 }

@@ -22,6 +22,8 @@ import org.junit.rules.TemporaryFolder
 import studio.koeda.norrklang.jellyfin.JellyfinAccount
 import studio.koeda.norrklang.plex.PlexAccount
 import studio.koeda.norrklang.subsonic.SubsonicCredentials
+import studio.koeda.norrklang.subsonic.SubsonicPasswordAuth
+import studio.koeda.norrklang.subsonic.SubsonicTokenAuth
 
 /** Reversible stand-in for the Android Keystore cipher (unavailable on JVM). */
 private class FakeCipher : CredentialCipher {
@@ -51,6 +53,7 @@ class ServerSettingsRepositoryTest {
     private val saltKey = stringPreferencesKey("auth_salt")
     private val tokenKey = stringPreferencesKey("auth_token")
     private val passwordKey = stringPreferencesKey("password")
+    private val authPasswordKey = stringPreferencesKey("auth_password")
 
     private fun dataStore(scope: CoroutineScope): DataStore<Preferences> =
         PreferenceDataStoreFactory.create(scope = scope) {
@@ -59,6 +62,7 @@ class ServerSettingsRepositoryTest {
 
     private val credentials =
         SubsonicCredentials.fromInput("https://music.example.com", "demo", "secret")
+    private val tokenAuth get() = credentials.auth as SubsonicTokenAuth
 
     @Test
     fun `save stores encrypted values and read round-trips`() = runTest {
@@ -79,8 +83,8 @@ class ServerSettingsRepositoryTest {
         store.edit { prefs ->
             prefs[urlKey] = credentials.baseUrl
             prefs[userKey] = credentials.username
-            prefs[saltKey] = credentials.auth.salt
-            prefs[tokenKey] = credentials.auth.token
+            prefs[saltKey] = tokenAuth.salt
+            prefs[tokenKey] = tokenAuth.token
         }
         val repo = ServerSettingsRepository(store, FakeCipher())
 
@@ -442,5 +446,58 @@ class ServerSettingsRepositoryTest {
 
         assertTrue(repo.excludedLibraryIds.first().isEmpty())
         assertEquals("5", store.data.first()[plexSectionKey])
+    }
+
+    @Test
+    fun `password-auth credentials round-trip encrypted without a token pair`() = runTest {
+        val store = dataStore(backgroundScope)
+        val repo = ServerSettingsRepository(store, FakeCipher())
+        val passwordCredentials = credentials.withPasswordAuth("secret")
+
+        repo.save(passwordCredentials)
+
+        val prefs = store.data.first()
+        assertTrue(prefs[authPasswordKey]!!.startsWith(FakeCipher.PREFIX))
+        assertTrue("secret" !in prefs[authPasswordKey]!!)
+        assertNull(prefs[saltKey])
+        assertNull(prefs[tokenKey])
+        assertEquals(passwordCredentials, repo.currentCredentials())
+        assertIs<SubsonicPasswordAuth>(repo.currentCredentials()!!.auth)
+    }
+
+    @Test
+    fun `switching auth mode for the same account replaces the stored secret`() = runTest {
+        val store = dataStore(backgroundScope)
+        val repo = ServerSettingsRepository(store, FakeCipher())
+
+        repo.save(credentials.withPasswordAuth("secret"))
+        repo.save(credentials)
+        assertNull(store.data.first()[authPasswordKey])
+        assertIs<SubsonicTokenAuth>(repo.currentCredentials()!!.auth)
+
+        repo.save(credentials.withPasswordAuth("secret"))
+        assertNull(store.data.first()[saltKey])
+        assertNull(store.data.first()[tokenKey])
+        assertIs<SubsonicPasswordAuth>(repo.currentCredentials()!!.auth)
+    }
+
+    @Test
+    fun `clearAccount removes a stored password`() = runTest {
+        val store = dataStore(backgroundScope)
+        val repo = ServerSettingsRepository(store, FakeCipher())
+        repo.save(credentials.withPasswordAuth("secret"))
+
+        repo.clearAccount()
+
+        assertNull(store.data.first()[authPasswordKey])
+        assertNull(repo.currentCredentials())
+    }
+
+    @Test
+    fun `an undecryptable stored password reads as signed out`() = runTest {
+        val store = dataStore(backgroundScope)
+        ServerSettingsRepository(store, FakeCipher()).save(credentials.withPasswordAuth("secret"))
+
+        assertNull(ServerSettingsRepository(store, BrokenCipher()).currentCredentials())
     }
 }

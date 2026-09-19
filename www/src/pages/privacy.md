@@ -18,7 +18,10 @@ All data the app stores stays **on your device**:
 
 - **Server connection details** — the server address, your username, and an
   authentication token. For Navidrome/Subsonic the token is derived from your
-  password once at sign-in (the password itself is never retained); for
+  password once at sign-in and the password itself is not retained — unless
+  your server cannot verify such tokens (Nextcloud Music, LDAP-backed
+  Subsonic), in which case the password is stored instead, protected the
+  same way as a token; for
   Jellyfin it is the access token your server issues at sign-in (the password
   is sent to your server once and never retained); for Plex it is the token
   plex.tv issues when you link the device (the app never sees your Plex

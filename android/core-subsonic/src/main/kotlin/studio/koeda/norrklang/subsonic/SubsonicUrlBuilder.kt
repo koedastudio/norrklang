@@ -5,11 +5,11 @@ import java.net.URLEncoder
 /**
  * Builds fully-authenticated URLs for the binary endpoints (`stream`,
  * `getCoverArt`). Subsonic auth rides in query parameters, so a complete URL
- * is all ExoPlayer or an image loader needs. The fixed salt/token pair keeps
+ * is all ExoPlayer or an image loader needs. The fixed auth parameters keep
  * URLs stable across calls and restarts (cache-friendly); salt reuse is
  * explicitly allowed by the Subsonic scheme.
  *
- * SECURITY: these URLs embed the auth token — never log them.
+ * SECURITY: these URLs embed the auth secret — never log them.
  */
 class SubsonicUrlBuilder(
     private val credentials: SubsonicCredentials,
