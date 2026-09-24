@@ -24,7 +24,9 @@ is the single source of truth).
   tokens.
 - Internet radio for Navidrome/Subsonic servers: the server's stations
   under Library → Radio, and the most listened ones in a Radio section on
-  Home; the now-playing title follows the stream's song metadata.
+  Home; the now-playing title follows the stream's song metadata. Stations
+  play as configured, plain `http://` streams included — only the server
+  address itself must be `https://`.
 - Save songs from radio with the playback heart; the list lives on the
   device under Settings → Saved from radio, with a QR code that opens it on
   your phone.

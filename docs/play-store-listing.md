@@ -54,7 +54,7 @@ Navidrome and Subsonic
 • Sign in with your server address and account. Only a token is stored,
 encrypted on the device; the password itself is kept (encrypted) only for
 servers such as Nextcloud Music that cannot verify tokens
-• HTTPS required
+• HTTPS required for the server address (radio streams may be plain http)
 
 Plex
 • Link your Plex account with a short code or QR scan — no password typed in
@@ -64,7 +64,7 @@ the car
 Jellyfin
 • Sign in with your server address and account. The password is never stored
 — only an access token, encrypted on the device
-• HTTPS required
+• HTTPS required for the server address
 
 Private by design
 No ads, no analytics, no crash reporting, no third-party services. The app

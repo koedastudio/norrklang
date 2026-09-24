@@ -14,6 +14,7 @@ import studio.koeda.norrklang.data.session.SessionManager
 @HiltViewModel
 class SignInViewModel @Inject constructor(
     private val sessionManager: SessionManager,
+    private val cleartextPolicy: CleartextServerPolicy,
 ) : ViewModel() {
 
     sealed interface UiState {
@@ -24,7 +25,7 @@ class SignInViewModel @Inject constructor(
     }
 
     /** Shared with [JellyfinSignInViewModel]; Subsonic never emits [ErrorKind.NO_MUSIC_LIBRARY]. */
-    enum class ErrorKind { MISSING_FIELDS, AUTH, NETWORK, NO_MUSIC_LIBRARY, GENERIC }
+    enum class ErrorKind { MISSING_FIELDS, CLEARTEXT, AUTH, NETWORK, NO_MUSIC_LIBRARY, GENERIC }
 
     var serverUrl by mutableStateOf("")
         private set
@@ -51,6 +52,10 @@ class SignInViewModel @Inject constructor(
         if (state is UiState.Connecting) return
         if (serverUrl.isBlank() || username.isBlank() || password.isBlank()) {
             state = UiState.Error(ErrorKind.MISSING_FIELDS, null)
+            return
+        }
+        if (cleartextPolicy.rejects(serverUrl)) {
+            state = UiState.Error(ErrorKind.CLEARTEXT, null)
             return
         }
         state = UiState.Connecting

@@ -226,7 +226,9 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
         // flaky car LTE and manual skip-next starts instantly.
         exoPlayer.preloadConfiguration =
             ExoPlayer.PreloadConfiguration(TARGET_PRELOAD_DURATION_US)
-        return AuthGatePlayer(ShuffleFromCurrentPlayer(exoPlayer))
+        return AuthGatePlayer(ShuffleFromCurrentPlayer(exoPlayer)) { error ->
+            RadioErrors.present(this, exoPlayer.currentMediaItem, error)
+        }
     }
 
     /**

@@ -70,9 +70,8 @@ data class SubsonicCredentials(
 
     /**
      * True for an explicitly chosen cleartext `http://` server — username and
-     * replayable token then travel unencrypted, so UI layers should warn.
-     * Release builds also refuse cleartext via network security config; this
-     * only ever succeeds in debug builds.
+     * replayable token then travel unencrypted. Release builds reject such
+     * addresses at sign-in (CleartextServerPolicy); only debug builds get here.
      */
     val isCleartext: Boolean
         get() = baseUrl.startsWith("http://")

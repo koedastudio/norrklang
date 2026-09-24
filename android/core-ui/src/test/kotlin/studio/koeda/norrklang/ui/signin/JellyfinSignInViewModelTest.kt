@@ -109,7 +109,7 @@ class JellyfinSignInViewModelTest {
         val settings: ServerSettingsRepository,
     )
 
-    private fun env(): TestEnv {
+    private fun env(allowCleartext: Boolean = true): TestEnv {
         val settings = ServerSettingsRepository(
             PreferenceDataStoreFactory.create(scope = ioScope) {
                 File(tmp.root, "test.preferences_pb")
@@ -128,6 +128,7 @@ class JellyfinSignInViewModelTest {
             sessionManager,
             settings,
             { baseUrl, token, info -> JellyfinClient(baseUrl, token, info, engine()) },
+            CleartextServerPolicy(allowed = allowCleartext),
         )
         return TestEnv(viewModel, sessionManager, settings)
     }
@@ -158,6 +159,19 @@ class JellyfinSignInViewModelTest {
 
         val error = assertIs<UiState.Error>(vm.state)
         assertEquals(ErrorKind.MISSING_FIELDS, error.kind)
+        assertEquals(emptyList(), requests)
+    }
+
+    @Test
+    fun `a plain http address is refused before any network call when cleartext is off`() {
+        val vm = env(allowCleartext = false).viewModel
+
+        vm.onServerUrlChange("http://jellyfin.local")
+        vm.onUsernameChange("demo")
+        vm.connect()
+
+        val error = assertIs<UiState.Error>(vm.state)
+        assertEquals(ErrorKind.CLEARTEXT, error.kind)
         assertEquals(emptyList(), requests)
     }
 

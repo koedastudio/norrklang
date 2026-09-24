@@ -17,10 +17,12 @@ Expect rough edges; please report them.
   LDAP-backed Subsonic, are detected and handled automatically); or a
   **Plex Media Server** with a music library, linked with a Plex account; or
   **Jellyfin** with a music library accessible to the signed-in user.
-- **HTTPS required**: release builds refuse cleartext HTTP — put your server
-  behind TLS (a reverse proxy with Let's Encrypt is enough). Plain HTTP works
-  only in debug builds against local test servers. Plex connections come with
-  Plex's own `plex.direct` TLS, so nothing extra to set up there.
+- **HTTPS required for your server**: release builds refuse to sign in to a
+  plain `http://` address — put your server behind TLS (a reverse proxy with
+  Let's Encrypt is enough). Plain HTTP works only in debug builds against
+  local test servers. Plex connections come with Plex's own `plex.direct`
+  TLS, so nothing extra to set up there. Internet radio streams are the
+  exception: stations with plain `http://` stream URLs play as they are.
 - **Known limitations**: no offline/downloaded playback; gapless playback
   only when streaming original files (the Wi-Fi default) — server
   transcoding reintroduces gaps; no automatic transcoding fallback when an

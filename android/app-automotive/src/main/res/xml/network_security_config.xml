@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Release: HTTPS only. Debug builds override this file to allow cleartext
-     for local Navidrome servers (see src/debug/res/xml/). -->
-<network-security-config>
-  <base-config cleartextTrafficPermitted="false" />
+<!-- Cleartext stays allowed so internet radio stations with plain http://
+     streams play. Server addresses are still HTTPS-only: sign-in rejects
+     http:// in release builds (see CleartextServerPolicy). -->
+<network-security-config xmlns:tools="http://schemas.android.com/tools">
+  <base-config cleartextTrafficPermitted="true" tools:ignore="InsecureBaseConfiguration" />
 </network-security-config>

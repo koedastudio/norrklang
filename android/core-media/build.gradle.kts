@@ -6,6 +6,8 @@ plugins {
 
 android {
     namespace = "studio.koeda.norrklang.media"
+    // PlaybackException stamps SystemClock time; let JVM tests construct one.
+    testOptions.unitTests.isReturnDefaultValues = true
 }
 
 dependencies {

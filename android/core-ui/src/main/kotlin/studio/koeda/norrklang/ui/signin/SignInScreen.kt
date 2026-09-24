@@ -191,6 +191,7 @@ fun SignInScreen(
 @Composable
 private fun errorText(error: SignInViewModel.UiState.Error): String = when (error.kind) {
     SignInViewModel.ErrorKind.MISSING_FIELDS -> stringResource(R.string.signin_error_missing_fields)
+    SignInViewModel.ErrorKind.CLEARTEXT -> stringResource(R.string.signin_error_cleartext)
     SignInViewModel.ErrorKind.AUTH -> stringResource(R.string.signin_error_auth)
     SignInViewModel.ErrorKind.NETWORK -> stringResource(R.string.signin_error_network)
     SignInViewModel.ErrorKind.NO_MUSIC_LIBRARY ->

@@ -36,6 +36,10 @@
   <string name="error_sign_in_action">Sign in</string>
   <string name="error_sign_in_on_phone">Open Norrklang on your phone to sign in</string>
   <string name="error_loading_library">Couldn\'t load your library. Check your connection and try again.</string>
+  <!-- Radio station playback failures; %1$s is the station name (see RadioErrors). -->
+  <string name="error_radio_unreachable">Can\'t reach %1$s right now</string>
+  <string name="error_radio_unavailable">%1$s isn\'t available. Check its stream address on your server.</string>
+  <string name="error_radio_unsupported">Norrklang can\'t play the stream format of %1$s</string>
   <string name="command_shuffle_on">Enable shuffle</string>
   <string name="command_shuffle_off">Disable shuffle</string>
   <string name="command_add_favorite">Add to favourites</string>

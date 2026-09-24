@@ -31,15 +31,18 @@ class JellyfinSignInViewModel internal constructor(
     private val sessionManager: SessionManager,
     private val settings: ServerSettingsRepository,
     private val clientFactory: (String, String?, JellyfinClientInfo) -> JellyfinClient,
+    private val cleartextPolicy: CleartextServerPolicy,
 ) : ViewModel() {
 
     @Inject constructor(
         sessionManager: SessionManager,
         settings: ServerSettingsRepository,
+        cleartextPolicy: CleartextServerPolicy,
     ) : this(
         sessionManager,
         settings,
         { baseUrl, token, info -> JellyfinClient(baseUrl, token, info) },
+        cleartextPolicy,
     )
 
     var serverUrl by mutableStateOf("")
@@ -78,6 +81,10 @@ class JellyfinSignInViewModel internal constructor(
         // public demo's "demo" account is one).
         if (serverUrl.isBlank() || username.isBlank()) {
             state = UiState.Error(ErrorKind.MISSING_FIELDS, null)
+            return
+        }
+        if (cleartextPolicy.rejects(serverUrl)) {
+            state = UiState.Error(ErrorKind.CLEARTEXT, null)
             return
         }
         state = UiState.Connecting
