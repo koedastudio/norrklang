@@ -14,7 +14,6 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.session.CacheBitmapLoader
@@ -193,22 +192,18 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
 
         val exoPlayer = ExoPlayer.Builder(this)
             .setMediaSourceFactory(
-                // The metadata-duration wrapper keeps a chunked transcode
-                // from registering as a LIVE stream, which would hide the
-                // car's seek bar (see MetadataDurationMediaSourceFactory).
+                // Declares the metadata duration so a chunked transcode is
+                // on-demand, not LIVE: the seek bar stays, and a dropped
+                // connection resumes instead of restarting the track.
                 MetadataDurationMediaSourceFactory(
-                    DefaultMediaSourceFactory(
-                        DataSource.Factory {
-                            ResolvingDataSource(
-                                DefaultDataSource.Factory(this, httpDataSourceFactory).createDataSource(),
-                                resolver.createResolver(),
-                            )
-                        },
-                        extractorsFactory,
-                    )
-                        .setLoadErrorHandlingPolicy(
-                            DefaultLoadErrorHandlingPolicy(LOAD_RETRY_COUNT),
-                        ),
+                    dataSourceFactory = DataSource.Factory {
+                        ResolvingDataSource(
+                            DefaultDataSource.Factory(this, httpDataSourceFactory).createDataSource(),
+                            resolver.createResolver(),
+                        )
+                    },
+                    extractorsFactory = extractorsFactory,
+                    loadErrorHandlingPolicy = DefaultLoadErrorHandlingPolicy(LOAD_RETRY_COUNT),
                 ),
             )
             .setLoadControl(loadControl)
@@ -401,11 +396,12 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
         )
 
     companion object {
-        // Buffer up to 3 minutes ahead (audio is cheap) so short dead zones
-        // never reach the user; keep at least 1 minute before pausing loads.
         private const val HOME_NOTIFY_COALESCE_MS = 500L
 
-        private const val MIN_BUFFER_MS = 60_000
+        // 3 minutes ahead (audio is cheap) so short dead zones never reach
+        // the user. Min == max keeps the socket trickling: an idle refill
+        // gap gets closed by proxies (nginx send_timeout 60s) and NAT (#9).
+        private const val MIN_BUFFER_MS = 180_000
         private const val MAX_BUFFER_MS = 180_000
 
         // 30s of the upcoming track buffered before it's needed.

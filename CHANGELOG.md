@@ -31,6 +31,12 @@ is the single source of truth).
   device under Settings → Saved from radio, with a QR code that opens it on
   your phone.
 
+### Fixed
+
+- Tracks on a capped quality tier no longer restart from the beginning
+  when a proxy or carrier NAT drops the idle connection; a dropped
+  connection now resumes where it stopped (#9).
+
 ## [1.2.1] — 2026-09-17
 
 ### Changed
