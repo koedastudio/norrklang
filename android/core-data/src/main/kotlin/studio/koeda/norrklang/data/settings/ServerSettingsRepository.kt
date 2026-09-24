@@ -99,6 +99,9 @@ class ServerSettingsRepository @Inject constructor(
         val LAST_MEDIA_ID = stringPreferencesKey("last_media_id")
         val LAST_POSITION_MS = longPreferencesKey("last_position_ms")
 
+        /** Per-station listen counts, one `count|lastPlayedMs|stationId` entry each. */
+        val RADIO_PLAY_STATS = stringSetPreferencesKey("radio_play_stats")
+
         /**
          * Pre-quality-tier builds stored a raw-vs-transcoded boolean here;
          * kept only as a read fallback for [QUALITY_WIFI]/[QUALITY_CELLULAR].
@@ -349,6 +352,7 @@ class ServerSettingsRepository @Inject constructor(
     private fun clearAccountPlayback(prefs: MutablePreferences) {
         prefs.remove(Keys.LAST_MEDIA_ID)
         prefs.remove(Keys.LAST_POSITION_MS)
+        prefs.remove(Keys.RADIO_PLAY_STATS)
         prefs.remove(Keys.SCROBBLE_EXCLUDED_ARTISTS)
         prefs.remove(Keys.SCROBBLE_EXCLUDED_PLAYLISTS)
         prefs.remove(Keys.SCROBBLE_EXCLUDED_LIBRARIES)
@@ -544,6 +548,42 @@ class ServerSettingsRepository @Inject constructor(
         this[key] = if (add) current + value else current - value
     }
 
+    // --- Internet radio ---
+
+    /** Local listening history for one station — the server keeps no radio play counts. */
+    data class RadioPlayStats(val stationId: String, val playCount: Int, val lastPlayedMs: Long)
+
+    /** Every station listened to on this account, most listened first (ties: most recent). */
+    val radioPlayStats: Flow<List<RadioPlayStats>> =
+        dataStore.data.map { decodeRadioStats(it[Keys.RADIO_PLAY_STATS]) }
+
+    /** Counts one listen of [stationId]; the history is capped at [MAX_RADIO_STATS] stations. */
+    suspend fun recordRadioPlay(stationId: String, nowMs: Long = System.currentTimeMillis()) {
+        dataStore.edit { prefs ->
+            val stats = decodeRadioStats(prefs[Keys.RADIO_PLAY_STATS])
+                .associateByTo(LinkedHashMap()) { it.stationId }
+            val count = (stats[stationId]?.playCount ?: 0) + 1
+            stats[stationId] = RadioPlayStats(stationId, count, nowMs)
+            prefs[Keys.RADIO_PLAY_STATS] = stats.values
+                .sortedWith(radioStatsOrder)
+                .take(MAX_RADIO_STATS)
+                .mapTo(HashSet()) { "${it.playCount}|${it.lastPlayedMs}|${it.stationId}" }
+        }
+    }
+
+    private val radioStatsOrder =
+        compareByDescending<RadioPlayStats> { it.playCount }.thenByDescending { it.lastPlayedMs }
+
+    // The id comes last so a '|' inside it survives the split.
+    private fun decodeRadioStats(entries: Set<String>?): List<RadioPlayStats> =
+        entries.orEmpty().mapNotNull { entry ->
+            val parts = entry.split('|', limit = 3)
+            if (parts.size != 3) return@mapNotNull null
+            val count = parts[0].toIntOrNull() ?: return@mapNotNull null
+            val lastPlayed = parts[1].toLongOrNull() ?: return@mapNotNull null
+            RadioPlayStats(parts[2], count, lastPlayed)
+        }.sortedWith(radioStatsOrder)
+
     // --- Playback resumption (see MediaSession.Callback.onPlaybackResumption) ---
 
     data class ResumptionState(val mediaId: String, val positionMs: Long)
@@ -569,6 +609,9 @@ class ServerSettingsRepository @Inject constructor(
     companion object {
         /** Value of [autoplaySimilar] before anything is written. */
         const val DEFAULT_AUTOPLAY_SIMILAR = true
+
+        /** Stations kept in [radioPlayStats]; the least listened drop off beyond it. */
+        const val MAX_RADIO_STATS = 50
 
         private const val PROVIDER_SUBSONIC = "subsonic"
         private const val PROVIDER_PLEX = "plex"

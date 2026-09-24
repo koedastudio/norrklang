@@ -20,6 +20,11 @@
   <string name="browse_group_decade_mixes">Decade mixes</string>
   <string name="browse_group_albums">Albums</string>
   <string name="browse_group_artists">Artists</string>
+  <string name="browse_group_radio">Radio</string>
+  <!-- The Library tab's single Radio row; opens the station list. -->
+  <string name="browse_library_radio_stations">Radio stations</string>
+  <!-- Subtitle on station rows and the now-playing view. -->
+  <string name="browse_radio_station_subtitle">Internet radio</string>
   <string name="browse_home_similar_to">Similar to %1$s</string>
   <string name="browse_home_best_of">Best of %1$s</string>
   <!-- Decade mix tile title, e.g. "1980s"; %1$d is the decade's first year. -->
@@ -35,4 +40,7 @@
   <string name="command_shuffle_off">Disable shuffle</string>
   <string name="command_add_favorite">Add to favourites</string>
   <string name="command_remove_favorite">Remove from favourites</string>
+  <!-- The same heart on a radio station: notes the song playing in Settings → Saved from radio. -->
+  <string name="command_save_song">Save song</string>
+  <string name="command_unsave_song">Remove saved song</string>
 </resources>

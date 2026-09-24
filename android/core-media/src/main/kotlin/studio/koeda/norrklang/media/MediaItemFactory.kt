@@ -10,6 +10,7 @@ import androidx.media3.session.MediaConstants
 import studio.koeda.norrklang.data.model.Album
 import studio.koeda.norrklang.data.model.Artist
 import studio.koeda.norrklang.data.model.Playlist
+import studio.koeda.norrklang.data.model.RadioStation
 import studio.koeda.norrklang.data.model.Track
 
 /** Builders translating domain models into [MediaItem]s for the car browse UI. */
@@ -142,6 +143,43 @@ internal object MediaItemFactory {
         mediaType = MediaMetadata.MEDIA_TYPE_PLAYLIST,
         childrenStyle = listChildrenExtras(),
     )
+
+    /**
+     * A playable station carrying its public stream URL as-is (no auth or
+     * quality resolution). [artistLine] sits under the title, which ICY
+     * metadata replaces with the current song once the stream plays.
+     */
+    fun forStation(
+        station: RadioStation,
+        artworkUrl: String?,
+        subtitle: String? = null,
+        artistLine: String? = null,
+        groupTitle: String? = null,
+    ): MediaItem = MediaItem.Builder()
+        .setMediaId(MediaId.RadioStation(station.id).encode())
+        .setUri(station.streamUrl)
+        .setMediaMetadata(
+            MediaMetadata.Builder()
+                .setTitle(station.name)
+                .setStation(station.name)
+                .setArtist(artistLine)
+                .setSubtitle(subtitle)
+                .setArtworkUri(artworkUrl?.let(Uri::parse))
+                .setIsBrowsable(false)
+                .setIsPlayable(true)
+                .setMediaType(MediaMetadata.MEDIA_TYPE_RADIO_STATION)
+                .apply {
+                    groupTitle?.let {
+                        setExtras(
+                            Bundle().apply {
+                                putString(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_GROUP_TITLE, it)
+                            },
+                        )
+                    }
+                }
+                .build(),
+        )
+        .build()
 
     /**
      * A track as shown in a browse list — no stream URI; the session callback

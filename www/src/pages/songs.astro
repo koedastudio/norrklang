@@ -1,0 +1,215 @@
+---
+import Base from '../layouts/Base.astro';
+
+/*
+ * Landing page for the "Open on your phone" QR code on the app's saved-songs
+ * screen (Settings → Saved from radio). The list rides in the URL *fragment*
+ * (#1.<base64url of raw deflate>), which the browser never sends to any
+ * server — everything below runs client-side. One line per song,
+ * `savedAt<TAB>station<TAB>title`, newest first, savedAt in UTC ISO-8601.
+ * Format contract lives in the app's SavedSongsExport
+ * (android/core-data/.../radio/SavedSongsExport.kt); version-prefix "1.".
+ */
+---
+
+<Base title="Saved from radio" description="Songs saved from internet radio in the Norrklang app." noindex>
+  <article class="wrap songs">
+    <h1>Saved from radio</h1>
+
+    <section id="empty" hidden>
+      <p>
+        This page shows the songs you hearted while listening to internet
+        radio in Norrklang, scanned from the QR code on the in-car
+        <strong>Settings → Saved from radio</strong> screen — but this link
+        doesn't carry any songs. Scan the code again with your phone camera
+        and open the link it offers.
+      </p>
+    </section>
+
+    <section id="failed" hidden>
+      <p>
+        The list in this link couldn't be decoded. Your browser may be too
+        old for this page — try updating it — or the QR scan may have been
+        incomplete; scanning again usually fixes it.
+      </p>
+    </section>
+
+    <section id="list" hidden>
+      <p>
+        Decoded from the link itself — nothing was uploaded by the car or by
+        this page. Titles are shown exactly as the station sent them.
+      </p>
+      <table class="songs__table">
+        <thead>
+          <tr><th>Song</th><th>Station</th><th>Saved</th></tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <p class="songs__actions">
+        <button id="copy" class="btn btn--primary" type="button">Copy list</button>
+      </p>
+    </section>
+  </article>
+</Base>
+
+<script>
+  const FORMAT_VERSION = '1';
+  let plainText = '';
+
+  interface Song {
+    savedAt: string;
+    station: string;
+    title: string;
+  }
+
+  function byId<T extends HTMLElement>(id: string): T {
+    return document.getElementById(id) as T;
+  }
+
+  function show(id: string) {
+    for (const section of ['empty', 'failed', 'list']) {
+      byId(section).hidden = section !== id;
+    }
+  }
+
+  /** Unpadded base64url (RFC 4648 §5) to bytes — mirrors FragmentPayload. */
+  function decodeBase64Url(text: string): Uint8Array<ArrayBuffer> {
+    const base64 = text.replaceAll('-', '+').replaceAll('_', '/');
+    const binary = atob(base64);
+    return Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  }
+
+  /** Raw-deflate bytes to text — the counterpart of Java Deflater(nowrap). */
+  async function inflateRaw(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    return await new Response(stream).text();
+  }
+
+  function parse(text: string): Song[] {
+    return text
+      .split('\n')
+      .filter((line) => line.trim() !== '')
+      .map((line) => {
+        const [savedAt = '', station = '', ...rest] = line.split('\t');
+        return { savedAt, station, title: rest.join('\t') };
+      })
+      .filter((song) => song.title);
+  }
+
+  function formatDate(iso: string): string {
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return iso;
+    return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  }
+
+  function render(songs: Song[]) {
+    const rows = byId('rows');
+    rows.replaceChildren();
+    for (const song of songs) {
+      const tr = document.createElement('tr');
+      for (const text of [song.title, song.station, formatDate(song.savedAt)]) {
+        const td = document.createElement('td');
+        td.textContent = text;
+        tr.append(td);
+      }
+      rows.append(tr);
+    }
+    plainText = songs
+      .map((song) => [song.title, song.station, formatDate(song.savedAt)].filter(Boolean).join(' — '))
+      .join('\n');
+    byId('copy').textContent = 'Copy list';
+    show('list');
+  }
+
+  byId('copy').addEventListener('click', async () => {
+    await navigator.clipboard.writeText(plainText);
+    byId('copy').textContent = 'Copied';
+  });
+
+  async function main() {
+    const fragment = window.location.hash.replace(/^#/, '');
+    if (!fragment) {
+      show('empty');
+      return;
+    }
+    const [version, payload] = fragment.split('.', 2);
+    if (version !== FORMAT_VERSION || !payload) {
+      show('failed');
+      return;
+    }
+    try {
+      const songs = parse(await inflateRaw(decodeBase64Url(payload)));
+      if (songs.length === 0) {
+        show('empty');
+        return;
+      }
+      render(songs);
+    } catch {
+      show('failed');
+    }
+  }
+
+  main();
+  // Fragment-only navigations (scanning a second list into an open tab)
+  // don't reload the page — re-decode on hash changes.
+  window.addEventListener('hashchange', main);
+</script>
+
+<style>
+  .songs {
+    padding-block: clamp(2.5rem, 6vw, 4rem) 2rem;
+  }
+
+  .songs h1 {
+    font-size: clamp(1.9rem, 1.4rem + 2vw, 2.5rem);
+  }
+
+  .songs p {
+    margin-top: 1rem;
+    max-width: 60ch;
+  }
+
+  .songs__table {
+    margin-top: 1.5rem;
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9375rem;
+    line-height: 1.4;
+  }
+
+  .songs__table th,
+  .songs__table td {
+    padding: 0.6rem 0.75rem;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .songs__table th {
+    font-size: 0.8125rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+  }
+
+  .songs__table td:first-child {
+    font-weight: 600;
+  }
+
+  .songs__table td:last-child {
+    white-space: nowrap;
+  }
+
+  .songs__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  /* .btn assumes anchors; the copy button needs its chrome reset too. */
+  .songs__actions button.btn {
+    border: none;
+    font-family: inherit;
+    cursor: pointer;
+  }
+</style>

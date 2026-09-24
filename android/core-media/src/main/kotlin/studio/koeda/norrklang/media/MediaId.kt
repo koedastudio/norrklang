@@ -11,7 +11,7 @@ import java.net.URLEncoder
  * Encodings:
  * ```
  * root
- * tab/home | tab/library | tab/artists | tab/albums | tab/playlists
+ * tab/home | tab/library | tab/artists | tab/albums | tab/playlists | tab/radio
  * home/recently-added | home/favorite-albums | home/favorite-songs
  * home/recently-added-songs | home/random-mix | home/recently-played
  * home/most-played | home/favorite-artists
@@ -24,6 +24,7 @@ import java.net.URLEncoder
  * artist/{id}
  * album/{id}
  * playlist/{id}
+ * station/{id}                    (internet radio station — playable, no queue context)
  * track/{id}
  * track/{id}|album/{albumId}      (track with queue context)
  * track/{id}|playlist/{plId}
@@ -60,6 +61,7 @@ sealed interface MediaId {
     data object TabArtists : MediaId
     data object TabAlbums : MediaId
     data object TabPlaylists : MediaId
+    data object TabRadio : MediaId
 
     data object HomeRecentlyAdded : MediaId
     data object HomeFavoriteAlbums : MediaId
@@ -92,6 +94,9 @@ sealed interface MediaId {
     data class Album(val id: String) : Container
     data class Playlist(val id: String) : Container
 
+    /** An internet radio station: a live stream, played alone — never a queue context. */
+    data class RadioStation(val id: String) : MediaId
+
     /**
      * The queue-radio tracks appended when a queue nears its end, seeded from
      * [seedArtistId]. A provenance/resume token only — never browsable.
@@ -108,6 +113,7 @@ sealed interface MediaId {
         TabArtists -> "tab/artists"
         TabAlbums -> "tab/albums"
         TabPlaylists -> "tab/playlists"
+        TabRadio -> "tab/radio"
         HomeRecentlyAdded -> "home/recently-added"
         HomeFavoriteAlbums -> "home/favorite-albums"
         HomeFavoriteArtists -> "home/favorite-artists"
@@ -127,6 +133,7 @@ sealed interface MediaId {
         is Artist -> "artist/$id"
         is Album -> "album/$id"
         is Playlist -> "playlist/$id"
+        is RadioStation -> "station/$id"
         is SongRadio -> "radio/$seedArtistId"
         is Track -> buildString {
             append("track/").append(id)
@@ -145,6 +152,7 @@ sealed interface MediaId {
                 "tab/artists" -> return TabArtists
                 "tab/albums" -> return TabAlbums
                 "tab/playlists" -> return TabPlaylists
+                "tab/radio" -> return TabRadio
                 "home/recently-added" -> return HomeRecentlyAdded
                 "home/favorite-albums" -> return HomeFavoriteAlbums
                 "home/favorite-artists" -> return HomeFavoriteArtists
@@ -176,6 +184,7 @@ sealed interface MediaId {
                 "artist" -> Artist(id)
                 "album" -> Album(id)
                 "playlist" -> Playlist(id)
+                "station" -> RadioStation(id)
                 "radio" -> SongRadio(id)
                 "track" -> {
                     val container = context?.let { parse(it) as? Container ?: return null }

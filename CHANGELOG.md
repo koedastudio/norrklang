@@ -22,6 +22,12 @@ is the single source of truth).
   Nextcloud Music or LDAP-backed Subsonic: token auth is tried first, and
   the password is sent (and stored encrypted) only when the server rejects
   tokens.
+- Internet radio for Navidrome/Subsonic servers: the server's stations
+  under Library → Radio, and the most listened ones in a Radio section on
+  Home; the now-playing title follows the stream's song metadata.
+- Save songs from radio with the playback heart; the list lives on the
+  device under Settings → Saved from radio, with a QR code that opens it on
+  your phone.
 
 ## [1.2.1] — 2026-09-17
 

@@ -481,4 +481,26 @@ class SubsonicClientTest {
         assertNull(lastRequestParams["t"])
         assertNull(lastRequestParams["s"])
     }
+
+    @Test
+    fun `getInternetRadioStations parses stations and drops ones without a stream`() = runTest {
+        val client = clientReturning(
+            """{"subsonic-response":{"status":"ok","internetRadioStations":{"internetRadioStation":[
+                 {"id":"rs-1","name":"KEXP","streamUrl":"https://kexp.example/stream","homePageUrl":"https://kexp.example"},
+                 {"id":"rs-2","name":"Broken","streamUrl":""},
+                 {"id":"rs-3","name":"P3","streamUrl":"https://sr.example/p3"}
+               ]}}}""",
+        )
+        val stations = client.getInternetRadioStations()
+        assertTrue("/rest/getInternetRadioStations.view" in lastRequestUrl)
+        assertEquals(listOf("rs-1", "rs-3"), stations.map { it.id })
+        assertEquals("https://kexp.example", stations[0].homePageUrl)
+        assertNull(stations[1].homePageUrl)
+    }
+
+    @Test
+    fun `getInternetRadioStations is empty when the server has none`() = runTest {
+        val client = clientReturning("""{"subsonic-response":{"status":"ok","internetRadioStations":{}}}""")
+        assertEquals(emptyList(), client.getInternetRadioStations())
+    }
 }

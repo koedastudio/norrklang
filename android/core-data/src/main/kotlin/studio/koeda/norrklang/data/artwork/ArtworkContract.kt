@@ -19,6 +19,9 @@ object ArtworkContract {
     /** Composed home-tab button images (collage + overlay), rendered in-app. */
     const val PATH_HOME = "home"
 
+    /** Composed radio-station tiles: the station's logo under the radio badge. */
+    const val PATH_STATION = "station"
+
     /**
      * A content URI resolving to the cover art bytes for a Subsonic coverArt
      * id. Also records the id in [KnownCoverIds] — the provider refuses to
@@ -50,6 +53,14 @@ object ArtworkContract {
     fun homeMixUri(packageName: String, kind: String, key: String, version: String? = null): String =
         "content://$packageName$AUTHORITY_SUFFIX/$PATH_HOME/$kind/${encode(key)}" +
             versionQuery(version)
+
+    /**
+     * A content URI resolving to the composed tile for one radio station
+     * (`station/<id>`). The provider resolves the id against the server's
+     * station list, so no registration is needed.
+     */
+    fun stationUri(packageName: String, stationId: String): String =
+        "content://$packageName$AUTHORITY_SUFFIX/$PATH_STATION/${encode(stationId)}"
 
     private fun versionQuery(version: String?): String =
         if (version.isNullOrEmpty()) "" else "?$PARAM_VERSION=${encode(version)}"

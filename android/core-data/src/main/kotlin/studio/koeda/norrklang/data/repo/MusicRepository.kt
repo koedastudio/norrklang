@@ -8,6 +8,7 @@ import studio.koeda.norrklang.data.model.Genre
 import studio.koeda.norrklang.data.model.MusicLibrary
 import studio.koeda.norrklang.data.model.Playlist
 import studio.koeda.norrklang.data.model.PlaylistDetail
+import studio.koeda.norrklang.data.model.RadioStation
 import studio.koeda.norrklang.data.model.SearchResults
 import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.session.ProviderSession
@@ -145,6 +146,18 @@ interface MusicRepository {
     suspend fun playlists(): List<Playlist>
     suspend fun playlist(id: String): PlaylistDetail
     suspend fun track(id: String): Track
+
+    /**
+     * The server's internet radio stations, server order; empty for
+     * providers without the feature (Plex, Jellyfin). Cached.
+     */
+    suspend fun radioStations(): List<RadioStation> = emptyList()
+
+    /** One station by id, resolved from [radioStations]. */
+    suspend fun radioStation(id: String): RadioStation =
+        radioStations().firstOrNull { it.id == id }
+            ?: throw MusicException.NotFound("Radio station $id not found")
+
     suspend fun search(query: String): SearchResults
     /** [expectedSession] prevents a delayed play from being reported to a new account. */
     suspend fun scrobble(

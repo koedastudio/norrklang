@@ -20,11 +20,13 @@ import java.net.URL
 import java.security.MessageDigest
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import studio.koeda.norrklang.data.artwork.ArtworkContract
 import studio.koeda.norrklang.data.artwork.KnownCoverIds
+import studio.koeda.norrklang.data.model.RadioStation
 import studio.koeda.norrklang.data.repo.MusicRepository
 import studio.koeda.norrklang.data.session.ProviderSession
 import studio.koeda.norrklang.data.session.SessionManager
@@ -35,7 +37,9 @@ import studio.koeda.norrklang.data.session.SessionManager
  * The AAOS/Android Auto hosts only load artwork through a content resolver —
  * remote http(s) icon URIs are ignored. `content://<appId>.artwork/cover/<id>`
  * downloads the provider's authenticated artwork response into the cache
- * once and hands out read-only file descriptors.
+ * once and hands out read-only file descriptors. `station/<id>` composes a
+ * radio station's tile from the server's image or the station homepage's
+ * icon ([StationLogo]) — the only non-server host ever contacted.
  *
  * Exported for the (separate-process) hosts, so hardened against any caller:
  *  - network fetches only for ids the app itself handed out ([KnownCoverIds]);
@@ -108,6 +112,8 @@ class ArtworkProvider : ContentProvider() {
                     key = segments[2],
                     uri = uri,
                 )
+            segments.size == 2 && segments[0] == ArtworkContract.PATH_STATION ->
+                stationFile(context, dependencies.musicRepository(), session, accountDir, segments[1])
             else -> throw FileNotFoundException("Unsupported artwork uri: $uri")
         }
         return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
@@ -176,11 +182,10 @@ class ArtworkProvider : ContentProvider() {
             ?: throw FileNotFoundException("Unknown home button: $key")
         return composedTileFile(
             context,
-            session,
             accountDir,
             cacheKey = "home-button/${tileVersion(uri)}/$key",
             iconRes = tile.iconRes,
-        ) { HomeButtonArtwork.coverIds(tile, repository, randomMix) }
+        ) { coverFiles(session, accountDir, HomeButtonArtwork.coverIds(tile, repository, randomMix)) }
     }
 
     /**
@@ -204,7 +209,6 @@ class ArtworkProvider : ContentProvider() {
             ?: throw FileNotFoundException("Unknown mix kind: $kind")
         return composedTileFile(
             context,
-            session,
             accountDir,
             cacheKey = "home-button/${tileVersion(uri)}/$kind/$key",
             iconRes = mixKind.iconRes,
@@ -225,7 +229,67 @@ class ArtworkProvider : ContentProvider() {
                     dependencies.catalogMixesSession().currentDecadeMixes()
                         .firstOrNull { it.startYear.toString() == key }?.artworkUrls
             } ?: throw FileNotFoundException("Unknown mix: $kind/$key")
-            HomeButtonArtwork.coverIds(urls)
+            coverFiles(session, accountDir, HomeButtonArtwork.coverIds(urls))
+        }
+    }
+
+    /**
+     * A radio station's tile (`station/<id>`): the server's station image
+     * when it has one, else the homepage icon, full-bleed under the radio
+     * badge; the plain glyph when neither exists.
+     */
+    private fun stationFile(
+        context: Context,
+        repository: MusicRepository,
+        session: ProviderSession,
+        accountDir: File,
+        stationId: String,
+    ): File = composedTileFile(
+        context,
+        accountDir,
+        cacheKey = "station/$stationId",
+        iconRes = HomeTile.RADIO.iconRes,
+    ) { listOfNotNull(stationLogo(session, accountDir, repository.radioStation(stationId))) }
+
+    /**
+     * The station's logo file, or null. A homepage without a usable icon is
+     * remembered for [STATION_LOGO_RETRY_MS] so browsing doesn't re-scrape it.
+     */
+    private fun stationLogo(session: ProviderSession, accountDir: File, station: RadioStation): File? {
+        station.artworkUrl?.let { url ->
+            val id = HomeButtonArtwork.coverIds(listOf(url)).firstOrNull() ?: return null
+            return try {
+                coverFile(session, accountDir, id)
+            } catch (_: FileNotFoundException) {
+                null
+            }
+        }
+        val homePage = station.homePageUrl?.takeIf { it.startsWith("http") } ?: return null
+        val logo = File(accountDir, hashedFileName("station-logo/${station.id}"))
+        if (logo.length() > 0) return logo
+        val miss = File(accountDir, hashedFileName("station-logo-miss/${station.id}"))
+        if (System.currentTimeMillis() - miss.lastModified() < STATION_LOGO_RETRY_MS) return null
+        val found = withDownloadSlot { StationLogo.fetch(homePage, logo) }
+        if (!found) {
+            miss.writeText("")
+            return null
+        }
+        evict(accountDir)
+        return logo
+    }
+
+    /** The cached files for [ids], skipping covers that can't be fetched. */
+    private suspend fun coverFiles(
+        session: ProviderSession,
+        accountDir: File,
+        ids: List<String>,
+    ): List<File> = ids.mapNotNull { id ->
+        // Blocking downloads never suspend — check the deadline between them.
+        currentCoroutineContext().ensureActive()
+        try {
+            coverFile(session, accountDir, id)
+        } catch (_: FileNotFoundException) {
+            null
         }
     }
 
@@ -236,11 +300,10 @@ class ArtworkProvider : ContentProvider() {
      */
     private fun composedTileFile(
         context: Context,
-        session: ProviderSession,
         accountDir: File,
         cacheKey: String,
         iconRes: Int,
-        coverIds: suspend () -> List<String>,
+        covers: suspend () -> List<File>,
     ): File {
         val file = File(accountDir, hashedFileName(cacheKey))
         val stale = file.length() == 0L ||
@@ -251,21 +314,10 @@ class ArtworkProvider : ContentProvider() {
                 // aggregate work so a slow server can't pin a thread for up to
                 // 12 sequential downloads' worth of timeouts. On timeout the
                 // catch below serves the stale image like any render failure.
-                val covers = runBlocking {
-                    withTimeout(HOME_BUTTON_RENDER_TIMEOUT_MS) {
-                        coverIds().mapNotNull { id ->
-                            // Blocking downloads never suspend — check
-                            // the deadline between them.
-                            ensureActive()
-                            try {
-                                coverFile(session, accountDir, id)
-                            } catch (_: FileNotFoundException) {
-                                null
-                            }
-                        }
-                    }
+                val coverFiles = runBlocking {
+                    withTimeout(HOME_BUTTON_RENDER_TIMEOUT_MS) { covers() }
                 }
-                HomeButtonArtwork.render(context, iconRes, covers, file)
+                HomeButtonArtwork.render(context, iconRes, coverFiles, file)
                 evict(accountDir)
             } catch (e: Exception) {
                 if (file.length() == 0L) {
@@ -369,7 +421,7 @@ class ArtworkProvider : ContentProvider() {
     override fun getType(uri: Uri): String? =
         when (uri.pathSegments.firstOrNull()) {
             ArtworkContract.PATH_COVER -> "image/*"
-            ArtworkContract.PATH_HOME -> "image/png"
+            ArtworkContract.PATH_HOME, ArtworkContract.PATH_STATION -> "image/png"
             else -> null
         }
 
@@ -432,5 +484,8 @@ class ArtworkProvider : ContentProvider() {
         // the worst-case sum of per-download timeouts a degenerate server
         // could otherwise pin a binder thread for.
         const val HOME_BUTTON_RENDER_TIMEOUT_MS = 20_000L
+
+        /** How long a homepage known to have no usable icon is left alone. */
+        const val STATION_LOGO_RETRY_MS = 24L * 60 * 60 * 1000
     }
 }

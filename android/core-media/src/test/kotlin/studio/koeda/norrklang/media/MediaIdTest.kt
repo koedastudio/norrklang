@@ -15,6 +15,7 @@ class MediaIdTest {
             MediaId.TabArtists,
             MediaId.TabAlbums,
             MediaId.TabPlaylists,
+            MediaId.TabRadio,
             MediaId.HomeRecentlyAdded,
             MediaId.HomeFavoriteAlbums,
             MediaId.HomeFavoriteArtists,
@@ -45,6 +46,7 @@ class MediaIdTest {
             MediaId.Track("tr-77", MediaId.HomeSimilar("ar-12")),
             MediaId.SongRadio("ar-12"),
             MediaId.Track("tr-77", MediaId.SongRadio("ar-12")),
+            MediaId.RadioStation("rs-5"),
         )
         for (id in ids) {
             assertEquals(id, MediaId.parse(id.encode()), "round-trip failed for $id")
@@ -92,6 +94,7 @@ class MediaIdTest {
     @Test
     fun `only containers are valid track contexts`() {
         assertNull(MediaId.parse("track/tr-1|artist/ar-1"))
+        assertNull(MediaId.parse("track/tr-1|station/rs-1"))
         assertNull(MediaId.parse("track/tr-1|tab/home"))
         assertNull(MediaId.parse("track/tr-1|home/recently-added"))
         assertNull(MediaId.parse("track/tr-1|home/recently-played"))
@@ -137,6 +140,8 @@ class MediaIdTest {
             MediaId.Track("tr-1", MediaId.HomeDecade(1980)).encode(),
         )
         assertEquals("radio/ar-1", MediaId.SongRadio("ar-1").encode())
+        assertEquals("tab/radio", MediaId.TabRadio.encode())
+        assertEquals("station/rs-1", MediaId.RadioStation("rs-1").encode())
         assertEquals(
             "track/tr-1|radio/ar-1",
             MediaId.Track("tr-1", MediaId.SongRadio("ar-1")).encode(),

@@ -44,16 +44,18 @@ internal fun albumFavoriteButtons(context: Context): List<CommandButton> = listO
 
 /**
  * The playback-row custom buttons in display order: shuffle first,
- * then the favorite heart. Always set the full list —
- * setMediaButtonPreferences replaces it wholesale.
+ * then the heart. Always set the full list —
+ * setMediaButtonPreferences replaces it wholesale. [radio] labels the
+ * heart as saving the station's current song (see SavedRadioSongs).
  */
 internal fun playbackButtons(
     context: Context,
     shuffleOn: Boolean,
     favorite: Boolean,
+    radio: Boolean = false,
 ): List<CommandButton> = listOf(
     shuffleButton(context, shuffleOn),
-    favoriteButton(context, favorite),
+    favoriteButton(context, favorite, radio),
 )
 
 /** Playback-row shuffle toggle; [shuffleOn] mirrors the player's mode. */
@@ -80,19 +82,21 @@ private fun shuffleButton(context: Context, shuffleOn: Boolean): CommandButton =
 
 /**
  * Playback-row heart toggling the current track's favorite ("starred")
- * state on the server; [favorite] renders the filled heart.
+ * state on the server — or, on a radio station, whether the song playing
+ * is in the device's saved list; [favorite] renders the filled heart.
  */
 @OptIn(UnstableApi::class) // setSlots
-private fun favoriteButton(context: Context, favorite: Boolean): CommandButton =
+private fun favoriteButton(context: Context, favorite: Boolean, radio: Boolean): CommandButton =
     CommandButton.Builder(
         if (favorite) CommandButton.ICON_HEART_FILLED else CommandButton.ICON_HEART_UNFILLED,
     )
         .setDisplayName(
             context.getString(
-                if (favorite) {
-                    R.string.command_remove_favorite
-                } else {
-                    R.string.command_add_favorite
+                when {
+                    radio && favorite -> R.string.command_unsave_song
+                    radio -> R.string.command_save_song
+                    favorite -> R.string.command_remove_favorite
+                    else -> R.string.command_add_favorite
                 },
             ),
         )

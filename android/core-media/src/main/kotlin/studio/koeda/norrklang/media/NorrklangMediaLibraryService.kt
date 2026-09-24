@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import studio.koeda.norrklang.data.diagnostics.Diagnostics
+import studio.koeda.norrklang.data.radio.SavedRadioSongs
 import studio.koeda.norrklang.data.repo.MusicRepository
 import studio.koeda.norrklang.data.session.ProviderSession
 import studio.koeda.norrklang.data.model.LibraryScope
@@ -55,6 +56,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
     @Inject internal lateinit var sessionManager: SessionManager
     @Inject internal lateinit var repository: MusicRepository
     @Inject internal lateinit var settings: ServerSettingsRepository
+    @Inject internal lateinit var savedSongs: SavedRadioSongs
     @Inject internal lateinit var randomMix: RandomMixSession
     @Inject internal lateinit var similarMixes: SimilarMixesSession
     @Inject internal lateinit var bestOfMixes: BestOfMixesSession
@@ -94,6 +96,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
         val player = buildPlayer(resolver)
         player.addListener(PlaybackErrorRecorder())
         player.addListener(RandomMixPlaySourceListener(randomMix))
+        player.addListener(RadioNowPlayingListener(player))
 
         val browseTree = BrowseTree(
             this,
@@ -103,6 +106,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
             bestOfMixes,
             catalogMixes,
             tileVersion = { LibraryScope.exclusionKey(settings.excludedLibraryIds.first()) },
+            radioPlayStats = { settings.radioPlayStats.first() },
         )
         val resumptionLoader = ResumptionQueueLoader(
             settings,
@@ -111,12 +115,14 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
             similarMixes,
             bestOfMixes,
             catalogMixes,
+            buildStation = browseTree::playableStation,
         )
         val callback = LibrarySessionCallback(
             context = this,
             scope = serviceScope,
             sessionManager = sessionManager,
             repository = repository,
+            savedSongs = savedSongs,
             browseTree = browseTree,
             resumption = resumptionLoader,
             voiceSearch = VoiceSearchResolver(repository, resumptionLoader::containerTracks),
@@ -152,7 +158,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
                 session.setSessionExtras(slotReservations)
                 // Needs the session, so it can't join the listeners added above.
                 player.addListener(
-                    PlaybackButtonsListener(this, serviceScope, repository, session),
+                    PlaybackButtonsListener(this, serviceScope, repository, savedSongs, session),
                 )
             }
 
@@ -268,6 +274,14 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
                         radio = QueueRadio(repository),
                         player = player,
                     )
+                    val stationCounter = RadioPlayCounter(
+                        scope = this,
+                        player = player,
+                        record = { settings.recordRadioPlay(it) },
+                        onRecorded = {
+                            session.notifyChildrenChanged(MediaId.TabHome.encode(), Int.MAX_VALUE, null)
+                        },
+                    )
                     var homeNotify: Job? = null
                     // The raw setting, not the resolved scope: no network, and it
                     // changes exactly when the user changes the selection.
@@ -300,7 +314,9 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
                     val recovery = PlaybackRecoveryListener(
                         this@NorrklangMediaLibraryService, this, player,
                     )
-                    val listeners = listOfNotNull(reporter, recovery, persister, radio, initialization)
+                    val listeners = listOfNotNull(
+                        reporter, recovery, persister, radio, stationCounter, initialization,
+                    )
                     listeners.forEach(player::addListener)
                     resumptionPersister = persister
                     // A library selection change re-scopes browse + home under

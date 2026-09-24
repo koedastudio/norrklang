@@ -6,8 +6,11 @@ import androidx.media3.common.MediaMetadata
 import studio.koeda.norrklang.data.artwork.ArtworkContract
 import studio.koeda.norrklang.data.model.Album
 import studio.koeda.norrklang.data.model.Artist
+import studio.koeda.norrklang.data.model.RadioStation
 import studio.koeda.norrklang.data.model.Track
+import studio.koeda.norrklang.data.repo.MusicException
 import studio.koeda.norrklang.data.repo.MusicRepository
+import studio.koeda.norrklang.data.settings.ServerSettingsRepository.RadioPlayStats
 
 /**
  * Maps browse requests from the car UI onto the active provider's music
@@ -22,6 +25,8 @@ import studio.koeda.norrklang.data.repo.MusicRepository
  * │                     "Made for you" (Best of <artist>, Similar to <artist>
  * │                     → track lists, present only when the server has
  * │                     similarity data)
+ * │                     "Radio" (the most listened stations → playable,
+ * │                     present only once a station has been listened to)
  * │                     "Genre mixes" (biggest genres → track lists)
  * │                     "Decade mixes" (populated decades → track lists)
  * ├── tab/playlists   → playlist list → tracks
@@ -32,6 +37,8 @@ import studio.koeda.norrklang.data.repo.MusicRepository
  *                       "Artists" (Favourite artists → artist list;
  *                       All artists → artist list (A–Z headers)
  *                       → artist's albums → tracks)
+ *                       "Radio" (Radio stations → playable station list;
+ *                       present only when the server has stations)
  * ```
  *
  * When a non-paging host browses an artists/albums node whose flat list
@@ -50,6 +57,8 @@ internal class BrowseTree(
     private val catalogMixes: CatalogMixesSession,
     /** Version segment for tile artwork URIs; changes with the library selection. */
     private val tileVersion: suspend () -> String = { "" },
+    /** Local radio listening history, most listened first (see RadioPlayCounter). */
+    private val radioPlayStats: suspend () -> List<RadioPlayStats> = { emptyList() },
 ) {
 
     private val quickPlayGroup = context.getString(R.string.browse_group_quick_play)
@@ -58,6 +67,8 @@ internal class BrowseTree(
     private val decadeMixesGroup = context.getString(R.string.browse_group_decade_mixes)
     private val albumsGroup = context.getString(R.string.browse_group_albums)
     private val artistsGroup = context.getString(R.string.browse_group_artists)
+    private val radioGroup = context.getString(R.string.browse_group_radio)
+    private val stationSubtitle = context.getString(R.string.browse_radio_station_subtitle)
     private val tabHomeTitle = context.getString(R.string.browse_tab_home)
     private val tabLibraryTitle = context.getString(R.string.browse_tab_library)
     private val tabPlaylistsTitle = context.getString(R.string.browse_tab_playlists)
@@ -120,6 +131,8 @@ internal class BrowseTree(
             MediaId.TabAlbums -> albumListing(page, pageSize)
             MediaId.TabPlaylists ->
                 Paging.slice(repository.playlists(), page, pageSize).map(MediaItemFactory::forPlaylist)
+            MediaId.TabRadio ->
+                Paging.slice(repository.radioStations(), page, pageSize).map { stationItem(it) }
             is MediaId.ArtistBucket ->
                 Paging.slice(artistBucketMembers(id.key), page, pageSize)
                     // The folder's letter already says what a per-item A–Z
@@ -133,7 +146,7 @@ internal class BrowseTree(
             is MediaId.Playlist -> trackItems(repository.playlist(id.id).tracks, id, page, pageSize)
             // Queue-radio provenance token, never a browse node.
             is MediaId.SongRadio -> null
-            is MediaId.Track, null -> null
+            is MediaId.RadioStation, is MediaId.Track, null -> null
         }
 
     /**
@@ -252,6 +265,8 @@ internal class BrowseTree(
             MediaId.TabArtists -> staticTile(HomeTile.ALL_ARTISTS, tileVersion())
             MediaId.TabAlbums -> staticTile(HomeTile.ALL_ALBUMS, tileVersion())
             MediaId.TabPlaylists -> playlistsTab()
+            MediaId.TabRadio -> staticTile(HomeTile.RADIO, tileVersion())
+            is MediaId.RadioStation -> stationItem(repository.radioStation(id.id))
             is MediaId.ArtistBucket -> Buckets.labelFor(id.key)?.let { label ->
                 MediaItemFactory.browsable(
                     mediaId = id,
@@ -288,13 +303,26 @@ internal class BrowseTree(
     /**
      * The Library tab's list in headed sections: the album collections and
      * the full album catalog under "Albums", the artist catalog under
-     * "Artists".
+     * "Artists", and the station list under "Radio" when the server has any.
      */
     private suspend fun libraryChildren(): List<MediaItem> {
         val version = tileVersion()
         return staticTiles(HomeTile.Section.ALBUMS, version) +
-            staticTiles(HomeTile.Section.ARTISTS, version)
+            staticTiles(HomeTile.Section.ARTISTS, version) +
+            if (radioStationsOrEmpty().isNotEmpty()) {
+                staticTiles(HomeTile.Section.RADIO, version)
+            } else {
+                emptyList()
+            }
     }
+
+    /** For the decorating sections: a server that can't answer hides them, not the tab. */
+    private suspend fun radioStationsOrEmpty(): List<RadioStation> =
+        try {
+            repository.radioStations()
+        } catch (_: MusicException) {
+            emptyList()
+        }
 
     /**
      * The home tab's grid of square buttons in headed sections. Items sharing
@@ -315,9 +343,43 @@ internal class BrowseTree(
             similarMixes.currentMixes()
                 .take(SimilarMixesSession.MAX_MIXES)
                 .map { similarMixButton(it, version) } +
+            topStationButtons() +
             catalogMixes.currentGenreMixes().map { genreMixButton(it, version) } +
             catalogMixes.currentDecadeMixes().map { decadeMixButton(it, version) }
     }
+
+    /**
+     * The home tab's "Radio" section: the [HOME_RADIO_TILES] most listened
+     * stations (local history, see RadioPlayCounter) that still exist on the
+     * server. No history, or no stations, means no section.
+     */
+    private suspend fun topStationButtons(): List<MediaItem> {
+        val stats = radioPlayStats()
+        if (stats.isEmpty()) return emptyList()
+        val stations = radioStationsOrEmpty().associateBy { it.id }
+        return stats.mapNotNull { stations[it.stationId] }
+            .take(HOME_RADIO_TILES)
+            .map { stationItem(it, radioGroup) }
+    }
+
+    /** A station as a browse row/tile; the image is composed by ArtworkProvider (station logo or glyph). */
+    private fun stationItem(station: RadioStation, group: String? = null): MediaItem =
+        MediaItemFactory.forStation(
+            station,
+            artworkUrl = stationArtwork(station),
+            subtitle = stationSubtitle,
+            groupTitle = group,
+        )
+
+    /** The station as handed to the player — the station name under the ICY song title. */
+    fun playableStation(station: RadioStation): MediaItem = MediaItemFactory.forStation(
+        station,
+        artworkUrl = stationArtwork(station),
+        artistLine = station.name,
+    )
+
+    private fun stationArtwork(station: RadioStation): String =
+        ArtworkContract.stationUri(context.packageName, station.id)
 
     /** [section]'s static tiles in [HomeTile]'s declaration (= display) order. */
     private fun staticTiles(section: HomeTile.Section, version: String): List<MediaItem> =
@@ -333,6 +395,7 @@ internal class BrowseTree(
                 trackListTile(tile.mediaId, title, artwork, quickPlayGroup)
             HomeTile.Section.ALBUMS -> albumGridTile(tile.mediaId, title, artwork)
             HomeTile.Section.ARTISTS -> artistListTile(tile.mediaId, title, artwork)
+            HomeTile.Section.RADIO -> stationListTile(tile.mediaId, title, artwork)
         }
     }
 
@@ -371,6 +434,17 @@ internal class BrowseTree(
             mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_ARTISTS,
             childrenStyle = MediaItemFactory.listChildrenExtras(),
             groupTitle = artistsGroup,
+        )
+
+    /** The Library tile in the "Radio" section opening the station list. */
+    private fun stationListTile(mediaId: MediaId, title: String, artworkUrl: String): MediaItem =
+        MediaItemFactory.browsable(
+            mediaId = mediaId,
+            title = title,
+            artworkUrl = artworkUrl,
+            mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_RADIO_STATIONS,
+            childrenStyle = MediaItemFactory.listChildrenExtras(),
+            groupTitle = radioGroup,
         )
 
     // Mix tile images served by ArtworkProvider — see HomeButtonArtwork.
@@ -432,5 +506,8 @@ internal class BrowseTree(
     companion object {
         // Subsonic caps getAlbumList2 at 500 items per request.
         const val SERVER_PAGE_SIZE = 500
+
+        /** Stations on the home tab's "Radio" section. */
+        const val HOME_RADIO_TILES = 3
     }
 }

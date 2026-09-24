@@ -6,16 +6,22 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import studio.koeda.norrklang.data.diagnostics.Diagnostics
 import studio.koeda.norrklang.data.diagnostics.ReportMetadata
 import studio.koeda.norrklang.data.diagnostics.ReportPayload
+import studio.koeda.norrklang.data.radio.SavedRadioSong
+import studio.koeda.norrklang.data.radio.SavedRadioSongs
+import studio.koeda.norrklang.data.radio.SavedSongsExport
 import studio.koeda.norrklang.data.repo.MusicRepository
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
@@ -27,6 +33,7 @@ class SettingsViewModel @Inject constructor(
     private val sessionManager: SessionManager,
     private val settings: ServerSettingsRepository,
     private val repository: MusicRepository,
+    private val savedRadioSongs: SavedRadioSongs,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
@@ -168,6 +175,26 @@ class SettingsViewModel @Inject constructor(
      */
     fun signOut() {
         viewModelScope.launch { sessionManager.signOut() }
+    }
+
+    // --- Saved radio songs (see SavedRadioSongs: the heart on a station) ---
+
+    /** Newest first; null until the list has been read from disk. */
+    val savedSongs: StateFlow<List<SavedRadioSong>?> = savedRadioSongs.songs
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** The "open on your phone" QR (see [SavedSongsExport]); null when the list is empty. */
+    val savedSongsExport: StateFlow<SavedSongsExport.Export?> = savedRadioSongs.songs
+        .map(SavedSongsExport::build)
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun removeSavedSong(song: SavedRadioSong) {
+        viewModelScope.launch { savedRadioSongs.remove(song) }
+    }
+
+    fun clearSavedSongs() {
+        viewModelScope.launch { savedRadioSongs.clear() }
     }
 
     // --- Diagnostics (see Diagnostics: cars offer users no logcat) ---

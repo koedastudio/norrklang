@@ -38,6 +38,23 @@ internal data class SubsonicResponse(
     val similarSongs2: Songs? = null,
     val topSongs: Songs? = null,
     val musicFolders: MusicFolders? = null,
+    val internetRadioStations: InternetRadioStations? = null,
+)
+
+/** Internet radio stations configured on the server (Navidrome: Radios). */
+@Serializable
+data class InternetRadioStations(
+    val internetRadioStation: List<InternetRadioStation> = emptyList(),
+)
+
+@Serializable
+data class InternetRadioStation(
+    val id: String,
+    val name: String = "",
+    val streamUrl: String = "",
+    val homePageUrl: String? = null,
+    /** Navidrome 0.64+: set only when an image was uploaded for the station. */
+    val coverArt: String? = null,
 )
 
 /** Libraries (Navidrome ≥0.58) or music folders; ids are what musicFolderId takes. */

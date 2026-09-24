@@ -7,8 +7,8 @@ import studio.koeda.norrklang.data.repo.MusicRepository
  * key, title, icon and cover source in one entry, so a tile cannot
  * drift apart between [BrowseTree] and [HomeButtonArtwork].
  *
- * QUICK_PLAY tiles render on the Home tab, ALBUMS and ARTISTS tiles on the
- * Library tab. Declaration order is display order within each section; on
+ * QUICK_PLAY tiles render on the Home tab, ALBUMS, ARTISTS and RADIO tiles
+ * on the Library tab. Declaration order is display order within each section; on
  * the Home tab the generated mix sections follow QUICK_PLAY (see
  * [BrowseTree.homeButtons]).
  *
@@ -110,13 +110,20 @@ internal enum class HomeTile(
         section = Section.ARTISTS,
         iconRes = R.drawable.ic_browse_artists,
     ),
+    RADIO(
+        mediaId = MediaId.TabRadio,
+        artworkKey = "radio",
+        titleRes = R.string.browse_library_radio_stations,
+        section = Section.RADIO,
+        iconRes = R.drawable.ic_browse_radio,
+    ),
     ;
 
     /**
      * Which headed section a static tile belongs to (QUICK_PLAY on the Home
-     * tab, ALBUMS and ARTISTS on Library).
+     * tab, ALBUMS, ARTISTS and RADIO on Library).
      */
-    enum class Section { QUICK_PLAY, ALBUMS, ARTISTS }
+    enum class Section { QUICK_PLAY, ALBUMS, ARTISTS, RADIO }
 
     companion object {
         fun forKey(key: String): HomeTile? = entries.firstOrNull { it.artworkKey == key }

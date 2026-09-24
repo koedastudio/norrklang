@@ -500,4 +500,31 @@ class ServerSettingsRepositoryTest {
 
         assertNull(ServerSettingsRepository(store, BrokenCipher()).currentCredentials())
     }
+
+    @Test
+    fun `radio plays accumulate per station and rank by count then recency`() = runTest {
+        val repo = ServerSettingsRepository(dataStore(backgroundScope), FakeCipher())
+
+        repo.recordRadioPlay("rs-a", nowMs = 1_000)
+        repo.recordRadioPlay("rs-b", nowMs = 2_000)
+        repo.recordRadioPlay("rs-a", nowMs = 3_000)
+        repo.recordRadioPlay("rs|c", nowMs = 4_000)
+
+        val stats = repo.radioPlayStats.first()
+        assertEquals(listOf("rs-a", "rs|c", "rs-b"), stats.map { it.stationId })
+        assertEquals(2, stats[0].playCount)
+        assertEquals(3_000, stats[0].lastPlayedMs)
+    }
+
+    @Test
+    fun `radio play history is account-scoped`() = runTest {
+        val store = dataStore(backgroundScope)
+        val repo = ServerSettingsRepository(store, FakeCipher())
+        repo.save(credentials)
+        repo.recordRadioPlay("rs-a")
+
+        repo.clearAccount()
+
+        assertTrue(repo.radioPlayStats.first().isEmpty())
+    }
 }

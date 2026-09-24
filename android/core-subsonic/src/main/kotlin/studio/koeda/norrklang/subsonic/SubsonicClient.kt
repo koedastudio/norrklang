@@ -21,6 +21,7 @@ import studio.koeda.norrklang.subsonic.model.ArtistWithAlbumsID3
 import studio.koeda.norrklang.subsonic.model.Child
 import studio.koeda.norrklang.subsonic.model.Genre
 import studio.koeda.norrklang.subsonic.model.IndexID3
+import studio.koeda.norrklang.subsonic.model.InternetRadioStation
 import studio.koeda.norrklang.subsonic.model.MusicFolder
 import studio.koeda.norrklang.subsonic.model.Playlist
 import studio.koeda.norrklang.subsonic.model.PlaylistWithSongs
@@ -212,6 +213,15 @@ class SubsonicClient(
     suspend fun getTopSongs(artistName: String, count: Int = 20): List<Child> =
         call("getTopSongs.view", "artist" to artistName, "count" to count.toString())
             .topSongs?.song.orEmpty()
+
+    /**
+     * The internet radio stations configured on the server, server order.
+     * Stations without a stream URL are unplayable and dropped here.
+     */
+    suspend fun getInternetRadioStations(): List<InternetRadioStation> =
+        call("getInternetRadioStations.view")
+            .internetRadioStations?.internetRadioStation.orEmpty()
+            .filter { it.streamUrl.isNotBlank() }
 
     suspend fun getPlaylists(): List<Playlist> =
         call("getPlaylists.view").playlists?.playlist.orEmpty()

@@ -82,6 +82,20 @@ data class PlaylistDetail(
     val tracks: List<Track>,
 )
 
+/**
+ * An internet radio station configured on the server (Navidrome: Radios).
+ * [streamUrl] is the station's own public stream — not a server endpoint, so
+ * it carries no auth and is handed to the player as-is.
+ */
+data class RadioStation(
+    val id: String,
+    val name: String,
+    val streamUrl: String,
+    val homePageUrl: String? = null,
+    /** The server's own station image, when it has one (Navidrome upload); null otherwise. */
+    val artworkUrl: String? = null,
+)
+
 data class SearchResults(
     val artists: List<Artist>,
     val albums: List<Album>,

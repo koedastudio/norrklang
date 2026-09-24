@@ -2,8 +2,6 @@ package studio.koeda.norrklang.data.diagnostics
 
 import android.content.Context
 import android.os.Build
-import java.util.Base64
-import java.util.zip.Deflater
 
 /**
  * App/device facts a problem report leads with. Kept to what triage needs —
@@ -30,11 +28,9 @@ data class ReportMetadata(
  * Builds the URL behind the "report a problem" QR code on the diagnostics
  * screen: `https://norrklang.app/report#1.<base64url(rawDeflate(text))>`.
  *
- * The car transmits nothing — the QR is scanned by the user's phone, and the
- * log rides in the URL *fragment*, which browsers never send to the server.
- * The /report page (www/src/pages/report.astro) decodes it client-side and
- * offers a prefilled GitHub issue; both sides must agree on [FORMAT_VERSION],
- * raw-deflate ("deflate-raw" in the page) and unpadded base64url.
+ * Encoded by [FragmentPayload]; the /report page (www/src/pages/report.astro)
+ * decodes it client-side and offers a prefilled GitHub issue. Both sides
+ * must agree on [FORMAT_VERSION].
  *
  * QR codes scanned off a car screen stay reliable only so big, so the text is
  * trimmed (crash head + newest events) until the URL fits [MAX_URL_LENGTH] —
@@ -45,8 +41,7 @@ object ReportPayload {
     const val REPORT_URL = "https://norrklang.app/report"
     const val FORMAT_VERSION = "1"
 
-    /** Comfortable scan-off-a-screen ceiling; QR hard limit is ~2950 bytes. */
-    const val MAX_URL_LENGTH = 1500
+    const val MAX_URL_LENGTH = FragmentPayload.MAX_URL_LENGTH
 
     /** Trim starting points; halved together until the URL fits. */
     private const val CRASH_LINES = 12
@@ -90,21 +85,5 @@ object ReportPayload {
     }
 
     private fun encode(text: String): String =
-        "$REPORT_URL#$FORMAT_VERSION." +
-            Base64.getUrlEncoder().withoutPadding().encodeToString(deflateRaw(text))
-
-    // Raw deflate (nowrap) to match the page's DecompressionStream("deflate-raw").
-    private fun deflateRaw(text: String): ByteArray {
-        val deflater = Deflater(Deflater.BEST_COMPRESSION, /* nowrap = */ true)
-        deflater.setInput(text.toByteArray(Charsets.UTF_8))
-        deflater.finish()
-        val buffer = ByteArray(1024)
-        val out = java.io.ByteArrayOutputStream()
-        while (!deflater.finished()) {
-            val written = deflater.deflate(buffer)
-            out.write(buffer, 0, written)
-        }
-        deflater.end()
-        return out.toByteArray()
-    }
+        FragmentPayload.url(REPORT_URL, FORMAT_VERSION, text)
 }

@@ -21,6 +21,7 @@ import studio.koeda.norrklang.data.model.LibraryScope
 import studio.koeda.norrklang.data.model.MusicLibrary
 import studio.koeda.norrklang.data.model.Playlist
 import studio.koeda.norrklang.data.model.PlaylistDetail
+import studio.koeda.norrklang.data.model.RadioStation
 import studio.koeda.norrklang.data.model.SearchResults
 import studio.koeda.norrklang.data.model.StreamRef
 import studio.koeda.norrklang.data.model.Track
@@ -313,6 +314,21 @@ class SubsonicMusicRepository @Inject constructor(
     override suspend fun track(id: String): Track =
         cached("track/$id") { client ->
             client.getSong(id).toDomain()
+        }
+
+    // Unscoped: stations belong to the server, not a library. Servers
+    // predating the endpoint answer NotFound, which reads as "no stations".
+    override suspend fun radioStations(): List<RadioStation> =
+        cached("radio-stations") { client ->
+            emptyWhenMissing { client.getInternetRadioStations() }.map {
+                RadioStation(
+                    id = it.id,
+                    name = it.name,
+                    streamUrl = it.streamUrl,
+                    homePageUrl = it.homePageUrl,
+                    artworkUrl = it.coverArt?.takeIf(String::isNotBlank)?.let { id -> artworkUri(id) },
+                )
+            }
         }
 
     // Cached so the host's onSearch → onGetSearchResult (paged) sequence hits

@@ -25,6 +25,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -39,7 +40,8 @@ import studio.koeda.norrklang.ui.theme.LocalFormDimens
 
 /** Which page of the settings UI is showing; sub-pages return to [Main]. */
 private enum class SettingsPage {
-    Main, Libraries, Quality, ScrobbleArtists, ScrobblePlaylists, ScrobbleLibraries, Diagnostics,
+    Main, Libraries, Quality, ScrobbleArtists, ScrobblePlaylists, ScrobbleLibraries, SavedSongs,
+    Diagnostics,
 }
 
 /**
@@ -64,8 +66,22 @@ fun SettingsScreen(
     val autoplaySimilar by viewModel.autoplaySimilar.collectAsStateWithLifecycle()
     val scrobble by viewModel.scrobbleSettings.collectAsStateWithLifecycle()
     val librariesSummary by viewModel.librariesSummary.collectAsStateWithLifecycle()
+    val savedSongs by viewModel.savedSongs.collectAsStateWithLifecycle()
     val dimens = LocalFormDimens.current
     var page by rememberSaveable { mutableStateOf(SettingsPage.Main) }
+
+    if (page == SettingsPage.SavedSongs) {
+        val export by viewModel.savedSongsExport.collectAsStateWithLifecycle()
+        SavedSongsPage(
+            songs = savedSongs,
+            export = export,
+            onRemove = viewModel::removeSavedSong,
+            onClear = viewModel::clearSavedSongs,
+            onBack = { page = SettingsPage.Main },
+            modifier = modifier,
+        )
+        return
+    }
 
     if (page == SettingsPage.Diagnostics) {
         LaunchedEffect(Unit) { viewModel.loadDiagnostics() }
@@ -226,6 +242,11 @@ fun SettingsScreen(
                     onClick = { page = SettingsPage.ScrobbleLibraries },
                 )
                 HorizontalDivider()
+                SavedSongsRow(
+                    count = savedSongs?.size,
+                    onClick = { page = SettingsPage.SavedSongs },
+                )
+                HorizontalDivider()
                 PrivacyPolicyRow()
                 HorizontalDivider()
                 DiagnosticsRow(onClick = { page = SettingsPage.Diagnostics })
@@ -250,6 +271,15 @@ fun SettingsScreen(
                     subtitle = stringResource(R.string.signin_subtitle),
                 )
                 HorizontalDivider()
+                // The list is the device's, not the server's: still worth
+                // reaching after a sign-out, but only once it has entries.
+                if (!savedSongs.isNullOrEmpty()) {
+                    SavedSongsRow(
+                        count = savedSongs?.size,
+                        onClick = { page = SettingsPage.SavedSongs },
+                    )
+                    HorizontalDivider()
+                }
                 PrivacyPolicyRow()
                 HorizontalDivider()
                 // Reachable signed out too: a failure that signed the user
@@ -334,8 +364,23 @@ private fun ScrobbleExclusionPage(
                 modifier = modifier,
             )
         }
-        SettingsPage.Main, SettingsPage.Libraries, SettingsPage.Quality, SettingsPage.Diagnostics -> Unit
+        SettingsPage.Main, SettingsPage.Libraries, SettingsPage.Quality, SettingsPage.SavedSongs,
+        SettingsPage.Diagnostics -> Unit
     }
+}
+
+/** Navigation row into the songs hearted on radio (see SavedSongsPage). */
+@Composable
+private fun SavedSongsRow(count: Int?, onClick: () -> Unit) {
+    NavigationRow(
+        title = stringResource(R.string.settings_saved_songs),
+        subtitle = if (count == null || count == 0) {
+            stringResource(R.string.settings_saved_songs_hint)
+        } else {
+            pluralStringResource(R.plurals.settings_saved_songs_count, count, count)
+        },
+        onClick = onClick,
+    )
 }
 
 /**

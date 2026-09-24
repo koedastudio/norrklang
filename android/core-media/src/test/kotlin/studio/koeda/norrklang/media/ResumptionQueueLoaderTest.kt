@@ -3,7 +3,9 @@ package studio.koeda.norrklang.media
 import androidx.media3.common.MediaItem
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlinx.coroutines.test.runTest
+import studio.koeda.norrklang.data.model.RadioStation
 import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.repo.MusicException
 import studio.koeda.norrklang.data.repo.MusicRepository
@@ -19,7 +21,28 @@ class ResumptionQueueLoaderTest {
         bestOfMixes = BestOfMixesSession(repository),
         catalogMixes = CatalogMixesSession(repository),
         buildItem = { track, container -> MediaItem.Builder().setMediaId(MediaId.Track(track.id, container).encode()).build() },
+        buildStation = { station -> MediaItem.Builder().setMediaId(MediaId.RadioStation(station.id).encode()).build() },
     )
+
+    @Test
+    fun `a radio station resumes alone from the live edge`() = runTest {
+        val repo = object : FakeMusicRepository() {
+            override suspend fun radioStations() =
+                listOf(RadioStation("rs-1", "KEXP", "https://kexp.example/stream"))
+        }
+        val queue = loader(repo).restore(ResumptionState(MediaId.RadioStation("rs-1").encode(), 90_000))!!
+        assertEquals(listOf("station/rs-1"), queue.mediaItems.map { it.mediaId })
+        assertEquals(0, queue.startIndex)
+        assertEquals(0L, queue.startPositionMs)
+    }
+
+    @Test
+    fun `a station removed from the server resumes nothing`() = runTest {
+        val repo = object : FakeMusicRepository() {
+            override suspend fun radioStations() = emptyList<RadioStation>()
+        }
+        assertNull(loader(repo).restore(ResumptionState(MediaId.RadioStation("rs-1").encode(), 0)))
+    }
 
     @Test
     fun `song radio resumes as the saved track first over fresh similars`() = runTest {

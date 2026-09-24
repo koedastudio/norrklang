@@ -99,5 +99,18 @@
   <string name="settings_diagnostics_clear">Clear log</string>
   <string name="settings_diagnostics_report_title">Report a problem</string>
   <string name="settings_diagnostics_report_hint">Scan with your phone camera to open a pre-filled problem report. Nothing is sent from the car — the log travels inside the scanned link.</string>
+  <string name="settings_saved_songs">Saved from radio</string>
+  <string name="settings_saved_songs_hint">Songs you hearted while listening to a station</string>
+  <plurals name="settings_saved_songs_count">
+    <item quantity="one">%1$d song</item>
+    <item quantity="other">%1$d songs</item>
+  </plurals>
+  <string name="settings_saved_songs_empty">No saved songs yet. While a radio station plays, tap the heart to note the song here.</string>
+  <string name="settings_saved_songs_remove">Remove</string>
+  <string name="settings_saved_songs_clear">Clear list</string>
+  <string name="settings_saved_songs_export_title">Open on your phone</string>
+  <string name="settings_saved_songs_export_hint">Scan with your phone camera to see the list there. Nothing is sent from the car — the songs travel inside the scanned link.</string>
+  <!-- Shown under the hint when the QR code can't hold the whole list. -->
+  <string name="settings_saved_songs_export_partial">The code holds the %1$d most recent songs.</string>
   <string name="settings_app_version">App version %1$s</string>
 </resources>

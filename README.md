@@ -75,16 +75,17 @@ phone/desktop clients in this monorepo.
 - Streaming quality: Original / 320 / 192 / 128 kbps, independently for Wi-Fi
   and cellular. New track loads use the current tier; retries and seeks retain
   the same encoding so byte offsets stay valid
-- Browse: Home with Quick play, Made for you (Best of / Similar to), Genre and
-  Decade mixes, favourite artists and recently added tracks; Playlists;
-  Library with all artists, all albums and the recently/most played, new and
-  favourite album collections
+- Browse: Home with Quick play, Made for you (Best of / Similar to), Radio,
+  Genre and Decade mixes, favourite artists and recently added tracks;
+  Playlists; Library with all artists, all albums, the recently/most played,
+  new and favourite album collections, and internet radio (Navidrome/Subsonic)
 - Libraries: choose which of the server's music libraries to show (Navidrome
   0.58+ libraries, Plex music sections, Jellyfin music libraries) — picked at
   sign-in when there are several, changed any time in Settings; playlists
   always show every library
 - Full playback via ExoPlayer: queue, shuffle, seek, audio focus, artwork
-- Favourites from the car UI: heart the playing track, heart albums while browsing
+- Favourites from the car UI: heart the playing track, heart albums while browsing,
+  save songs playing on radio (Settings → Saved from radio)
 - Voice/keyboard search across artists, albums and tracks
 - Play reporting back to the server (Navidrome scrobbles, Plex timelines, Jellyfin sessions),
   with on/off and per-artist/per-playlist/per-library exclusions

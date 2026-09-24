@@ -10,6 +10,7 @@ import studio.koeda.norrklang.data.model.Genre
 import studio.koeda.norrklang.data.model.MusicLibrary
 import studio.koeda.norrklang.data.model.Playlist
 import studio.koeda.norrklang.data.model.PlaylistDetail
+import studio.koeda.norrklang.data.model.RadioStation
 import studio.koeda.norrklang.data.model.SearchResults
 import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.session.MusicProvider
@@ -90,6 +91,8 @@ class RoutingMusicRepository @Inject constructor(
     override suspend fun playlists(): List<Playlist> = active().playlists()
     override suspend fun playlist(id: String): PlaylistDetail = active().playlist(id)
     override suspend fun track(id: String): Track = active().track(id)
+    override suspend fun radioStations(): List<RadioStation> = active().radioStations()
+    override suspend fun radioStation(id: String): RadioStation = active().radioStation(id)
     override suspend fun search(query: String): SearchResults = active().search(query)
     override suspend fun scrobble(
         trackId: String,

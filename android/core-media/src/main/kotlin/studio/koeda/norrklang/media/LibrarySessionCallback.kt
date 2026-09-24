@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.withTimeoutOrNull
 import studio.koeda.norrklang.data.diagnostics.Diagnostics
+import studio.koeda.norrklang.data.radio.SavedRadioSongs
 import studio.koeda.norrklang.data.repo.MusicRepository
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.data.repo.MusicException
@@ -42,6 +43,7 @@ internal class LibrarySessionCallback(
     private val scope: CoroutineScope,
     private val sessionManager: SessionManager,
     private val repository: MusicRepository,
+    private val savedSongs: SavedRadioSongs,
     private val browseTree: BrowseTree,
     private val resumption: ResumptionQueueLoader,
     private val voiceSearch: VoiceSearchResolver,
@@ -94,9 +96,16 @@ internal class LibrarySessionCallback(
         return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
     }
 
-    /** Playback-row heart: toggles the *currently playing* track's favorite. */
+    /**
+     * Playback-row heart: toggles the *currently playing* track's favorite —
+     * or, on a radio station, saves the song playing ([toggleRadioSong]).
+     */
     private fun toggleTrackFavorite(session: MediaSession): ListenableFuture<SessionResult> {
-        val currentMediaId = session.player.currentMediaItem?.mediaId
+        val current = session.player.currentMediaItem
+        val currentMediaId = current?.mediaId
+        if (currentMediaId?.let(MediaId::parse) is MediaId.RadioStation) {
+            return toggleRadioSong(session, current)
+        }
         return scope.future {
             val trackId = (currentMediaId?.let(MediaId::parse) as? MediaId.Track)?.id
                 ?: return@future SessionResult(SessionError.ERROR_INVALID_STATE)
@@ -123,6 +132,38 @@ internal class LibrarySessionCallback(
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
+                SessionResult(SessionError.ERROR_IO)
+            }
+        }
+    }
+
+    /**
+     * The heart on a station notes the song the stream reports (see
+     * [SavedRadioSongs]); nothing to save while the stream hasn't named one.
+     */
+    private fun toggleRadioSong(session: MediaSession, item: MediaItem): ListenableFuture<SessionResult> {
+        val song = radioSong(item) ?: return Futures.immediateFuture(
+            SessionResult(SessionError.ERROR_INVALID_STATE),
+        )
+        return scope.future {
+            try {
+                val saved = savedSongs.toggle(song.station, song.title)
+                // Only flip the button if that song is still what's playing.
+                if (session.player.currentMediaItem?.let(::radioSong) == song) {
+                    session.setMediaButtonPreferences(
+                        playbackButtons(
+                            context,
+                            shuffleOn = session.player.shuffleModeEnabled,
+                            favorite = saved,
+                            radio = true,
+                        ),
+                    )
+                }
+                SessionResult(SessionResult.RESULT_SUCCESS)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Diagnostics.record("save-radio-song", e)
                 SessionResult(SessionError.ERROR_IO)
             }
         }
@@ -350,6 +391,8 @@ internal class LibrarySessionCallback(
                 repository.album(id.id).tracks.map { MediaItemFactory.playableTrack(it, id) }
             is MediaId.Playlist ->
                 repository.playlist(id.id).tracks.map { MediaItemFactory.playableTrack(it, id) }
+            is MediaId.RadioStation ->
+                listOf(browseTree.playableStation(repository.radioStation(id.id)))
             else -> emptyList()
         }
 
