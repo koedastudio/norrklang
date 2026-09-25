@@ -11,17 +11,17 @@ import screenLibrary from '../assets/screen-library.webp';
 const features = [
   {
     title: 'Home screen',
-    body: 'Quick play, favourite artists, recently added tracks and mixes made from your own library — Best of, Similar to, genres and decades.',
+    body: 'Quick play, favourite artists, recently added tracks, the radio stations you play most, and mixes made from your own library — Best of, Similar to, genres and decades.',
     icon: 'home',
   },
   {
     title: 'Library',
-    body: 'Artists, albums, playlists and favourites, with long lists split into alphabetical sections so they’re quick to scroll.',
+    body: 'Artists, albums, playlists, favourites and your server’s internet radio stations, with long lists split into alphabetical sections so they’re quick to scroll.',
     icon: 'library',
   },
   {
     title: 'Playback',
-    body: 'Play, shuffle, seek, queue and heart the current track. Picks up where you left off after the car restarts, and adds similar songs when the queue runs out.',
+    body: 'Play, shuffle, seek, queue and heart the current track — on radio, the heart saves the song for later. Picks up where you left off after the car restarts, and adds similar songs when the queue runs out.',
     icon: 'play',
   },
   {
@@ -36,7 +36,7 @@ const features = [
   },
   {
     title: 'Scrobbling',
-    body: 'Play counts go to your own server, not a third party. Exclude artists or playlists, or turn it off in the settings.',
+    body: 'Play counts go to your own server, not a third party. Exclude artists, playlists or whole libraries, or turn it off in the settings.',
     icon: 'equalizer',
   },
 ];
@@ -45,7 +45,7 @@ const requirements = [
   {
     n: '01',
     title: 'A Navidrome, Plex or Jellyfin server',
-    body: 'Norrklang plays music from your own server. It’s built and tested against Navidrome, works with other servers that speak the Subsonic API, connects to a Plex Media Server by linking your Plex account, and signs in to Jellyfin with your server address and account.',
+    body: 'Norrklang plays music from your own server. It’s built and tested against Navidrome, works with other servers that speak the Subsonic API, connects to a Plex Media Server by linking your Plex account, and signs in to Jellyfin with your server address and account. If the server has several music libraries, you pick which ones to show.',
   },
   {
     n: '02',
@@ -55,7 +55,7 @@ const requirements = [
   {
     n: '03',
     title: 'A secure connection',
-    body: 'Your Navidrome or Jellyfin server needs to be reachable over HTTPS. If you already reach it from outside your home network, you’re most likely all set. Plex connections use Plex’s own secure addresses, so there’s nothing extra to set up.',
+    body: 'Your Navidrome or Jellyfin server needs to be reachable over HTTPS. If you already reach it from outside your home network, you’re most likely all set. Plex connections use Plex’s own secure addresses, so there’s nothing extra to set up. Internet radio stations play from whatever address your server lists for them, plain http included.',
   },
 ];
 
@@ -209,9 +209,10 @@ const iconPaths: Record<string, string> = {
         <p class="kicker">Private by design</p>
         <h2>Your listening stays between your car and your server</h2>
         <p class="section__prose">
-          No accounts, no analytics, no ads. The app talks to your server and nothing else.
-          When you sign in, only an encrypted token is kept in the car — your password is
-          never stored.
+          No accounts, no analytics, no ads. The app talks to your server and nothing else —
+          apart from the radio stations you choose to play, which stream from their own servers.
+          When you sign in, only an encrypted token is kept in the car; your password is stored,
+          encrypted the same way, only for the few servers that can’t verify tokens.
         </p>
       </div>
       <div class="promise__col">

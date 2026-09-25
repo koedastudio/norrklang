@@ -5,7 +5,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow semver (`norrklang.version` in `android/gradle.properties`
 is the single source of truth).
 
-## [Unreleased]
+## [1.3.0] — 2026-09-25
 
 ### Added
 
@@ -34,11 +34,21 @@ is the single source of truth).
   that support tappable subtitles (`KEY_SUBTITLE_LINK_MEDIA_ID`); other hosts
   show it as before.
 
+### Changed
+
+- Homepage, README and privacy policy updated for internet radio, library
+  selection and password-only Subsonic sign-in; the policy (effective
+  2026-09-25) now covers radio streams fetched from the station's own host
+  and the radio data kept on the device.
+
 ### Fixed
 
 - Tracks on a capped quality tier no longer restart from the beginning
   when a proxy or carrier NAT drops the idle connection; a dropped
   connection now resumes where it stopped (#9).
+- Website: the problem-report and saved-songs pages' scripts are now served
+  as files and allowed by the site's Content Security Policy, which had
+  blocked them inline and left the report page empty.
 
 ## [1.2.1] — 2026-09-17
 

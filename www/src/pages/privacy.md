@@ -2,7 +2,7 @@
 layout: ../layouts/Legal.astro
 title: Privacy Policy
 description: What Norrklang stores, what it sends, and to whom. No analytics, no third parties.
-effectiveDate: 2026-09-17
+effectiveDate: 2026-09-25
 ---
 
 Norrklang is a music player for [Navidrome](https://www.navidrome.org/) and
@@ -32,8 +32,15 @@ All data the app stores stays **on your device**:
   or onto a new device.
 - **Playback state** — the last played track and position, so playback can
   resume after a restart.
-- **Your settings** — whether scrobbling is on, any artists or playlists you
-  exclude from it, autoplay, and the streaming quality tier for Wi-Fi and for
+- **Radio** — which of your server's internet radio stations you have
+  listened to and how often (the 50 most listened, so Home can show the ones
+  you play most), and the songs you heart while a station plays: title,
+  station name and time, up to 500 entries in a file on the device, listed
+  under **Settings → Saved from radio** until you remove them. Your server
+  keeps no radio play counts, and none of this is sent to it.
+- **Your settings** — which of your server's music libraries to show,
+  whether scrobbling is on, any artists, playlists or libraries you exclude
+  from it, autoplay, and the streaming quality tier for Wi-Fi and for
   mobile data. Which of the two applies is decided on the device from the
   car's current connection; nothing about the network is sent anywhere.
 - **Caches** — library listings and cover art fetched from your server, kept
@@ -46,11 +53,13 @@ All data the app stores stays **on your device**:
   query strings — which can carry authentication tokens — are stripped. The
   log never leaves the device on its own (see below for the report flow).
 
-Signing out deletes the stored connection details, your settings and the
-playback state. One exception: the random device identifier the app mints for
-Plex is kept, so that linking again does not register a duplicate device on
-your Plex account — it identifies the install, not you, and it leaves with the
-app. Uninstalling the app deletes everything.
+Signing out deletes the stored connection details, your settings, the
+playback state and the radio listening history. Two things stay: the songs
+saved from radio, which hold titles and station names rather than anything
+about the account, until you clear the list; and the random device identifier
+the app mints for Plex, so that linking again does not register a duplicate
+device on your Plex account — it identifies the install, not you. Uninstalling
+the app deletes everything.
 
 ## What the app sends, and to whom
 
@@ -70,6 +79,14 @@ governed by [Plex's privacy policy](https://www.plex.tv/about/privacy-legal/),
 not this one. Jellyfin sign-in involves no such intermediary: the app talks to
 your Jellyfin server alone.
 
+**Internet radio** is the one case where audio comes from somewhere other than
+your server. Your Navidrome/Subsonic server only lists the stations; when you
+play one, the car streams from the station's own server, at the address your
+server lists for it, so that station's operator sees what it sees of any
+listener — the stream request and your car's IP address. Some stations offer
+only plain `http://` streams, which the app plays as they are; the connection
+to your own server stays HTTPS.
+
 The **Diagnostics** screen can show a QR code that lets you share the
 sanitized log when reporting a problem. The car uploads nothing: the log is
 encoded into the link itself (in the URL fragment, which browsers do not send
@@ -77,6 +94,10 @@ to any server), and the page at norrklang.app/report decodes it locally on
 your phone. The report reaches the developers only if you then choose to
 submit the pre-filled GitHub issue, under
 [GitHub's privacy policy](https://docs.github.com/en/site-policy/privacy-policies/github-privacy-statement).
+
+The **Saved from radio** screen offers a QR code that works the same way: the
+list is encoded into the link itself and the page at norrklang.app/songs
+decodes it on your phone. Nothing is uploaded by the car or by the page.
 
 Norrklang has **no analytics, no advertising, no crash reporting, and no
 third-party services** — the app bundles no Google or other third-party
@@ -103,8 +124,9 @@ how the car handles it is governed by the car maker's policies.
 
 ## This website
 
-norrklang.app is a static site: it sets no cookies, runs no scripts, and uses
-no analytics. It is served by [Cloudflare](https://www.cloudflare.com/privacypolicy/),
+norrklang.app is a static site: it sets no cookies and uses no analytics. The
+only scripts it runs are on the /report and /songs pages, which decode the link
+you scanned inside your browser and contact no server. It is served by [Cloudflare](https://www.cloudflare.com/privacypolicy/),
 which as the hosting provider processes standard request metadata (such as IP
 address and requested URL) to deliver the site and protect it from abuse.
 Koeda Studio does not collect or retain visitor logs.

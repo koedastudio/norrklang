@@ -40,6 +40,9 @@ and generated mixes — Best of, Similar to, genres and decades
 • Autoplay keeps the music going with similar songs when the queue runs out
 (can be turned off)
 • Add albums and songs as favourites while listening
+• Internet radio: the stations set up on your Navidrome server, with the
+ones you listen to most on Home. Heart a song you hear to note it — the list
+stays in the car, with a QR code to open it on your phone
 • Voice and keyboard search across artists, albums and tracks
 • Ask the car's assistant to play an artist, album, song or playlist
 • Streaming quality per connection: original files on Wi-Fi, a capped
@@ -54,7 +57,8 @@ Navidrome and Subsonic
 • Sign in with your server address and account. Only a token is stored,
 encrypted on the device; the password itself is kept (encrypted) only for
 servers such as Nextcloud Music that cannot verify tokens
-• HTTPS required for the server address (radio streams may be plain http)
+• HTTPS required for the server address; radio stations stream straight from
+their own address, plain http included
 
 Plex
 • Link your Plex account with a short code or QR scan — no password typed in
@@ -68,7 +72,8 @@ Jellyfin
 
 Private by design
 No ads, no analytics, no crash reporting, no third-party services. The app
-talks only to your server (plus plex.tv to link a Plex account). Credentials
+talks only to your server (plus plex.tv to link a Plex account, and the radio
+stations you choose to play). Credentials
 are encrypted and stay on the device. Diagnostics stay on the device too and
 are shared only if you choose to submit a problem report.
 
@@ -79,15 +84,17 @@ Privacy policy: https://norrklang.app/privacy
 
 ## Release notes ("What's new", ≤ 500 characters)
 
-For the next release:
+For the 1.3.0 release:
 
 ```
-• Libraries: choose which of your server's music libraries to show
-(Navidrome 0.58+, Plex music sections, Jellyfin libraries) — at sign-in or
-any time in Settings
-• Per-library "don't report plays" next to the artist and playlist exclusions
-• Existing Plex and Jellyfin sign-ins keep the library they had until you
-change it
+• Internet radio: your Navidrome server's stations in Library, the ones you
+play most on Home. Heart a song to save it, then open the list on your phone
+with a QR code
+• Libraries: choose which of your server's music libraries to show (Navidrome
+0.58+, Plex, Jellyfin), with a per-library "don't report plays" option
+• Sign in to servers that only accept the password itself, such as Nextcloud
+Music
+• Capped-quality tracks no longer restart after a dropped connection
 ```
 
 For the 1.2.1 release:

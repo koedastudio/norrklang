@@ -1,8 +1,9 @@
 # norrklang.app
 
-The Norrklang website: a landing page and the privacy policy. Astro, static
-output, zero client-side JavaScript. `www/` is self-contained, like
-`android/` — the repo root has no `package.json`.
+The Norrklang website: a landing page, the privacy policy, and two pages
+(`/report`, `/songs`) that decode the app's QR links in the browser. Astro,
+static output; those two decoders are the only client-side JavaScript. `www/`
+is self-contained, like `android/` — the repo root has no `package.json`.
 
 ## Develop
 
@@ -54,9 +55,11 @@ One-time setup:
 
 ## Notes
 
-- **CSP is `default-src 'none'`** (`public/_headers`) — possible only because
-  the site ships zero JavaScript and `inlineStylesheets: 'never'` keeps styles
-  external. Adding a script means loosening the CSP deliberately, not deleting it.
+- **CSP is `default-src 'none'` plus `script-src 'self'`** (`public/_headers`).
+  Styles and scripts must be external files: `inlineStylesheets: 'never'` and
+  `assetsInlineLimit: 0` in `astro.config.mjs` keep them so, because anything
+  inline would need `'unsafe-inline'`. Adding a third-party script or a fetch
+  means loosening the CSP deliberately, not deleting it.
 - **`html_handling: "drop-trailing-slash"`** in `wrangler.jsonc` matches
   Astro's `trailingSlash: 'never'`; the default would 307 every canonical URL.
 - **The `overrides` in `package.json`** work around transitive pins from

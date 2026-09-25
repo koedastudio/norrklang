@@ -13,4 +13,11 @@ export default defineConfig({
     // Inlining would force `style-src 'unsafe-inline'` in public/_headers.
     inlineStylesheets: 'never',
   },
+  vite: {
+    build: {
+      // Same reason for scripts: Astro inlines small ones, which the CSP's
+      // `script-src 'self'` would block. Always emit them as files.
+      assetsInlineLimit: 0,
+    },
+  },
 });

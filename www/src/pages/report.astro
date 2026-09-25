@@ -42,52 +42,60 @@ import { ISSUES_URL } from '../config';
       </p>
       <pre id="log" class="report__log"></pre>
       <p class="report__actions">
-        <a id="github" class="btn btn--primary" target="_blank" rel="noopener">Report on GitHub</a>
+        <a id="github" class="btn btn--primary" target="_blank" rel="noopener" data-issues-url={ISSUES_URL}>Report on GitHub</a>
         <button id="copy" class="btn btn--ghost" type="button">Copy log</button>
       </p>
     </section>
   </article>
 </Base>
 
-<script define:vars={{ issuesUrl: ISSUES_URL }}>
+<script>
+  // Bundled as a file, not inlined: the CSP allows only `script-src 'self'`.
+  // Page values arrive via data attributes for the same reason (no define:vars).
   const FORMAT_VERSION = '1';
 
-  function show(id) {
+  function byId<T extends HTMLElement>(id: string): T {
+    return document.getElementById(id) as T;
+  }
+
+  const github = byId<HTMLAnchorElement>('github');
+  const issuesUrl = github.dataset.issuesUrl ?? '';
+
+  function show(id: string) {
     for (const section of ['empty', 'failed', 'report']) {
-      document.getElementById(section).hidden = section !== id;
+      byId(section).hidden = section !== id;
     }
   }
 
   /** Unpadded base64url (RFC 4648 §5) to bytes — mirrors ReportPayload. */
-  function decodeBase64Url(text) {
+  function decodeBase64Url(text: string): Uint8Array<ArrayBuffer> {
     const base64 = text.replaceAll('-', '+').replaceAll('_', '/');
     const binary = atob(base64);
     return Uint8Array.from(binary, (c) => c.charCodeAt(0));
   }
 
   /** Raw-deflate bytes to text — the counterpart of Java Deflater(nowrap). */
-  async function inflateRaw(bytes) {
+  async function inflateRaw(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
     const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
     return await new Response(stream).text();
   }
 
-  function render(text) {
-    document.getElementById('log').textContent = text;
+  function render(text: string) {
+    byId('log').textContent = text;
 
     // First payload line is "Norrklang <version> · API <n> · <device>".
     const summary = text.split('\n', 1)[0];
     const title = `Problem report: ${summary}`;
     const body = `Scanned from the in-car diagnostics screen.\n\n\`\`\`text\n${text}\n\`\`\`\n`;
-    document.getElementById('github').href =
-      `${issuesUrl}/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`;
+    github.href = `${issuesUrl}/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`;
 
-    document.getElementById('copy').textContent = 'Copy log';
+    byId('copy').textContent = 'Copy log';
     show('report');
   }
 
-  document.getElementById('copy').addEventListener('click', async () => {
-    await navigator.clipboard.writeText(document.getElementById('log').textContent);
-    document.getElementById('copy').textContent = 'Copied';
+  byId('copy').addEventListener('click', async () => {
+    await navigator.clipboard.writeText(byId('log').textContent ?? '');
+    byId('copy').textContent = 'Copied';
   });
 
   async function main() {
