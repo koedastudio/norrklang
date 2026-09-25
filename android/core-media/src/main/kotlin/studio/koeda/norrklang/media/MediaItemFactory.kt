@@ -26,6 +26,14 @@ internal object MediaItemFactory {
     /** Extras key for the track's server library id, when the provider knew it (see PlaybackReporter). */
     const val EXTRA_LIBRARY_ID = "studio.koeda.norrklang.extra.LIBRARY_ID"
 
+    /**
+     * androidx.car.app.mediaextensions.MetadataExtras.KEY_SUBTITLE_LINK_MEDIA_ID,
+     * inlined to avoid the car-app dependency. Supporting hosts make the
+     * now-playing subtitle tap through to this media id; others ignore it.
+     */
+    const val EXTRA_SUBTITLE_LINK_MEDIA_ID =
+        "androidx.car.app.mediaextensions.KEY_SUBTITLE_LINK_MEDIA_ID"
+
     /** Extras that make a browsable node render its children as an artwork grid. */
     fun gridChildrenExtras(): Bundle = Bundle().apply {
         putInt(
@@ -211,6 +219,9 @@ internal object MediaItemFactory {
         MediaMetadata.Builder()
             .setTitle(track.title)
             .setArtist(track.artistName)
+            // The subtitle link needs an explicit subtitle; hosts show the
+            // artist field on the playback view regardless.
+            .setSubtitle(track.artistName)
             .setAlbumTitle(track.albumTitle)
             .setTrackNumber(track.trackNumber)
             .setDiscNumber(track.discNumber)
@@ -221,7 +232,10 @@ internal object MediaItemFactory {
             .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
             .apply {
                 val extras = Bundle()
-                track.artistId?.let { extras.putString(EXTRA_ARTIST_ID, it) }
+                track.artistId?.let {
+                    extras.putString(EXTRA_ARTIST_ID, it)
+                    extras.putString(EXTRA_SUBTITLE_LINK_MEDIA_ID, MediaId.Artist(it).encode())
+                }
                 track.libraryId?.let { extras.putString(EXTRA_LIBRARY_ID, it) }
                 groupTitle?.let {
                     extras.putString(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_GROUP_TITLE, it)

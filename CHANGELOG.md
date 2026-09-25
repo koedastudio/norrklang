@@ -30,6 +30,9 @@ is the single source of truth).
 - Save songs from radio with the playback heart; the list lives on the
   device under Settings → Saved from radio, with a QR code that opens it on
   your phone.
+- The artist line in the now-playing view links to the artist on car hosts
+  that support tappable subtitles (`KEY_SUBTITLE_LINK_MEDIA_ID`); other hosts
+  show it as before.
 
 ### Fixed
 
