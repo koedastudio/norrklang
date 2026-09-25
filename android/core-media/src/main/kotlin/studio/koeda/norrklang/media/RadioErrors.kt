@@ -1,9 +1,11 @@
 package studio.koeda.norrklang.media
 
 import android.content.Context
+import androidx.annotation.OptIn
 import androidx.annotation.StringRes
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.util.UnstableApi
 
 /**
  * Rewrites a player error raised while a radio station is playing into what
@@ -22,6 +24,7 @@ internal object RadioErrors {
         UNSUPPORTED(R.string.error_radio_unsupported),
     }
 
+    @OptIn(UnstableApi::class) // 4-arg PlaybackException, extras
     fun present(context: Context, current: MediaItem?, error: PlaybackException): PlaybackException {
         val station = stationName(current) ?: return error
         return PlaybackException(

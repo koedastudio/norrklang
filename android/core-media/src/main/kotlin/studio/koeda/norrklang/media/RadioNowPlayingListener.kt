@@ -1,8 +1,10 @@
 package studio.koeda.norrklang.media
 
+import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Metadata
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.extractor.metadata.icy.IcyInfo
 
 /**
@@ -11,6 +13,7 @@ import androidx.media3.extractor.metadata.icy.IcyInfo
  * the player's merged metadata — so the current item is re-issued with the
  * ICY title. Same URI, so ExoPlayer updates it in place without a reload.
  */
+@OptIn(UnstableApi::class) // Metadata, IcyInfo
 internal class RadioNowPlayingListener(private val player: Player) : Player.Listener {
 
     override fun onMetadata(metadata: Metadata) {
