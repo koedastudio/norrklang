@@ -160,6 +160,13 @@ internal object MediaItemFactory {
     )
 
     /**
+     * The track's own artist: [recorded] once a pass of [withSubtitle] has run
+     * ("" for none), else the artist [field] as the track was built.
+     */
+    internal fun realArtist(recorded: String?, field: CharSequence?): String? =
+        if (recorded != null) recorded.ifEmpty { null } else field?.toString()
+
+    /**
      * A playable station carrying its public stream URL as-is (no auth or
      * quality resolution). [artistLine] sits under the title, which ICY
      * metadata replaces with the current song once the stream plays.
@@ -237,8 +244,10 @@ internal object MediaItemFactory {
      */
     fun withSubtitle(metadata: MediaMetadata, subtitle: TrackSubtitle): MediaMetadata {
         val extras = metadata.extras?.let(::Bundle) ?: Bundle()
-        val artist = extras.getString(EXTRA_ARTIST_NAME) ?: metadata.artist?.toString()
-        artist?.let { extras.putString(EXTRA_ARTIST_NAME, it) }
+        val artist = realArtist(extras.getString(EXTRA_ARTIST_NAME), metadata.artist)
+        // Recorded even when missing (as ""): a later pass must never take a
+        // composed artist field for the artist.
+        extras.putString(EXTRA_ARTIST_NAME, artist.orEmpty())
         val composed = subtitle.line(artist, metadata.albumTitle?.toString())
         val link = if (composed == null) {
             extras.getString(EXTRA_ARTIST_ID)?.let { MediaId.Artist(it).encode() }
