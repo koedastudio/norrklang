@@ -6,6 +6,7 @@ import androidx.media3.common.Metadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.extractor.metadata.icy.IcyInfo
+import studio.koeda.norrklang.data.settings.RadioTitle
 
 /**
  * Shows the song a station is playing: ExoPlayer decodes the stream's ICY
@@ -14,7 +15,10 @@ import androidx.media3.extractor.metadata.icy.IcyInfo
  * ICY title. Same URI, so ExoPlayer updates it in place without a reload.
  */
 @OptIn(UnstableApi::class) // Metadata, IcyInfo
-internal class RadioNowPlayingListener(private val player: Player) : Player.Listener {
+internal class RadioNowPlayingListener(
+    private val player: Player,
+    private val radioTitle: () -> RadioTitle,
+) : Player.Listener {
 
     override fun onMetadata(metadata: Metadata) {
         val item = player.currentMediaItem ?: return
@@ -29,6 +33,8 @@ internal class RadioNowPlayingListener(private val player: Player) : Player.List
         player.replaceMediaItem(player.currentMediaItemIndex, item.withTitle(title))
     }
 
-    private fun MediaItem.withTitle(title: String): MediaItem =
-        buildUpon().setMediaMetadata(mediaMetadata.buildUpon().setTitle(title).build()).build()
+    private fun MediaItem.withTitle(title: String): MediaItem {
+        val metadata = mediaMetadata.buildUpon().setTitle(title).build()
+        return buildUpon().setMediaMetadata(MediaItemFactory.withRadioTitle(metadata, radioTitle())).build()
+    }
 }

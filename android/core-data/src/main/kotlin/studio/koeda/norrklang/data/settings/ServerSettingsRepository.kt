@@ -111,6 +111,7 @@ class ServerSettingsRepository @Inject constructor(
         val QUALITY_CELLULAR = stringPreferencesKey("stream_quality_cellular")
         val AUTOPLAY_SIMILAR = booleanPreferencesKey("autoplay_similar")
         val TRACK_SUBTITLE = stringPreferencesKey("track_subtitle")
+        val RADIO_TITLE = stringPreferencesKey("radio_title")
         val SCROBBLE_ENABLED = booleanPreferencesKey("scrobble_enabled")
         val SCROBBLE_EXCLUDED_ARTISTS = stringSetPreferencesKey("scrobble_excluded_artists")
         val SCROBBLE_EXCLUDED_PLAYLISTS = stringSetPreferencesKey("scrobble_excluded_playlists")
@@ -457,6 +458,16 @@ class ServerSettingsRepository @Inject constructor(
 
     suspend fun setTrackSubtitle(subtitle: TrackSubtitle) {
         dataStore.edit { it[Keys.TRACK_SUBTITLE] = subtitle.storageValue }
+    }
+
+    /** Whether a playing station shows its song or its name on top (see [RadioTitle]). */
+    val radioTitle: Flow<RadioTitle> =
+        dataStore.data.map {
+            it[Keys.RADIO_TITLE]?.let(RadioTitle::fromStorageValue) ?: RadioTitle.DEFAULT
+        }
+
+    suspend fun setRadioTitle(title: RadioTitle) {
+        dataStore.edit { it[Keys.RADIO_TITLE] = title.storageValue }
     }
 
     // --- Libraries ---

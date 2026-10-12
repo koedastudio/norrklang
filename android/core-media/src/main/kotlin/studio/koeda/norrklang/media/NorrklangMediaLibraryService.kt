@@ -43,6 +43,7 @@ import studio.koeda.norrklang.data.session.ProviderSession
 import studio.koeda.norrklang.data.model.LibraryScope
 import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.session.SessionManager
+import studio.koeda.norrklang.data.settings.RadioTitle
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
 import studio.koeda.norrklang.data.settings.TrackSubtitle
 
@@ -69,6 +70,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
     private var resumptionPersister: ResumptionPersister? = null
     private var networkMonitor: NetworkMonitor? = null
     private var trackSubtitle = TrackSubtitle.DEFAULT
+    private var radioTitle = RadioTitle.DEFAULT
     // The handler is load-bearing: an uncaught throw here kills the process,
     // the car host rebinds into the same state, and the app "flash-loops"
     // until the host gives up ("Norrklang isn't working at the moment").
@@ -102,7 +104,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
         val player = buildPlayer(resolver)
         player.addListener(PlaybackErrorRecorder())
         player.addListener(RandomMixPlaySourceListener(randomMix))
-        player.addListener(RadioNowPlayingListener(player))
+        player.addListener(RadioNowPlayingListener(player) { radioTitle })
 
         // New queue items take the latest line choice; the queue already
         // playing is updated in place, so the change shows at once.
@@ -110,6 +112,12 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
             settings.trackSubtitle.distinctUntilChanged().collect {
                 trackSubtitle = it
                 player.applyTrackSubtitle(it)
+            }
+        }
+        serviceScope.launch {
+            settings.radioTitle.distinctUntilChanged().collect {
+                radioTitle = it
+                player.applyRadioTitle(it)
             }
         }
 
@@ -122,6 +130,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
             catalogMixes,
             tileVersion = { LibraryScope.exclusionKey(settings.excludedLibraryIds.first()) },
             radioPlayStats = { settings.radioPlayStats.first() },
+            radioTitle = { radioTitle },
         )
         val resumptionLoader = ResumptionQueueLoader(
             settings,

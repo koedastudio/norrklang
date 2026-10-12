@@ -12,6 +12,7 @@ import studio.koeda.norrklang.data.model.Artist
 import studio.koeda.norrklang.data.model.Playlist
 import studio.koeda.norrklang.data.model.RadioStation
 import studio.koeda.norrklang.data.model.Track
+import studio.koeda.norrklang.data.settings.RadioTitle
 import studio.koeda.norrklang.data.settings.TrackSubtitle
 
 /** Builders translating domain models into [MediaItem]s for the car browse UI. */
@@ -165,6 +166,26 @@ internal object MediaItemFactory {
      */
     internal fun realArtist(recorded: String?, field: CharSequence?): String? =
         if (recorded != null) recorded.ifEmpty { null } else field?.toString()
+
+    /**
+     * A playing station's [metadata] laid out per [radioTitle]. The title keeps
+     * the stream's song (the heart and RadioErrors read it there). A station on
+     * top goes into the display title, which Volvo's host shows instead of the
+     * title; the second line goes into the artist field it shows below, and
+     * into the subtitle for hosts that read the framework description, which
+     * takes the subtitle only when a display title is set.
+     */
+    fun withRadioTitle(metadata: MediaMetadata, radioTitle: RadioTitle): MediaMetadata {
+        val station = metadata.station?.toString()
+        val song = metadata.title?.toString()?.takeUnless { it == station }
+        val displayTitle = radioTitle.displayTitle(station)
+        val lineTwo = radioTitle.lineTwo(station, song)
+        return metadata.buildUpon()
+            .setDisplayTitle(displayTitle)
+            .setArtist(lineTwo)
+            .setSubtitle(displayTitle?.let { lineTwo })
+            .build()
+    }
 
     /**
      * A playable station carrying its public stream URL as-is (no auth or

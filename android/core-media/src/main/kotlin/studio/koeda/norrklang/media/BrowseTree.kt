@@ -10,6 +10,7 @@ import studio.koeda.norrklang.data.model.RadioStation
 import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.repo.MusicException
 import studio.koeda.norrklang.data.repo.MusicRepository
+import studio.koeda.norrklang.data.settings.RadioTitle
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository.RadioPlayStats
 
 /**
@@ -59,6 +60,8 @@ internal class BrowseTree(
     private val tileVersion: suspend () -> String = { "" },
     /** Local radio listening history, most listened first (see RadioPlayCounter). */
     private val radioPlayStats: suspend () -> List<RadioPlayStats> = { emptyList() },
+    /** Song or station on top while a station plays (see RadioTitle). */
+    private val radioTitle: () -> RadioTitle = { RadioTitle.DEFAULT },
 ) {
 
     private val quickPlayGroup = context.getString(R.string.browse_group_quick_play)
@@ -372,11 +375,16 @@ internal class BrowseTree(
         )
 
     /** The station as handed to the player — the station name under the ICY song title. */
-    fun playableStation(station: RadioStation): MediaItem = MediaItemFactory.forStation(
-        station,
-        artworkUrl = stationArtwork(station),
-        artistLine = station.name,
-    )
+    fun playableStation(station: RadioStation): MediaItem {
+        val item = MediaItemFactory.forStation(
+            station,
+            artworkUrl = stationArtwork(station),
+            artistLine = station.name,
+        )
+        return item.buildUpon()
+            .setMediaMetadata(MediaItemFactory.withRadioTitle(item.mediaMetadata, radioTitle()))
+            .build()
+    }
 
     private fun stationArtwork(station: RadioStation): String =
         ArtworkContract.stationUri(context.packageName, station.id)

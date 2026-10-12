@@ -12,6 +12,9 @@ is the single source of truth).
 - Settings → Now playing details: show the album next to the artist on the
   line under a playing song's title, as "Artist · Album" or "Album · Artist",
   for cars that show only two lines (#10). Tapping that line opens the album.
+- Settings → Now playing details → Radio: show the station on top and the
+  stream's song on the smaller line below, where a long "artist - title" fits
+  instead of being cut off (#14).
 
 ### Fixed
 

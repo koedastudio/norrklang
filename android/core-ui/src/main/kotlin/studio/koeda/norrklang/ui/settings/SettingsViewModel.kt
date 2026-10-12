@@ -26,6 +26,7 @@ import studio.koeda.norrklang.data.repo.MusicRepository
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository.ScrobbleSettings
+import studio.koeda.norrklang.data.settings.RadioTitle
 import studio.koeda.norrklang.data.settings.StreamQuality
 import studio.koeda.norrklang.data.settings.TrackSubtitle
 
@@ -81,6 +82,14 @@ class SettingsViewModel @Inject constructor(
 
     fun setTrackSubtitle(subtitle: TrackSubtitle) {
         viewModelScope.launch { settings.setTrackSubtitle(subtitle) }
+    }
+
+    /** See [ServerSettingsRepository.radioTitle] — song or station on top. */
+    val radioTitle: StateFlow<RadioTitle> = settings.radioTitle
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RadioTitle.DEFAULT)
+
+    fun setRadioTitle(title: RadioTitle) {
+        viewModelScope.launch { settings.setRadioTitle(title) }
     }
 
     // --- Libraries ---

@@ -65,6 +65,7 @@ fun SettingsScreen(
     val qualityCellular by viewModel.qualityCellular.collectAsStateWithLifecycle()
     val autoplaySimilar by viewModel.autoplaySimilar.collectAsStateWithLifecycle()
     val trackSubtitle by viewModel.trackSubtitle.collectAsStateWithLifecycle()
+    val radioTitle by viewModel.radioTitle.collectAsStateWithLifecycle()
     val scrobble by viewModel.scrobbleSettings.collectAsStateWithLifecycle()
     val librariesSummary by viewModel.librariesSummary.collectAsStateWithLifecycle()
     val savedSongs by viewModel.savedSongs.collectAsStateWithLifecycle()
@@ -126,6 +127,8 @@ fun SettingsScreen(
         TrackSubtitlePage(
             selected = trackSubtitle,
             onSelected = viewModel::setTrackSubtitle,
+            radioTitle = radioTitle,
+            onRadioTitleSelected = viewModel::setRadioTitle,
             onBack = { page = SettingsPage.Main },
             modifier = modifier,
         )
@@ -199,10 +202,15 @@ fun SettingsScreen(
                     onClick = { page = SettingsPage.Quality },
                 )
                 HorizontalDivider()
-                // The line under a playing track's title (see TrackSubtitle).
+                // The playing song's second line and the playing station's
+                // first (see TrackSubtitle, RadioTitle).
                 NavigationRow(
                     title = stringResource(R.string.settings_track_subtitle),
-                    subtitle = stringResource(trackSubtitle.labelRes()),
+                    subtitle = stringResource(
+                        R.string.settings_track_subtitle_summary,
+                        stringResource(trackSubtitle.labelRes()),
+                        stringResource(radioTitle.labelRes()),
+                    ),
                     onClick = { page = SettingsPage.TrackSubtitle },
                 )
                 HorizontalDivider()

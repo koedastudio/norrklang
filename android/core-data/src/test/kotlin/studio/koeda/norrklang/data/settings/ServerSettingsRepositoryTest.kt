@@ -149,6 +149,7 @@ class ServerSettingsRepositoryTest {
         repo.setScrobblingEnabled(false)
         repo.setAutoplaySimilar(false)
         repo.setTrackSubtitle(TrackSubtitle.ARTIST_ALBUM)
+        repo.setRadioTitle(RadioTitle.STATION)
 
         repo.clearAccount()
 
@@ -156,6 +157,7 @@ class ServerSettingsRepositoryTest {
         assertEquals(false, repo.scrobbleSettings.first().enabled)
         assertEquals(false, repo.autoplaySimilar.first())
         assertEquals(TrackSubtitle.ARTIST_ALBUM, repo.trackSubtitle.first())
+        assertEquals(RadioTitle.STATION, repo.radioTitle.first())
     }
 
     private val plexAccount = PlexAccount(
@@ -299,6 +301,19 @@ class ServerSettingsRepositoryTest {
 
         store.edit { it[stringPreferencesKey("track_subtitle")] = "from_a_newer_build" }
         assertEquals(TrackSubtitle.ARTIST, repo.trackSubtitle.first())
+    }
+
+    @Test
+    fun `radio title defaults to the song, round-trips, and ignores unknown values`() = runTest {
+        val store = dataStore(backgroundScope)
+        val repo = ServerSettingsRepository(store, FakeCipher())
+        assertEquals(RadioTitle.SONG, repo.radioTitle.first())
+
+        repo.setRadioTitle(RadioTitle.STATION)
+        assertEquals(RadioTitle.STATION, repo.radioTitle.first())
+
+        store.edit { it[stringPreferencesKey("radio_title")] = "from_a_newer_build" }
+        assertEquals(RadioTitle.SONG, repo.radioTitle.first())
     }
 
     @Test
