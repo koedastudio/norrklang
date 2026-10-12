@@ -27,6 +27,7 @@ import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository.ScrobbleSettings
 import studio.koeda.norrklang.data.settings.StreamQuality
+import studio.koeda.norrklang.data.settings.TrackSubtitle
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -72,6 +73,14 @@ class SettingsViewModel @Inject constructor(
 
     fun setAutoplaySimilar(enabled: Boolean) {
         viewModelScope.launch { settings.setAutoplaySimilar(enabled) }
+    }
+
+    /** See [ServerSettingsRepository.trackSubtitle] — the now-playing line. */
+    val trackSubtitle: StateFlow<TrackSubtitle> = settings.trackSubtitle
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TrackSubtitle.DEFAULT)
+
+    fun setTrackSubtitle(subtitle: TrackSubtitle) {
+        viewModelScope.launch { settings.setTrackSubtitle(subtitle) }
     }
 
     // --- Libraries ---

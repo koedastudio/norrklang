@@ -110,6 +110,7 @@ class ServerSettingsRepository @Inject constructor(
         val QUALITY_WIFI = stringPreferencesKey("stream_quality_wifi")
         val QUALITY_CELLULAR = stringPreferencesKey("stream_quality_cellular")
         val AUTOPLAY_SIMILAR = booleanPreferencesKey("autoplay_similar")
+        val TRACK_SUBTITLE = stringPreferencesKey("track_subtitle")
         val SCROBBLE_ENABLED = booleanPreferencesKey("scrobble_enabled")
         val SCROBBLE_EXCLUDED_ARTISTS = stringSetPreferencesKey("scrobble_excluded_artists")
         val SCROBBLE_EXCLUDED_PLAYLISTS = stringSetPreferencesKey("scrobble_excluded_playlists")
@@ -444,6 +445,18 @@ class ServerSettingsRepository @Inject constructor(
 
     suspend fun setAutoplaySimilar(enabled: Boolean) {
         dataStore.edit { it[Keys.AUTOPLAY_SIMILAR] = enabled }
+    }
+
+    // --- Now playing ---
+
+    /** The line under a playing track's title (see [TrackSubtitle]). */
+    val trackSubtitle: Flow<TrackSubtitle> =
+        dataStore.data.map {
+            it[Keys.TRACK_SUBTITLE]?.let(TrackSubtitle::fromStorageValue) ?: TrackSubtitle.DEFAULT
+        }
+
+    suspend fun setTrackSubtitle(subtitle: TrackSubtitle) {
+        dataStore.edit { it[Keys.TRACK_SUBTITLE] = subtitle.storageValue }
     }
 
     // --- Libraries ---

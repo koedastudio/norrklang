@@ -68,6 +68,13 @@
   <string name="settings_quality_medium">Medium (192 kbps)</string>
   <string name="settings_quality_low">Low (128 kbps)</string>
   <string name="settings_quality_capped_hint">Transcoded by the server — saves data, may break gapless playback</string>
+  <string name="settings_track_subtitle">Now playing details</string>
+  <string name="settings_track_subtitle_hint">While a song plays. Useful when the car shows only the title and one smaller line.</string>
+  <string name="settings_track_subtitle_artist">Artist</string>
+  <string name="settings_track_subtitle_artist_album">Artist · Album</string>
+  <string name="settings_track_subtitle_album_artist">Album · Artist</string>
+  <string name="settings_track_subtitle_artist_hint">Tapping the line opens the artist</string>
+  <string name="settings_track_subtitle_album_hint">Tapping the line opens the album</string>
   <string name="settings_autoplay_similar">Autoplay similar music</string>
   <string name="settings_autoplay_similar_on">When the queue ends, similar songs keep playing</string>
   <string name="settings_autoplay_similar_off">Playback stops at the end of the queue</string>

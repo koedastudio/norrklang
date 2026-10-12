@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.withTimeoutOrNull
 import studio.koeda.norrklang.data.diagnostics.Diagnostics
+import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.radio.SavedRadioSongs
 import studio.koeda.norrklang.data.repo.MusicRepository
 import studio.koeda.norrklang.data.session.SessionManager
@@ -48,6 +49,7 @@ internal class LibrarySessionCallback(
     private val resumption: ResumptionQueueLoader,
     private val voiceSearch: VoiceSearchResolver,
     private val signInIntent: PendingIntent,
+    private val buildTrack: (Track, MediaId.Container?) -> MediaItem = MediaItemFactory::playableTrack,
 ) : MediaLibrarySession.Callback {
 
     // Deliberately accepts every controller: the car media hosts ARE
@@ -314,7 +316,7 @@ internal class LibrarySessionCallback(
             val queue = resumption.containerTracks(single.container)
             val index = queue.indexOfFirst { it.id == single.id }.coerceAtLeast(0)
             MediaItemsWithStartPosition(
-                queue.map { MediaItemFactory.playableTrack(it, single.container) },
+                queue.map { buildTrack(it, single.container) },
                 index,
                 startPositionMs,
             )
@@ -386,11 +388,11 @@ internal class LibrarySessionCallback(
     private suspend fun resolve(item: MediaItem): List<MediaItem> =
         when (val id = MediaId.parse(item.mediaId)) {
             is MediaId.Track ->
-                listOf(MediaItemFactory.playableTrack(repository.track(id.id), id.container))
+                listOf(buildTrack(repository.track(id.id), id.container))
             is MediaId.Album ->
-                repository.album(id.id).tracks.map { MediaItemFactory.playableTrack(it, id) }
+                repository.album(id.id).tracks.map { buildTrack(it, id) }
             is MediaId.Playlist ->
-                repository.playlist(id.id).tracks.map { MediaItemFactory.playableTrack(it, id) }
+                repository.playlist(id.id).tracks.map { buildTrack(it, id) }
             is MediaId.RadioStation ->
                 listOf(browseTree.playableStation(repository.radioStation(id.id)))
             else -> emptyList()
@@ -423,7 +425,7 @@ internal class LibrarySessionCallback(
         if (queue == null) {
             throw IllegalArgumentException("No match for voice query")
         }
-        return queue.tracks.map { MediaItemFactory.playableTrack(it, queue.container) }
+        return queue.tracks.map { buildTrack(it, queue.container) }
     }
 
     private fun voiceRequest(item: MediaItem): VoiceSearchResolver.Request {
