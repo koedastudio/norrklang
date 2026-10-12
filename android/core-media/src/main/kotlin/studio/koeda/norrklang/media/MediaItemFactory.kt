@@ -12,6 +12,7 @@ import studio.koeda.norrklang.data.model.Artist
 import studio.koeda.norrklang.data.model.Playlist
 import studio.koeda.norrklang.data.model.RadioStation
 import studio.koeda.norrklang.data.model.Track
+import studio.koeda.norrklang.data.settings.TrackSubtitle
 
 /** Builders translating domain models into [MediaItem]s for the car browse UI. */
 @OptIn(UnstableApi::class)
@@ -22,6 +23,12 @@ internal object MediaItemFactory {
      * holds the *name*; ScrobbleListener matches exclusions by id.
      */
     const val EXTRA_ARTIST_ID = "studio.koeda.norrklang.extra.ARTIST_ID"
+
+    /** Extras key for the track's server album id — the target of a composed [TrackSubtitle] line. */
+    const val EXTRA_ALBUM_ID = "studio.koeda.norrklang.extra.ALBUM_ID"
+
+    /** Extras key for the track's artist name, kept while a composed line takes the artist field. */
+    const val EXTRA_ARTIST_NAME = "studio.koeda.norrklang.extra.ARTIST_NAME"
 
     /** Extras key for the track's server library id, when the provider knew it (see PlaybackReporter). */
     const val EXTRA_LIBRARY_ID = "studio.koeda.norrklang.extra.LIBRARY_ID"
@@ -208,12 +215,48 @@ internal object MediaItemFactory {
      * `norrklang-stream://` reference; [StreamUrlResolver] turns it into a
      * real server URL (auth + quality tier) when the load starts.
      */
-    fun playableTrack(track: Track, container: MediaId.Container? = null): MediaItem =
+    fun playableTrack(
+        track: Track,
+        container: MediaId.Container? = null,
+        subtitle: TrackSubtitle = TrackSubtitle.DEFAULT,
+    ): MediaItem =
         MediaItem.Builder()
             .setMediaId(MediaId.Track(track.id, container).encode())
             .setUri(track.streamUrl)
-            .setMediaMetadata(trackMetadata(track))
+            .setMediaMetadata(withSubtitle(trackMetadata(track), subtitle))
             .build()
+
+    /**
+     * A playable track's [metadata] with the line under its title set to
+     * [subtitle]. Hosts differ in where they read that line: Volvo's shows the
+     * artist field, others the framework description, which takes the
+     * subtitle only when a display title is set (and otherwise shows title,
+     * artist, album). So a composed line goes into all three; the real artist
+     * name waits in [EXTRA_ARTIST_NAME] for the next change. A composed line
+     * names an album, so it links there; the artist line keeps its artist link.
+     */
+    fun withSubtitle(metadata: MediaMetadata, subtitle: TrackSubtitle): MediaMetadata {
+        val extras = metadata.extras?.let(::Bundle) ?: Bundle()
+        val artist = extras.getString(EXTRA_ARTIST_NAME) ?: metadata.artist?.toString()
+        artist?.let { extras.putString(EXTRA_ARTIST_NAME, it) }
+        val composed = subtitle.line(artist, metadata.albumTitle?.toString())
+        val link = if (composed == null) {
+            extras.getString(EXTRA_ARTIST_ID)?.let { MediaId.Artist(it).encode() }
+        } else {
+            extras.getString(EXTRA_ALBUM_ID)?.let { MediaId.Album(it).encode() }
+        }
+        if (link == null) {
+            extras.remove(EXTRA_SUBTITLE_LINK_MEDIA_ID)
+        } else {
+            extras.putString(EXTRA_SUBTITLE_LINK_MEDIA_ID, link)
+        }
+        return metadata.buildUpon()
+            .setArtist(composed ?: artist)
+            .setDisplayTitle(composed?.let { metadata.title })
+            .setSubtitle(composed ?: artist)
+            .setExtras(extras.takeUnless { it.isEmpty })
+            .build()
+    }
 
     private fun trackMetadata(track: Track, groupTitle: String? = null): MediaMetadata =
         MediaMetadata.Builder()
@@ -236,6 +279,7 @@ internal object MediaItemFactory {
                     extras.putString(EXTRA_ARTIST_ID, it)
                     extras.putString(EXTRA_SUBTITLE_LINK_MEDIA_ID, MediaId.Artist(it).encode())
                 }
+                track.albumId?.let { extras.putString(EXTRA_ALBUM_ID, it) }
                 track.libraryId?.let { extras.putString(EXTRA_LIBRARY_ID, it) }
                 groupTitle?.let {
                     extras.putString(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_GROUP_TITLE, it)

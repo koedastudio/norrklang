@@ -7,6 +7,12 @@ is the single source of truth).
 
 ## [Unreleased]
 
+### Added
+
+- Settings → Now playing details: show the album next to the artist on the
+  line under a playing song's title, as "Artist · Album" or "Album · Artist",
+  for cars that show only two lines (#10). Tapping that line opens the album.
+
 ### Changed
 
 - Next and previous switch radio station, in Radio list order (#12).

@@ -40,7 +40,7 @@ import studio.koeda.norrklang.ui.theme.LocalFormDimens
 
 /** Which page of the settings UI is showing; sub-pages return to [Main]. */
 private enum class SettingsPage {
-    Main, Libraries, Quality, ScrobbleArtists, ScrobblePlaylists, ScrobbleLibraries, SavedSongs,
+    Main, Libraries, Quality, TrackSubtitle, ScrobbleArtists, ScrobblePlaylists, ScrobbleLibraries, SavedSongs,
     Diagnostics,
 }
 
@@ -65,6 +65,7 @@ fun SettingsScreen(
     val qualityCellular by viewModel.qualityCellular.collectAsStateWithLifecycle()
     val autoplaySimilar by viewModel.autoplaySimilar.collectAsStateWithLifecycle()
     val radioStationFirst by viewModel.radioStationFirst.collectAsStateWithLifecycle()
+    val trackSubtitle by viewModel.trackSubtitle.collectAsStateWithLifecycle()
     val scrobble by viewModel.scrobbleSettings.collectAsStateWithLifecycle()
     val librariesSummary by viewModel.librariesSummary.collectAsStateWithLifecycle()
     val savedSongs by viewModel.savedSongs.collectAsStateWithLifecycle()
@@ -117,6 +118,15 @@ fun SettingsScreen(
             qualityCellular = qualityCellular,
             onWifiSelected = viewModel::setQualityWifi,
             onCellularSelected = viewModel::setQualityCellular,
+            onBack = { page = SettingsPage.Main },
+            modifier = modifier,
+        )
+        return
+    }
+    if (page == SettingsPage.TrackSubtitle) {
+        TrackSubtitlePage(
+            selected = trackSubtitle,
+            onSelected = viewModel::setTrackSubtitle,
             onBack = { page = SettingsPage.Main },
             modifier = modifier,
         )
@@ -188,6 +198,13 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_quality),
                     subtitle = stringResource(R.string.settings_quality_hint),
                     onClick = { page = SettingsPage.Quality },
+                )
+                HorizontalDivider()
+                // The line under a playing track's title (see TrackSubtitle).
+                NavigationRow(
+                    title = stringResource(R.string.settings_track_subtitle),
+                    subtitle = stringResource(trackSubtitle.labelRes()),
+                    onClick = { page = SettingsPage.TrackSubtitle },
                 )
                 HorizontalDivider()
                 // Queue-end radio (see QueueRadioListener); both providers.
@@ -380,8 +397,8 @@ private fun ScrobbleExclusionPage(
                 modifier = modifier,
             )
         }
-        SettingsPage.Main, SettingsPage.Libraries, SettingsPage.Quality, SettingsPage.SavedSongs,
-        SettingsPage.Diagnostics -> Unit
+        SettingsPage.Main, SettingsPage.Libraries, SettingsPage.Quality, SettingsPage.TrackSubtitle,
+        SettingsPage.SavedSongs, SettingsPage.Diagnostics -> Unit
     }
 }
 

@@ -6,6 +6,7 @@ import android.os.Bundle
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSourceBitmapLoader
@@ -40,8 +41,10 @@ import studio.koeda.norrklang.data.radio.SavedRadioSongs
 import studio.koeda.norrklang.data.repo.MusicRepository
 import studio.koeda.norrklang.data.session.ProviderSession
 import studio.koeda.norrklang.data.model.LibraryScope
+import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
+import studio.koeda.norrklang.data.settings.TrackSubtitle
 
 /**
  * The single media entry point for Android Auto AND Android Automotive OS.
@@ -65,6 +68,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
     @Volatile private var playbackAccount: ProviderSession? = null
     private var resumptionPersister: ResumptionPersister? = null
     private var networkMonitor: NetworkMonitor? = null
+    private var trackSubtitle = TrackSubtitle.DEFAULT
     // The handler is load-bearing: an uncaught throw here kills the process,
     // the car host rebinds into the same state, and the app "flash-loops"
     // until the host gives up ("Norrklang isn't working at the moment").
@@ -72,6 +76,9 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
         SupervisorJob() + Dispatchers.Main.immediate +
             CoroutineExceptionHandler { _, e -> Diagnostics.record("media-service", e) },
     )
+
+    private fun playableTrack(track: Track, container: MediaId.Container?): MediaItem =
+        MediaItemFactory.playableTrack(track, container, trackSubtitle)
 
     override fun onCreate() {
         super.onCreate()
@@ -101,6 +108,15 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
         }
         player.addListener(radioNowPlaying)
 
+        // New queue items take the latest line choice; the queue already
+        // playing is updated in place, so the change shows at once.
+        serviceScope.launch {
+            settings.trackSubtitle.distinctUntilChanged().collect {
+                trackSubtitle = it
+                player.applyTrackSubtitle(it)
+            }
+        }
+
         val browseTree = BrowseTree(
             this,
             repository,
@@ -120,6 +136,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
             bestOfMixes,
             catalogMixes,
             stationQueue,
+            buildItem = ::playableTrack,
         )
         val callback = LibrarySessionCallback(
             context = this,
@@ -132,6 +149,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
             stationQueue = stationQueue,
             voiceSearch = VoiceSearchResolver(repository, resumptionLoader::containerTracks),
             signInIntent = signInPendingIntent(),
+            buildTrack = ::playableTrack,
         )
 
         // Keep the skip slots reserved even when prev/next are unavailable —
@@ -287,6 +305,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
                         autoplayEnabled = { settings.autoplaySimilar.first() },
                         radio = QueueRadio(repository),
                         player = player,
+                        buildItem = ::playableTrack,
                     )
                     val stationCounter = RadioPlayCounter(
                         scope = this,

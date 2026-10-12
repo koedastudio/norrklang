@@ -148,12 +148,14 @@ class ServerSettingsRepositoryTest {
         repo.setStreamQualityCellular(StreamQuality.HIGH)
         repo.setScrobblingEnabled(false)
         repo.setAutoplaySimilar(false)
+        repo.setTrackSubtitle(TrackSubtitle.ARTIST_ALBUM)
 
         repo.clearAccount()
 
         assertEquals(StreamQuality.HIGH, repo.streamQualityCellular.first())
         assertEquals(false, repo.scrobbleSettings.first().enabled)
         assertEquals(false, repo.autoplaySimilar.first())
+        assertEquals(TrackSubtitle.ARTIST_ALBUM, repo.trackSubtitle.first())
     }
 
     private val plexAccount = PlexAccount(
@@ -284,6 +286,19 @@ class ServerSettingsRepositoryTest {
         repo.setStreamQualityCellular(StreamQuality.LOW)
         assertEquals(StreamQuality.MEDIUM, repo.streamQualityWifi.first())
         assertEquals(StreamQuality.LOW, repo.streamQualityCellular.first())
+    }
+
+    @Test
+    fun `track subtitle defaults to the artist, round-trips, and ignores unknown values`() = runTest {
+        val store = dataStore(backgroundScope)
+        val repo = ServerSettingsRepository(store, FakeCipher())
+        assertEquals(TrackSubtitle.ARTIST, repo.trackSubtitle.first())
+
+        repo.setTrackSubtitle(TrackSubtitle.ALBUM_ARTIST)
+        assertEquals(TrackSubtitle.ALBUM_ARTIST, repo.trackSubtitle.first())
+
+        store.edit { it[stringPreferencesKey("track_subtitle")] = "from_a_newer_build" }
+        assertEquals(TrackSubtitle.ARTIST, repo.trackSubtitle.first())
     }
 
     @Test
