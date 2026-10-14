@@ -310,7 +310,12 @@ internal class LibrarySessionCallback(
         // Tapping one track in an album/playlist sends a single item carrying a
         // container context — rebuild the sibling queue around it.
         val single = mediaItems.singleOrNull()?.let { MediaId.parse(it.mediaId) }
-        if (single is MediaId.Track && single.container != null) {
+        // Likewise a tapped station: queue every station around it, so next
+        // and previous (and the steering wheel buttons) switch stations.
+        val stations = (single as? MediaId.RadioStation)?.let { resumption.stationQueue(it.id) }
+        if (stations != null) {
+            stations
+        } else if (single is MediaId.Track && single.container != null) {
             val queue = resumption.containerTracks(single.container)
             val index = queue.indexOfFirst { it.id == single.id }.coerceAtLeast(0)
             MediaItemsWithStartPosition(

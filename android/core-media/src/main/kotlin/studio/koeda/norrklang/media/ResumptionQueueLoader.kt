@@ -44,14 +44,7 @@ internal class ResumptionQueueLoader(
         return try {
             state ?: return null
             val parsed = MediaId.parse(state.mediaId)
-            // A live stream has no position to return to.
-            if (parsed is MediaId.RadioStation) {
-                return MediaItemsWithStartPosition(
-                    listOf(buildStation(repository.radioStation(parsed.id))),
-                    /* startIndex = */ 0,
-                    /* startPositionMs = */ 0L,
-                )
-            }
+            if (parsed is MediaId.RadioStation) return stationQueue(parsed.id)
             val id = parsed as? MediaId.Track ?: return null
             val container = id.container
             if (container != null) {
@@ -80,6 +73,22 @@ internal class ResumptionQueueLoader(
             // otherwise replay a failure on every bind.
             null
         }
+    }
+
+    /**
+     * Every station in the Radio tab's (server) order, starting at
+     * [stationId], so next and previous switch stations. A live stream has
+     * no position to return to. Null when the station is gone.
+     */
+    suspend fun stationQueue(stationId: String): MediaItemsWithStartPosition? {
+        val stations = repository.radioStations()
+        val index = stations.indexOfFirst { it.id == stationId }
+        if (index < 0) return null
+        return MediaItemsWithStartPosition(
+            stations.map(buildStation),
+            index,
+            /* startPositionMs = */ 0L,
+        )
     }
 
     /**

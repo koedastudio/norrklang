@@ -7,6 +7,12 @@ is the single source of truth).
 
 ## [Unreleased]
 
+### Added
+
+- Next and previous switch radio stations, in the order the Radio tab shows
+  them, starting from the station you tapped; the steering wheel buttons
+  change station too (#12).
+
 ### Fixed
 
 - Some AAC radio stations took about 19 seconds to start (#11).

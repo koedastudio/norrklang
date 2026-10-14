@@ -24,16 +24,38 @@ class ResumptionQueueLoaderTest {
         buildStation = { station -> MediaItem.Builder().setMediaId(MediaId.RadioStation(station.id).encode()).build() },
     )
 
+    private val stations = listOf(
+        RadioStation("rs-1", "KEXP", "https://kexp.example/stream"),
+        RadioStation("rs-2", "Radio Swiss Jazz", "https://jazz.example/stream"),
+        RadioStation("rs-3", "NPO Radio 2", "https://npo.example/stream"),
+    )
+
+    private val stationRepo = object : FakeMusicRepository() {
+        override suspend fun radioStations() = stations
+    }
+
     @Test
-    fun `a radio station resumes alone from the live edge`() = runTest {
-        val repo = object : FakeMusicRepository() {
-            override suspend fun radioStations() =
-                listOf(RadioStation("rs-1", "KEXP", "https://kexp.example/stream"))
-        }
-        val queue = loader(repo).restore(ResumptionState(MediaId.RadioStation("rs-1").encode(), 90_000))!!
-        assertEquals(listOf("station/rs-1"), queue.mediaItems.map { it.mediaId })
-        assertEquals(0, queue.startIndex)
+    fun `a radio station resumes among all stations from the live edge`() = runTest {
+        val queue = loader(stationRepo).restore(ResumptionState(MediaId.RadioStation("rs-2").encode(), 90_000))!!
+        assertEquals(listOf("station/rs-1", "station/rs-2", "station/rs-3"), queue.mediaItems.map { it.mediaId })
+        assertEquals(1, queue.startIndex)
         assertEquals(0L, queue.startPositionMs)
+    }
+
+    @Test
+    fun `a station queue keeps the server order and starts at the station`() = runTest {
+        val loader = loader(stationRepo)
+        for ((index, station) in stations.withIndex()) {
+            val queue = loader.stationQueue(station.id)!!
+            assertEquals(listOf("station/rs-1", "station/rs-2", "station/rs-3"), queue.mediaItems.map { it.mediaId })
+            assertEquals(index, queue.startIndex)
+            assertEquals(0L, queue.startPositionMs)
+        }
+    }
+
+    @Test
+    fun `a station removed from the server has no station queue`() = runTest {
+        assertNull(loader(stationRepo).stationQueue("rs-9"))
     }
 
     @Test
