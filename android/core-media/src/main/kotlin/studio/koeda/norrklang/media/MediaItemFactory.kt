@@ -14,6 +14,14 @@ import studio.koeda.norrklang.data.model.RadioStation
 import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.settings.TrackSubtitle
 
+/**
+ * The playing track's own artist. A composed now-playing line (see
+ * [MediaItemFactory.withSubtitle]) takes the artist field; the real name then
+ * waits in an extra, which wins here. Null when the track has no artist.
+ */
+val MediaMetadata.realArtist: String?
+    get() = MediaItemFactory.realArtist(extras?.getString(MediaItemFactory.EXTRA_ARTIST_NAME), artist)
+
 /** Builders translating domain models into [MediaItem]s for the car browse UI. */
 @OptIn(UnstableApi::class)
 internal object MediaItemFactory {

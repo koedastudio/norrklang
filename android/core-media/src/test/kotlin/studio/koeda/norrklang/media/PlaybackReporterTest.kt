@@ -226,7 +226,7 @@ internal open class FakePlayer : Player {
         fromIndex: Int,
         toIndex: Int,
         mediaItems: MutableList<MediaItem>,
-    ) = error("unused")
+    ): Unit = error("unused")
     override fun removeMediaItem(index: Int) = error("unused")
     override fun removeMediaItems(fromIndex: Int, toIndex: Int) = error("unused")
     override fun clearMediaItems(): Unit = error("unused")

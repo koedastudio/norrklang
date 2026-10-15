@@ -38,6 +38,7 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import coil3.compose.AsyncImage
 import studio.koeda.norrklang.data.session.SessionManager
+import studio.koeda.norrklang.media.realArtist
 import studio.koeda.norrklang.ui.settings.SettingsViewModel
 
 @Composable
@@ -137,9 +138,9 @@ private fun NowPlayingCard(controller: MediaController) {
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
-                metadata.artist?.let {
+                metadata.realArtist?.let {
                     Text(
-                        text = it.toString(),
+                        text = it,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

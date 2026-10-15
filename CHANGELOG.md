@@ -11,7 +11,8 @@ is the single source of truth).
 
 - Settings → Now playing details: show the album next to the artist on the
   line under a playing song's title, as "Artist · Album" or "Album · Artist",
-  for cars that show only two lines (#10). Tapping that line opens the album.
+  for cars that show only two lines (#10). Where supported, tapping that line
+  opens the album.
 
 ### Changed
 
