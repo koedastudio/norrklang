@@ -1,5 +1,6 @@
 package studio.koeda.norrklang.ui.signin
 
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -26,6 +27,10 @@ class SignInViewModel @Inject constructor(
 
     /** Shared with [JellyfinSignInViewModel]; Subsonic never emits [ErrorKind.NO_MUSIC_LIBRARY]. */
     enum class ErrorKind { MISSING_FIELDS, CLEARTEXT, AUTH, NETWORK, NO_MUSIC_LIBRARY, GENERIC }
+
+    private companion object {
+        const val TAG = "NorrklangSignIn"
+    }
 
     var serverUrl by mutableStateOf("")
         private set
@@ -59,16 +64,19 @@ class SignInViewModel @Inject constructor(
             return
         }
         state = UiState.Connecting
+        runCatching { Log.d(TAG, "connect: $serverUrl as $username") }
         viewModelScope.launch {
             val result = sessionManager.signIn(serverUrl, username, password)
             state = result.fold(
                 onSuccess = {
+                    runCatching { Log.d(TAG, "connect: ok") }
                     // The session owns whatever it persisted — don't let the
                     // plaintext password linger for the ViewModel's lifetime.
                     password = ""
                     UiState.Done
                 },
                 onFailure = { e ->
+                    runCatching { Log.w(TAG, "connect: failed ${e.javaClass.simpleName}: ${e.message}") }
                     when (e) {
                         is MusicException.AuthFailed ->
                             UiState.Error(ErrorKind.AUTH, e.message)

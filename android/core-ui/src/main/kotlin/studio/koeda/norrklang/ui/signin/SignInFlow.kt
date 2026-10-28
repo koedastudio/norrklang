@@ -33,8 +33,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import studio.koeda.norrklang.ui.R
 import studio.koeda.norrklang.ui.components.BackButton
+import studio.koeda.norrklang.ui.settings.MtlsViewModel
 import studio.koeda.norrklang.ui.theme.LocalFormDimens
 
 /** Hand-rolled page state, same pattern as SettingsScreen's SettingsPage. */
@@ -82,12 +84,16 @@ fun SignInFlow(
             onBack = onBack,
         )
 
-        SignInPage.SubsonicForm -> SignInScreen(
-            viewModel = subsonicViewModel,
-            onSignedIn = onSignedIn,
-            modifier = modifier,
-            onBack = { page = SignInPage.ProviderPicker },
-        )
+        SignInPage.SubsonicForm -> {
+            val mtlsViewModel: MtlsViewModel = viewModel()
+            SignInScreen(
+                viewModel = subsonicViewModel,
+                mtlsViewModel = mtlsViewModel,
+                onSignedIn = onSignedIn,
+                modifier = modifier,
+                onBack = { page = SignInPage.ProviderPicker },
+            )
+        }
 
         SignInPage.Plex -> PlexSignInPage(
             state = plexViewModel.state,

@@ -59,6 +59,7 @@ norrklang/
 │   ├── core-media/           # Media3 MediaLibraryService — browse tree + playback
 │   ├── core-ui/              # Shared Compose UI (sign-in, settings, theme)
 │   └── build-logic/          # Gradle convention plugins (SDK levels, signing, versioning)
+├── server/                   # mTLS public-key upload receiver (issue #1)
 ├── www/                      # norrklang.app — Astro static site (landing + privacy policy)
 ├── docs/                     # Play store listing copy (below)
 └── assets/                   # Brand sources (app icon + Play feature graphic) and Play store screenshots

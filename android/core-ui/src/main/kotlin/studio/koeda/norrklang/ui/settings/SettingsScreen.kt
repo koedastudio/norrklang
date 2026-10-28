@@ -31,7 +31,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import studio.koeda.norrklang.data.session.SessionManager
+import studio.koeda.norrklang.data.session.SubsonicSession
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository.ScrobbleSettings
 import studio.koeda.norrklang.ui.R
 import studio.koeda.norrklang.ui.components.BackButton
@@ -43,8 +45,8 @@ import studio.koeda.norrklang.ui.theme.LocalFormDimens
  * except the three exclusion pickers, which return to [ScrobbleExceptions].
  */
 private enum class SettingsPage {
-    Main, Libraries, Quality, NowPlaying, ScrobbleExceptions, ScrobbleArtists, ScrobblePlaylists, ScrobbleLibraries,
-    SavedSongs, Diagnostics, About,
+    Main, Libraries, Quality, NowPlaying, Mtls, ScrobbleExceptions, ScrobbleArtists, ScrobblePlaylists,
+    ScrobbleLibraries, SavedSongs, Diagnostics, About,
 }
 
 /**
@@ -141,6 +143,15 @@ fun SettingsScreen(
         )
         return
     }
+    if (page == SettingsPage.Mtls) {
+        val mtlsViewModel: MtlsViewModel = viewModel()
+        MtlsPage(
+            viewModel = mtlsViewModel,
+            onBack = { page = SettingsPage.Main },
+            modifier = modifier,
+        )
+        return
+    }
     if (page == SettingsPage.ScrobbleExceptions) {
         ScrobbleExceptionsPage(
             scrobble = scrobble,
@@ -220,6 +231,17 @@ fun SettingsScreen(
                     onClick = { page = SettingsPage.Quality },
                 )
                 HorizontalDivider()
+                // mTLS: the server authenticates the connection by client
+                // certificate before any request — Subsonic only (Plex and
+                // Jellyfin have no client-cert story).
+                if (s.session is SubsonicSession) {
+                    NavigationRow(
+                        title = stringResource(R.string.settings_mtls),
+                        subtitle = stringResource(R.string.settings_mtls_hint),
+                        onClick = { page = SettingsPage.Mtls },
+                    )
+                    HorizontalDivider()
+                }
                 // Queue-end radio (see QueueRadioListener); both providers.
                 SettingsToggleRow(
                     title = stringResource(R.string.settings_autoplay_similar),
@@ -400,9 +422,8 @@ private fun ScrobbleExclusionPage(
             )
         }
         SettingsPage.Main, SettingsPage.Libraries, SettingsPage.Quality, SettingsPage.NowPlaying,
-        SettingsPage.ScrobbleExceptions, SettingsPage.SavedSongs, SettingsPage.Diagnostics,
-        SettingsPage.About,
-        -> Unit
+        SettingsPage.Mtls, SettingsPage.ScrobbleExceptions, SettingsPage.SavedSongs,
+        SettingsPage.Diagnostics, SettingsPage.About -> Unit
     }
 }
 

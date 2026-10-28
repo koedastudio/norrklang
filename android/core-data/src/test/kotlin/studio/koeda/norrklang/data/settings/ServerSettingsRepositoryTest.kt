@@ -26,7 +26,7 @@ import studio.koeda.norrklang.subsonic.SubsonicPasswordAuth
 import studio.koeda.norrklang.subsonic.SubsonicTokenAuth
 
 /** Reversible stand-in for the Android Keystore cipher (unavailable on JVM). */
-private class FakeCipher : CredentialCipher {
+class FakeCipher : CredentialCipher {
     override fun encrypt(plaintext: String) = PREFIX + plaintext.reversed()
     override fun decrypt(stored: String) =
         if (isEncrypted(stored)) stored.removePrefix(PREFIX).reversed() else stored

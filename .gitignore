@@ -29,6 +29,11 @@ www/.wrangler/
 # Claude Code — local settings carry machine paths and permission grants
 .claude/
 
+# mTLS upload receiver (server/mtls-upload) — runtime data
+server/mtls-upload/*.class
+server/mtls-upload/data/
+server/mtls-upload/data2/
+
 # Misc
 *.log
 .externalNativeBuild/

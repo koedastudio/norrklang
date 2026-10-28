@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.launch
 import studio.koeda.norrklang.data.di.ApplicationScope
 import studio.koeda.norrklang.data.diagnostics.Diagnostics
+import studio.koeda.norrklang.data.mtls.MtlsManager
 import studio.koeda.norrklang.data.repo.toMusicException
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
 import studio.koeda.norrklang.data.settings.StoredAccount
@@ -42,12 +43,14 @@ class SessionManager(
         { account, info -> PlexServerClient(account.serverUri, account.token, info) },
     private val jellyfinClientFactory: (JellyfinAccount, JellyfinClientInfo) -> JellyfinClient =
         { account, info -> JellyfinClient(account.baseUrl, account.token, info) },
+    private val mtls: MtlsManager? = null,
 ) {
 
     @Inject constructor(
         settings: ServerSettingsRepository,
         @ApplicationScope scope: CoroutineScope,
-    ) : this(settings, scope, { SubsonicClient(it) })
+        mtls: MtlsManager,
+    ) : this(settings, scope, { SubsonicClient(it) }, mtls = mtls)
 
     sealed interface SessionState {
         data object Initializing : SessionState
@@ -60,6 +63,10 @@ class SessionManager(
 
     init {
         scope.launch {
+            // An mTLS server rejects the ping without the client certificate,
+            // so the identity must be loaded before any Subsonic client is
+            // built — for the process-start restore and for every sign-in.
+            mtls?.ensureLoaded()
             val restored = try {
                 when (val stored = settings.currentAccount()) {
                     is StoredAccount.Subsonic -> connectedState(stored.credentials)
@@ -94,6 +101,7 @@ class SessionManager(
      * only then is the password itself sent — and stored — instead.
      */
     suspend fun signIn(url: String, username: String, password: String): Result<Unit> {
+        mtls?.ensureLoaded()
         val credentials = try {
             SubsonicCredentials.fromInput(url, username, password)
         } catch (e: IllegalArgumentException) {

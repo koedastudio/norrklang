@@ -15,11 +15,17 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.ContentType
@@ -32,6 +38,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import studio.koeda.norrklang.ui.R
 import studio.koeda.norrklang.ui.components.BackButton
+import studio.koeda.norrklang.ui.settings.MtlsViewModel
+import studio.koeda.norrklang.ui.settings.MtlsWorkflowSection
 import studio.koeda.norrklang.ui.theme.LocalFormDimens
 
 /**
@@ -47,6 +55,7 @@ fun SignInScreen(
     onSignedIn: () -> Unit,
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
+    mtlsViewModel: MtlsViewModel? = null,
 ) {
     val state = viewModel.state
 
@@ -65,6 +74,7 @@ fun SignInScreen(
         onConnect = viewModel::connect,
         modifier = modifier,
         onBack = onBack,
+        mtlsViewModel = mtlsViewModel,
     )
 }
 
@@ -81,6 +91,7 @@ fun SignInScreen(
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
     subtitle: String = stringResource(R.string.signin_subtitle),
+    mtlsViewModel: MtlsViewModel? = null,
 ) {
     val dimens = LocalFormDimens.current
 
@@ -182,6 +193,32 @@ fun SignInScreen(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                     )
+                }
+            }
+
+            // mTLS servers reject a first sign-in that has no client
+            // certificate, so the keypair/certificate/root-CA setup must be
+            // reachable BEFORE a connection exists (Subsonic only).
+            mtlsViewModel?.let { mtls ->
+                var expanded by rememberSaveable { mutableStateOf(false) }
+                HorizontalDivider()
+                OutlinedButton(
+                    onClick = { expanded = !expanded },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = dimens.controlMinHeight),
+                ) {
+                    Text(
+                        text = if (expanded) {
+                            stringResource(R.string.mtls_signin_collapse)
+                        } else {
+                            stringResource(R.string.mtls_signin_expand)
+                        },
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                if (expanded) {
+                    MtlsWorkflowSection(viewModel = mtls)
                 }
             }
         }
