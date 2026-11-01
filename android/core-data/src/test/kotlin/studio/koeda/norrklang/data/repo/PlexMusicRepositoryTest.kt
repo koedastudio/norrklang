@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
+import studio.koeda.norrklang.data.model.ReleaseType
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.data.settings.CredentialCipher
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
@@ -445,6 +446,57 @@ class PlexMusicRepositoryTest {
         val repo = env(backgroundScope).signedIn()
 
         assertFailsWith<MusicException.NotFound> { repo.track("55") }
+    }
+
+    // --- Artist releases ---
+
+    @Test
+    fun `artist lists every release through the section query, typed by the release hubs`() = runTest {
+        // Registered before the artist route: that one is a prefix of this URL.
+        routes["/library/metadata/42/related"] = """{"MediaContainer":{"Hub":[
+            {"type":"artist","hubIdentifier":"artist.similar","Metadata":[
+                {"ratingKey":"8","type":"artist","title":"Kin"}]},
+            {"type":"album","hubIdentifier":"artist.albums.singles","Metadata":[
+                {"ratingKey":"72","type":"album","title":"Dogs Eating Dogs"}]},
+            {"type":"album","hubIdentifier":"artist.albums.live","Metadata":[
+                {"ratingKey":"73","type":"album","title":"Live"}]},
+            {"type":"album","hubIdentifier":"artist.albums.compilation","Metadata":[
+                {"ratingKey":"71","type":"album","title":"Greatest Hits"}]}]}}"""
+        routes["/library/metadata/42"] = metadata(
+            """{"ratingKey":"42","type":"artist","title":"Blink-182","librarySectionID":5}""",
+        )
+        routes["sections/5/all?type=9&artist.id=42"] = metadata(
+            """{"ratingKey":"70","type":"album","title":"Enema of the State","year":1999}""",
+            """{"ratingKey":"71","type":"album","title":"Greatest Hits","year":2005}""",
+            """{"ratingKey":"72","type":"album","title":"Dogs Eating Dogs","year":2012}""",
+            """{"ratingKey":"73","type":"album","title":"Live","year":2000}""",
+        )
+        val repo = env(backgroundScope).signedIn()
+
+        val albums = repo.artist("42").albums
+
+        assertEquals(
+            listOf(
+                "Dogs Eating Dogs" to ReleaseType.SINGLE_OR_EP,
+                "Greatest Hits" to ReleaseType.COMPILATION,
+                "Live" to ReleaseType.ALBUM,
+                "Enema of the State" to ReleaseType.ALBUM,
+            ),
+            albums.map { it.title to it.releaseType },
+        )
+        assertTrue(requests.none { "/children" in it })
+        // The related fetch is shared with similarArtists, not repeated.
+        repo.similarArtists("42", 10)
+        assertEquals(1, requests.count { "/library/metadata/42/related" in it })
+    }
+
+    @Test
+    fun `artist without a section id falls back to children`() = runTest {
+        routes["/library/metadata/42/children"] = metadata(album("70", "Only"))
+        routes["/library/metadata/42"] = metadata(artist("42", "Nobody"))
+        val repo = env(backgroundScope).signedIn()
+
+        assertEquals(listOf("Only"), repo.artist("42").albums.map { it.title })
     }
 
     // --- Library fan-out ---

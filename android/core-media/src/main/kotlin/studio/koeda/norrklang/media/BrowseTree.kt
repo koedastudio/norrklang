@@ -3,10 +3,13 @@ package studio.koeda.norrklang.media
 import android.content.Context
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import studio.koeda.norrklang.data.artwork.ArtworkContract
 import studio.koeda.norrklang.data.model.Album
 import studio.koeda.norrklang.data.model.Artist
 import studio.koeda.norrklang.data.model.RadioStation
+import studio.koeda.norrklang.data.model.ReleaseType
 import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.repo.MusicException
 import studio.koeda.norrklang.data.repo.MusicRepository
@@ -36,7 +39,9 @@ import studio.koeda.norrklang.data.settings.ServerSettingsRepository.RadioPlaySt
  *                       All albums → album grid → tracks)
  *                       "Artists" (Favourite artists → artist list;
  *                       All artists → artist list (A–Z headers)
- *                       → artist's albums → tracks)
+ *                       → artist view: releases in headed sections by
+ *                       type, then similar artists (see ArtistSections)
+ *                       → tracks)
  *                       "Radio" (Radio stations → playable station list;
  *                       present only when the server has stations)
  * ```
@@ -68,6 +73,12 @@ internal class BrowseTree(
     private val albumsGroup = context.getString(R.string.browse_group_albums)
     private val artistsGroup = context.getString(R.string.browse_group_artists)
     private val radioGroup = context.getString(R.string.browse_group_radio)
+    private val releaseTypeGroups = mapOf(
+        ReleaseType.ALBUM to context.getString(R.string.browse_artist_albums),
+        ReleaseType.COMPILATION to context.getString(R.string.browse_artist_compilations),
+        ReleaseType.SINGLE_OR_EP to context.getString(R.string.browse_artist_singles_eps),
+    )
+    private val similarArtistsGroup = context.getString(R.string.browse_artist_similar)
     private val stationSubtitle = context.getString(R.string.browse_radio_station_subtitle)
     private val tabHomeTitle = context.getString(R.string.browse_tab_home)
     private val tabLibraryTitle = context.getString(R.string.browse_tab_library)
@@ -141,7 +152,7 @@ internal class BrowseTree(
             is MediaId.AlbumBucket ->
                 Paging.slice(albumBucketMembers(id.key), page, pageSize)
                     .map(MediaItemFactory::forAlbum)
-            is MediaId.Artist -> albumItems(repository.artist(id.id).albums, page, pageSize)
+            is MediaId.Artist -> Paging.slice(artistView(id.id), page, pageSize)
             is MediaId.Album -> trackItems(repository.album(id.id).tracks, id, page, pageSize)
             is MediaId.Playlist -> trackItems(repository.playlist(id.id).tracks, id, page, pageSize)
             // Queue-radio provenance token, never a browse node.
@@ -233,6 +244,37 @@ internal class BrowseTree(
     /** One host page of [albums] as browse items. */
     private fun albumItems(albums: List<Album>, page: Int, pageSize: Int): List<MediaItem> =
         Paging.slice(albums, page, pageSize).map(MediaItemFactory::forAlbum)
+
+    /**
+     * An artist's view, sectioned per [ArtistSections]. Similar artists are
+     * fetched alongside the releases; a server that can't answer just hides
+     * that section.
+     */
+    private suspend fun artistView(artistId: String): List<MediaItem> = coroutineScope {
+        val detail = async { repository.artist(artistId) }
+        val similar = async { similarArtistsOrEmpty(artistId) }
+        val view = ArtistSections.build(detail.await().albums, similar.await())
+        view.sections.flatMap { sectionItems(it, view.labeled) }
+    }
+
+    private fun sectionItems(section: ArtistSections.Section, labeled: Boolean): List<MediaItem> =
+        when (section) {
+            is ArtistSections.Section.Releases -> {
+                val group = releaseTypeGroups.getValue(section.type).takeIf { labeled }
+                section.albums.map { MediaItemFactory.forAlbum(it, groupTitle = group) }
+            }
+            is ArtistSections.Section.SimilarArtists -> {
+                val group = similarArtistsGroup.takeIf { labeled }
+                section.artists.map { MediaItemFactory.forArtist(it, groupTitle = group) }
+            }
+        }
+
+    private suspend fun similarArtistsOrEmpty(artistId: String): List<Artist> =
+        try {
+            repository.similarArtists(artistId, ArtistSections.SIMILAR_ARTISTS_SHOWN)
+        } catch (_: MusicException) {
+            emptyList()
+        }
 
     /** A single item for `onGetItem`. */
     suspend fun item(mediaId: String): MediaItem? =

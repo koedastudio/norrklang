@@ -22,6 +22,7 @@ import studio.koeda.norrklang.data.model.MusicLibrary
 import studio.koeda.norrklang.data.model.Playlist
 import studio.koeda.norrklang.data.model.PlaylistDetail
 import studio.koeda.norrklang.data.model.RadioStation
+import studio.koeda.norrklang.data.model.ReleaseType
 import studio.koeda.norrklang.data.model.SearchResults
 import studio.koeda.norrklang.data.model.StreamRef
 import studio.koeda.norrklang.data.model.Track
@@ -565,6 +566,7 @@ class SubsonicMusicRepository @Inject constructor(
         durationSec = duration,
         artworkUrl = coverArt?.let { artworkUri(it) },
         isFavorite = starred != null,
+        releaseType = ReleaseType.fromTags(releaseTypes, isCompilation),
     )
 
     private fun PlaylistDto.toDomain() = Playlist(

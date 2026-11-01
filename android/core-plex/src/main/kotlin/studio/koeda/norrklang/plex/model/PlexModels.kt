@@ -100,6 +100,8 @@ data class PlexDirectory(
 @Serializable
 data class PlexHub(
     val type: String = "",
+    /** Stable hub kind, e.g. `artist.similar` or `artist.albums.compilation`. */
+    val hubIdentifier: String? = null,
     @SerialName("Metadata") val metadata: List<PlexMetadata> = emptyList(),
 )
 

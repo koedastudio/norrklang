@@ -22,6 +22,7 @@ import studio.koeda.norrklang.data.model.LibraryScope
 import studio.koeda.norrklang.data.model.MusicLibrary
 import studio.koeda.norrklang.data.model.Playlist
 import studio.koeda.norrklang.data.model.PlaylistDetail
+import studio.koeda.norrklang.data.model.ReleaseType
 import studio.koeda.norrklang.data.model.SearchResults
 import studio.koeda.norrklang.data.model.StreamRef
 import studio.koeda.norrklang.data.model.Track
@@ -34,6 +35,7 @@ import studio.koeda.norrklang.plex.PlexException
 import studio.koeda.norrklang.plex.PlexServerClient
 import studio.koeda.norrklang.plex.PlexServerClient.ItemType
 import studio.koeda.norrklang.plex.model.PlexDirectory
+import studio.koeda.norrklang.plex.model.PlexHub
 import studio.koeda.norrklang.plex.model.PlexMetadata
 
 /**
@@ -86,14 +88,28 @@ class PlexMusicRepository @Inject constructor(
     override suspend fun artist(id: String): ArtistDetail =
         cached("artist/$id") { client ->
             val dto = client.metadata(id)
+            val releaseTypes = releaseTypesByAlbum(relatedHubs(id))
             ArtistDetail(
                 artist = dto.toArtistOrNull()
                     ?: throw MusicException.NotFound("Artist $id has no rating key"),
                 // Newest first, like the Subsonic side; unknown years sink.
-                albums = client.children(id).mapNotNull { it.toAlbumOrNull() }
+                albums = artistReleases(client, id, dto.librarySectionId)
+                    .mapNotNull { it.toAlbumOrNull(releaseTypes[it.ratingKey] ?: ReleaseType.ALBUM) }
                     .sortedByDescending { it.year ?: Int.MIN_VALUE },
             )
         }
+
+    // `/children` lists only "true" albums: Plex moved EPs, live albums,
+    // compilations etc. to the artist's hubs, which are section queries on
+    // artist.id. The same query here lists every release in one request.
+    private suspend fun artistReleases(
+        client: PlexServerClient,
+        artistId: String,
+        sectionId: Int?,
+    ): List<PlexMetadata> {
+        val section = sectionId?.toString() ?: return client.children(artistId)
+        return client.sectionItems(section, ItemType.ALBUM, filters = listOf("artist.id" to artistId))
+    }
 
     // One section keeps the server-paged request; several materialise one
     // merged sorted list (same memory order as the unpaged host path) and slice.
@@ -306,15 +322,36 @@ class PlexMusicRepository @Inject constructor(
     override suspend fun recentlyPlayedArtists(size: Int): List<Artist> =
         playedArtists("recent-artists/$size", "lastViewedAt:desc", BY_LAST_PLAYED_DESC, size)
 
+    /**
+     * The artist's related hubs: "Similar Artists" plus Plex's own grouping of
+     * the artist's releases ("Singles & EPs", "Compilations", …). One fetch
+     * serves both the artist view and the similar-artists section.
+     */
+    private suspend fun relatedHubs(artistId: String): List<PlexHub> =
+        cached("related/$artistId") { client -> client.related(artistId) }
+
+    // Album listings carry no release-type tags; the typed release hubs are
+    // where Plex says which albums are singles/EPs or compilations. Albums in
+    // no typed hub (live, soundtrack, …) are plain albums.
+    private fun releaseTypesByAlbum(hubs: List<PlexHub>): Map<String, ReleaseType> =
+        hubs.flatMap { hub ->
+            val type = when (hub.hubIdentifier) {
+                "artist.albums.singles" -> ReleaseType.SINGLE_OR_EP
+                "artist.albums.compilation" -> ReleaseType.COMPILATION
+                else -> return@flatMap emptyList()
+            }
+            hub.metadata.mapNotNull { album -> album.ratingKey?.let { it to type } }
+        }.toMap()
+
     // "Sonically similar" needs Plex Pass + completed analysis, but the
     // related hub's "Similar Artists" is plain Plex music metadata — present
     // whenever the library's artists are matched. Items are in-library by
     // construction (the contract Subsonic reaches by filtering albumCount);
     // the hub is server-wide, so hidden sections are filtered out here.
     override suspend fun similarArtists(artistId: String, count: Int): List<Artist> =
-        scoped("similar-artists/$artistId") { client, scope ->
+        scoped("similar-artists/$artistId") { _, scope ->
             val selected = scope.selectedIds.toSet()
-            client.related(artistId)
+            relatedHubs(artistId)
                 .flatMap { it.metadata }
                 .filter { it.type == "artist" && it.ratingKey != artistId }
                 .filter {
@@ -665,7 +702,7 @@ class PlexMusicRepository @Inject constructor(
         sortGroup = sortGroup,
     )
 
-    private fun PlexMetadata.toAlbumOrNull(): Album? = Album(
+    private fun PlexMetadata.toAlbumOrNull(releaseType: ReleaseType = ReleaseType.ALBUM): Album? = Album(
         id = ratingKey ?: return null,
         title = title,
         artistName = parentTitle,
@@ -675,6 +712,7 @@ class PlexMusicRepository @Inject constructor(
         durationSec = ((duration ?: 0L) / 1000L).toInt(),
         artworkUrl = artworkOrNull(),
         isFavorite = userRating == LOVED_RATING.toDouble(),
+        releaseType = releaseType,
     )
 
     private fun PlexMetadata.toPlaylistOrNull(): Playlist? = Playlist(

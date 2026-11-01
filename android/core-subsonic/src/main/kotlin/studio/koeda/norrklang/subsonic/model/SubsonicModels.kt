@@ -109,6 +109,10 @@ data class AlbumID3(
     val genre: String? = null,
     /** ISO-8601 timestamp of when the album was starred; null when it isn't. */
     val starred: String? = null,
+    /** OpenSubsonic: release types from the tags (Album, EP, Single, Compilation, …). */
+    val releaseTypes: List<String> = emptyList(),
+    /** OpenSubsonic: the compilation flag. */
+    val isCompilation: Boolean = false,
 )
 
 @Serializable

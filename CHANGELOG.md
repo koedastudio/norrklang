@@ -11,6 +11,13 @@ is the single source of truth).
 
 - Settings → About Norrklang: QR code to norrklang.app, with license and
   source link.
+- Artist view in sections: Albums, Compilations and Singles & EPs when the
+  server reports release types, and Similar artists when it has them (#20).
+
+### Fixed
+
+- Plex: compilations, EPs and live albums were missing from an artist's
+  releases (#20).
 
 ## [1.4.0] — 2026-10-18
 

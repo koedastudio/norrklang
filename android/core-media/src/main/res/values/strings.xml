@@ -26,6 +26,10 @@
   <!-- Subtitle on station rows and the now-playing view. -->
   <string name="browse_radio_station_subtitle">Internet radio</string>
   <string name="browse_home_similar_to">Similar to %1$s</string>
+  <string name="browse_artist_albums">Albums</string>
+  <string name="browse_artist_compilations">Compilations</string>
+  <string name="browse_artist_singles_eps">Singles &amp; EPs</string>
+  <string name="browse_artist_similar">Similar artists</string>
   <string name="browse_home_best_of">Best of %1$s</string>
   <!-- Decade mix tile title, e.g. "1980s"; %1$d is the decade's first year. -->
   <string name="browse_home_decade_mix">%1$ds</string>

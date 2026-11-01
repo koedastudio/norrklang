@@ -15,6 +15,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.test.runTest
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
+import studio.koeda.norrklang.data.model.ReleaseType
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.data.settings.CredentialCipher
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
@@ -264,6 +265,36 @@ class SubsonicMusicRepositoryTest {
         assertEquals(
             listOf("1" to "Music", "2" to "Kids", "3" to "Multichannel"),
             env.repository.libraries().map { it.id to it.name },
+        )
+    }
+
+    @Test
+    fun `artist maps OpenSubsonic release types onto the albums`() = runTest {
+        foldersRoute()
+        route(
+            "getArtist.view",
+            body = ok(
+                """"artist":{"id":"ar-1","name":"Blink-182","album":[
+                    {"id":"a1","name":"Enema of the State","releaseTypes":["Album"]},
+                    {"id":"a2","name":"Greatest Hits","releaseTypes":["Album","Compilation"]},
+                    {"id":"a3","name":"Dogs Eating Dogs","releaseTypes":["ep"]},
+                    {"id":"a4","name":"Flagged","isCompilation":true},
+                    {"id":"a5","name":"Untagged"}]}""",
+            ),
+        )
+        val env = env(backgroundScope).signedIn()
+
+        val albums = env.repository.artist("ar-1").albums
+
+        assertEquals(
+            mapOf(
+                "Enema of the State" to ReleaseType.ALBUM,
+                "Greatest Hits" to ReleaseType.COMPILATION,
+                "Dogs Eating Dogs" to ReleaseType.SINGLE_OR_EP,
+                "Flagged" to ReleaseType.COMPILATION,
+                "Untagged" to ReleaseType.ALBUM,
+            ),
+            albums.associate { it.title to it.releaseType },
         )
     }
 }

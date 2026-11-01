@@ -34,7 +34,35 @@ data class Album(
     val artworkUrl: String?,
     /** Whether the album is starred ("favorited") on the server. */
     val isFavorite: Boolean = false,
+    val releaseType: ReleaseType = ReleaseType.ALBUM,
 )
+
+/**
+ * The server's classification of a release, reduced to what the artist view
+ * splits on: live albums, soundtracks, demos and remixes count as [ALBUM].
+ * Servers without release-type data (Jellyfin, untagged libraries) report
+ * [ALBUM] for everything. Declaration order is the artist view's section order.
+ */
+enum class ReleaseType {
+    ALBUM,
+    COMPILATION,
+    SINGLE_OR_EP,
+    ;
+
+    companion object {
+        /**
+         * Classifies from release-type tags (OpenSubsonic releaseTypes),
+         * case-insensitively. EP/Single wins over Compilation, as in Plex's
+         * own artist hubs.
+         */
+        fun fromTags(tags: Iterable<String>, compilation: Boolean = false): ReleaseType = when {
+            tags.any { it.equals("EP", ignoreCase = true) || it.equals("Single", ignoreCase = true) } ->
+                SINGLE_OR_EP
+            compilation || tags.any { it.equals("Compilation", ignoreCase = true) } -> COMPILATION
+            else -> ALBUM
+        }
+    }
+}
 
 data class AlbumDetail(
     val album: Album,
