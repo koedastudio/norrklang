@@ -11,6 +11,8 @@ is the single source of truth).
 
 - Settings → About Norrklang: QR code to norrklang.app, with license and
   source link.
+- Radio plays HLS (`.m3u8`) stations, with the song from their ID3 tags
+  where the stream carries one (#22).
 
 ## [1.4.0] — 2026-10-18
 
