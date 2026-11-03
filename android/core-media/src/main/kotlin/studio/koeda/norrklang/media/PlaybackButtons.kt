@@ -42,20 +42,30 @@ internal fun albumFavoriteButtons(context: Context): List<CommandButton> = listO
         .build(),
 )
 
+/** What the playback-row heart toggles, and whether it renders filled. */
+internal sealed interface Heart {
+    /** The current track's favorite ("starred") state on the server. */
+    data class Track(val favorite: Boolean) : Heart
+
+    /** Whether the song a station is playing is in the device's saved list. */
+    data class RadioSong(val saved: Boolean) : Heart
+
+    /** No heart: a station that hasn't named a song has nothing to save. */
+    data object None : Heart
+}
+
 /**
  * The playback-row custom buttons in display order: shuffle first,
- * then the heart. Always set the full list —
- * setMediaButtonPreferences replaces it wholesale. [radio] labels the
- * heart as saving the station's current song (see SavedRadioSongs).
+ * then the heart (if any). Always set the full list —
+ * setMediaButtonPreferences replaces it wholesale.
  */
 internal fun playbackButtons(
     context: Context,
     shuffleOn: Boolean,
-    favorite: Boolean,
-    radio: Boolean = false,
-): List<CommandButton> = listOf(
+    heart: Heart,
+): List<CommandButton> = listOfNotNull(
     shuffleButton(context, shuffleOn),
-    favoriteButton(context, favorite, radio),
+    heartButton(context, heart),
 )
 
 /** Playback-row shuffle toggle; [shuffleOn] mirrors the player's mode. */
@@ -81,26 +91,26 @@ private fun shuffleButton(context: Context, shuffleOn: Boolean): CommandButton =
         .build()
 
 /**
- * Playback-row heart toggling the current track's favorite ("starred")
- * state on the server — or, on a radio station, whether the song playing
- * is in the device's saved list; [favorite] renders the filled heart.
+ * Legacy car hosts can't show a disabled custom action (media3 drops it),
+ * so [Heart.None] means no button at all rather than a greyed one.
  */
 @OptIn(UnstableApi::class) // setSlots
-private fun favoriteButton(context: Context, favorite: Boolean, radio: Boolean): CommandButton =
-    CommandButton.Builder(
-        if (favorite) CommandButton.ICON_HEART_FILLED else CommandButton.ICON_HEART_UNFILLED,
+private fun heartButton(context: Context, heart: Heart): CommandButton? {
+    val (filled, label) = when (heart) {
+        is Heart.Track ->
+            heart.favorite to
+                if (heart.favorite) R.string.command_remove_favorite else R.string.command_add_favorite
+        is Heart.RadioSong ->
+            heart.saved to
+                if (heart.saved) R.string.command_unsave_song else R.string.command_save_song
+        Heart.None -> return null
+    }
+    return CommandButton.Builder(
+        if (filled) CommandButton.ICON_HEART_FILLED else CommandButton.ICON_HEART_UNFILLED,
     )
-        .setDisplayName(
-            context.getString(
-                when {
-                    radio && favorite -> R.string.command_unsave_song
-                    radio -> R.string.command_save_song
-                    favorite -> R.string.command_remove_favorite
-                    else -> R.string.command_add_favorite
-                },
-            ),
-        )
+        .setDisplayName(context.getString(label))
         .setSessionCommand(SessionCommand(ACTION_TOGGLE_FAVORITE, Bundle.EMPTY))
         // Overflow only — see shuffleButton.
         .setSlots(CommandButton.SLOT_OVERFLOW)
         .build()
+}

@@ -163,7 +163,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
         mediaSession = MediaLibrarySession.Builder(this, player, callback)
             .setSessionActivity(signInPendingIntent())
             .setMediaButtonPreferences(
-                playbackButtons(this, shuffleOn = false, favorite = false),
+                playbackButtons(this, shuffleOn = false, heart = Heart.Track(favorite = false)),
             )
             // Per-item heart on album rows; which of the two shows is decided
             // per album via supported commands.

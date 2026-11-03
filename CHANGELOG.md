@@ -18,6 +18,11 @@ is the single source of truth).
 - Assistant voice requests for a radio station ("play BBC World Service")
   and for favourites ("play my favourites", "play liked songs").
 
+### Changed
+
+- The playback-row heart is left out while a radio station hasn't named a
+  song, instead of a "Save song" button that does nothing.
+
 ### Fixed
 
 - Plex: compilations, EPs and live albums were missing from an artist's

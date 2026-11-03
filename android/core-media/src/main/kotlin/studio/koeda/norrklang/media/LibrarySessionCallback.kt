@@ -124,7 +124,7 @@ internal class LibrarySessionCallback(
                         playbackButtons(
                             context,
                             shuffleOn = session.player.shuffleModeEnabled,
-                            favorite = favorite,
+                            heart = Heart.Track(favorite),
                         ),
                     )
                 }
@@ -157,8 +157,7 @@ internal class LibrarySessionCallback(
                         playbackButtons(
                             context,
                             shuffleOn = session.player.shuffleModeEnabled,
-                            favorite = saved,
-                            radio = true,
+                            heart = Heart.RadioSong(saved),
                         ),
                     )
                 }

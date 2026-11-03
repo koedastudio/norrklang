@@ -16,10 +16,9 @@ import studio.koeda.norrklang.data.repo.MusicRepository
 
 /**
  * Keeps the playback-row custom buttons in sync with the player: the shuffle
- * button mirrors the player's shuffle mode, and the heart is filled when the
- * current track is a favorite on the server — or, on a radio station, when
- * the song playing is in [SavedRadioSongs]. Favorite lookups go through the
- * repository's TTL cache, so track skips don't turn into a request storm.
+ * button mirrors the player's shuffle mode, and the heart follows [heartFor].
+ * Favorite lookups go through the repository's TTL cache, so track skips
+ * don't turn into a request storm.
  */
 @OptIn(UnstableApi::class)
 internal class PlaybackButtonsListener(
@@ -34,7 +33,8 @@ internal class PlaybackButtonsListener(
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = refresh()
 
-    // A station's title changes with every song (RadioNowPlayingListener).
+    // A station's title changes with every song (RadioNowPlayingListener),
+    // and the heart comes and goes with it.
     override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) = refresh()
 
     // Shuffle can also be flipped by other controllers (voice, phone UI), not
@@ -44,34 +44,51 @@ internal class PlaybackButtonsListener(
     private fun refresh() {
         refreshJob?.cancel()
         val item = session.player.currentMediaItem
-        val radioSong = item?.let(::radioSong)
-        val trackId = item?.let { (MediaId.parse(it.mediaId) as? MediaId.Track)?.id }
         refreshJob = scope.launch {
-            // Signed out or offline resolves to false: the outline heart is
-            // the right default, and tapping it will surface the real error.
-            // CancellationException must propagate (runCatching would swallow
-            // it): during service teardown the session below is already
-            // released, and touching it then throws.
-            val favorite = try {
-                when {
-                    radioSong != null -> savedSongs.isSaved(radioSong.station, radioSong.title)
-                    trackId != null -> repository.isFavoriteTrack(trackId)
-                    else -> false
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                false
-            }
+            val heart = heartFor(
+                item,
+                savedSong = { song -> lookup { savedSongs.isSaved(song.station, song.title) } },
+                favoriteTrack = { trackId -> lookup { repository.isFavoriteTrack(trackId) } },
+            )
             session.setMediaButtonPreferences(
-                playbackButtons(
-                    context,
-                    shuffleOn = session.player.shuffleModeEnabled,
-                    favorite = favorite,
-                    radio = item?.let { MediaId.parse(it.mediaId) } is MediaId.RadioStation,
-                ),
+                playbackButtons(context, shuffleOn = session.player.shuffleModeEnabled, heart = heart),
             )
         }
+    }
+
+    /**
+     * Signed out or offline resolves to false: the outline heart is the
+     * right default, and tapping it will surface the real error.
+     * CancellationException must propagate (runCatching would swallow it):
+     * during service teardown the session is already released, and touching
+     * it then throws.
+     */
+    private suspend fun lookup(query: suspend () -> Boolean): Boolean = try {
+        query()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        false
+    }
+}
+
+/**
+ * The heart for the item playing: a track's server favorite, a station's
+ * saved song — or none while the station hasn't named a song (a stream
+ * without ICY/ID3 metadata never does). Nothing playing keeps the track
+ * heart so the row doesn't reshuffle between queues.
+ */
+internal suspend fun heartFor(
+    item: MediaItem?,
+    savedSong: suspend (RadioSong) -> Boolean,
+    favoriteTrack: suspend (String) -> Boolean,
+): Heart {
+    item ?: return Heart.Track(favorite = false)
+    return when (val id = MediaId.parse(item.mediaId)) {
+        is MediaId.RadioStation ->
+            radioSong(item)?.let { Heart.RadioSong(savedSong(it)) } ?: Heart.None
+        is MediaId.Track -> Heart.Track(favoriteTrack(id.id))
+        else -> Heart.Track(favorite = false)
     }
 }
 
