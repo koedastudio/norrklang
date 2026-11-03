@@ -34,14 +34,17 @@ with no music of its own.
 
 In the car
 • Browse your library: artists, albums, playlists and favourites
+• Artist pages in sections — Albums, Compilations, Singles & EPs — with
+similar artists below
 • Home screen with Quick play, your favourite artists, recently added tracks
 and generated mixes — Best of, Similar to, genres and decades
 • Full playback: queue, shuffle, seek, cover art
 • Autoplay keeps the music going with similar songs when the queue runs out
 (can be turned off)
 • Add albums and songs as favourites while listening
-• Internet radio: the stations set up on your Navidrome server, with the
-ones you listen to most on Home, and next/previous to switch station. Heart
+• Internet radio: the stations set up on your Navidrome server, HLS streams
+included, with the ones you listen to most on Home, and next/previous to
+switch station. Heart
 a song you hear to note it — the list stays in the car, with a QR code to
 open it on your phone
 • Voice and keyboard search across artists, albums and tracks
@@ -86,6 +89,18 @@ Privacy policy: https://norrklang.app/privacy
 ```
 
 ## Release notes ("What's new", ≤ 500 characters)
+
+For the 1.5.0 release:
+
+```
+• Artist pages in sections: Albums, Compilations, Singles & EPs, with
+similar artists below
+• Radio: HLS (.m3u8) stations now play, with the song title where the
+stream carries one
+• Ask the car's assistant for a radio station or your favourites
+• About page in Settings with a QR code to norrklang.app
+• Fixed: Plex artist pages were missing compilations, EPs and live albums
+```
 
 For the 1.4.0 release:
 

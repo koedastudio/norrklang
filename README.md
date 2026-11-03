@@ -8,7 +8,7 @@ The first project is a **car media app** for **Android Automotive OS** — it ru
 
 The repo also contains `app-mobile`, a phone APK that hosts **Android Auto** projection from the same Kotlin codebase. It builds, passes the same tests, and shares all the core modules — but it has not had the same real-world testing as the car app, so it is not yet published. The first Play release is Android Automotive OS only; Android Auto will follow once it has been proven out.
 
-**Status: 1.4.** The app is feature-complete for everyday in-car listening
+**Status: 1.5.** The app is feature-complete for everyday in-car listening
 and hardened for distribution (signed releases, encrypted credential storage,
 per-account caches), but it has seen a small number of servers and cars.
 Expect rough edges; please report them.
@@ -84,8 +84,10 @@ phone/desktop clients in this monorepo.
   the same encoding so byte offsets stay valid
 - Browse: Home with Quick play, Made for you (Best of / Similar to), Radio,
   Genre and Decade mixes, favourite artists and recently added tracks;
-  Playlists; Library with all artists, all albums, the recently/most played,
-  new and favourite album collections, and internet radio (Navidrome/Subsonic)
+  Playlists; Library with all artists (artist pages in Albums / Compilations /
+  Singles & EPs sections, similar artists below), all albums, the recently/most
+  played, new and favourite album collections, and internet radio
+  (Navidrome/Subsonic, HLS streams included)
 - Libraries: choose which of the server's music libraries to show (Navidrome
   0.58+ libraries, Plex music sections, Jellyfin music libraries) — picked at
   sign-in when there are several, changed any time in Settings; playlists

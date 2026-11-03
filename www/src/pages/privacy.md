@@ -2,7 +2,7 @@
 layout: ../layouts/Legal.astro
 title: Privacy Policy
 description: What Norrklang stores, what it sends, and to whom. No analytics, no third parties.
-effectiveDate: 2026-10-26
+effectiveDate: 2026-11-04
 ---
 
 Norrklang is a music player for [Navidrome](https://www.navidrome.org/) and
@@ -87,9 +87,11 @@ your Jellyfin server alone.
 your server. Your Navidrome/Subsonic server only lists the stations; when you
 play one, the car streams from the station's own server, at the address your
 server lists for it, so that station's operator sees what it sees of any
-listener — the stream request and your car's IP address. Some stations offer
-only plain `http://` streams, which the app plays as they are; the connection
-to your own server stays HTTPS.
+listener — the stream request and your car's IP address. That is the same
+for stations that stream in short segments (HLS), where the car fetches each
+segment from the station's address. Some stations offer only plain `http://`
+streams, which the app plays as they are; the connection to your own server
+stays HTTPS.
 
 The **Diagnostics** screen can show a QR code that lets you share the
 sanitized log when reporting a problem. The car uploads nothing: the log is
@@ -102,6 +104,9 @@ submit the pre-filled GitHub issue, under
 The **Saved from radio** screen offers a QR code that works the same way: the
 list is encoded into the link itself and the page at norrklang.app/songs
 decodes it on your phone. Nothing is uploaded by the car or by the page.
+
+The **About** screen shows a QR code that is just the address of this
+website, so your phone can open it; it carries nothing else.
 
 Norrklang has **no analytics, no advertising, no crash reporting, and no
 third-party services** — the app bundles no Google or other third-party
@@ -123,7 +128,8 @@ credentials.
 Voice search and "play …" requests are handled by the car's own assistant:
 it transcribes what you say and hands Norrklang the resulting text, which the
 app matches against your library by sending it to your server as a search
-query. The recording never reaches the app or the developer, and
+query — or, for a radio station or your favourites, against the lists your
+server already provided. The recording never reaches the app or the developer, and
 how the car handles it is governed by the car maker's policies.
 
 ## This website

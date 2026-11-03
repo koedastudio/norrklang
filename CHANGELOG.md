@@ -5,23 +5,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow semver (`norrklang.version` in `android/gradle.properties`
 is the single source of truth).
 
-## [Unreleased]
+## [1.5.0] — 2026-11-04
 
 ### Added
 
-- Settings → About Norrklang: QR code to norrklang.app, with license and
-  source link.
 - Artist view in sections: Albums, Compilations and Singles & EPs when the
-  server reports release types, and Similar artists when it has them (#20).
+  server reports release types, plus Similar artists (#20).
 - Radio plays HLS (`.m3u8`) stations, with the song from their ID3 tags
   where the stream carries one (#22).
-- Assistant voice requests for a radio station ("play BBC World Service")
-  and for favourites ("play my favourites", "play liked songs").
+- Assistant requests for a radio station ("play BBC World Service") and
+  for favourites ("play my favourites", "play liked songs").
+- Settings → About Norrklang: QR code to norrklang.app, with license and
+  source link.
 
 ### Changed
 
-- The playback-row heart is left out while a radio station hasn't named a
-  song, instead of a "Save song" button that does nothing.
+- No playback-row heart while a radio station hasn't named a song, instead
+  of a "Save song" button that did nothing.
+- Privacy policy (effective 2026-11-03) covers HLS stations, assistant
+  station requests and the About QR; README, website and listing updated.
 
 ### Fixed
 
