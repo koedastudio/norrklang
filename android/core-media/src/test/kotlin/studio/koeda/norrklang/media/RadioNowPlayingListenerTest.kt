@@ -5,6 +5,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Metadata
 import androidx.media3.common.Player
 import androidx.media3.extractor.metadata.icy.IcyInfo
+import androidx.media3.extractor.metadata.id3.TextInformationFrame
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -42,6 +43,8 @@ class RadioNowPlayingListenerTest {
         .build()
 
     private fun icy(title: String) = Metadata(IcyInfo(ByteArray(0), title, null))
+
+    private fun id3(id: String, value: String) = TextInformationFrame(id, null, listOf(value))
 
     private fun position(player: QueuePlayer, index: Int, item: MediaItem? = player.items[index]) =
         Player.PositionInfo(null, index, item, null, index, 0L, 0L, -1, -1)
@@ -152,5 +155,33 @@ class RadioNowPlayingListenerTest {
         listener.onPositionDiscontinuity(old, position(player, 1), Player.DISCONTINUITY_REASON_REMOVE)
 
         assertEquals(listOf("Song", "Other"), player.titles)
+    }
+
+    @Test
+    fun `an HLS stream's ID3 artist and title name the song`() {
+        val player = QueuePlayer(station("rs-1", "KEXP"))
+        RadioNowPlayingListener(player).onMetadata(Metadata(id3("TIT2", " La femme d'argent "), id3("TPE1", "Air")))
+
+        assertEquals(listOf("Air - La femme d'argent / KEXP"), player.lines)
+    }
+
+    @Test
+    fun `an ID3 title without an artist stands alone`() {
+        assertEquals("Jingle", streamSong(Metadata(id3("TIT2", "Jingle"), id3("TPE1", " "))))
+    }
+
+    @Test
+    fun `ID3 without a title leaves the station as is`() {
+        val player = QueuePlayer(station("rs-1", "KEXP"))
+        RadioNowPlayingListener(player).onMetadata(Metadata(id3("TPE1", "Air"), id3("TALB", "Moon Safari")))
+
+        assertEquals(listOf("KEXP / KEXP"), player.lines)
+    }
+
+    @Test
+    fun `ICY wins over ID3 when a stream sends both`() {
+        val metadata = Metadata(id3("TIT2", "From ID3"), IcyInfo(ByteArray(0), "From ICY", null))
+
+        assertEquals("From ICY", streamSong(metadata))
     }
 }

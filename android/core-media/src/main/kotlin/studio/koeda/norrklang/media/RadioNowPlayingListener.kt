@@ -6,10 +6,12 @@ import androidx.media3.common.Metadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.extractor.metadata.icy.IcyInfo
+import androidx.media3.extractor.metadata.id3.TextInformationFrame
 
 /**
  * Shows the song a station is playing: ExoPlayer decodes the stream's ICY
- * "StreamTitle" into [IcyInfo], but the item's own metadata always wins in
+ * "StreamTitle" into [IcyInfo] (or, for HLS, the segments' ID3 title and
+ * artist frames), but the item's own metadata always wins in
  * the player's merged metadata — so the current item is re-issued with the
  * song. Same URI, so ExoPlayer updates it in place without a reload.
  *
@@ -21,7 +23,7 @@ import androidx.media3.extractor.metadata.icy.IcyInfo
  * A station left for another queue item gets its own name back on both
  * lines, so the queue lists stations rather than the songs they last played.
  */
-@OptIn(UnstableApi::class) // Metadata, IcyInfo
+@OptIn(UnstableApi::class) // Metadata, IcyInfo, TextInformationFrame
 internal class RadioNowPlayingListener(private val player: Player) : Player.Listener {
 
     /** Setting it re-lays out the station playing right now, not just the next song. */
@@ -37,12 +39,7 @@ internal class RadioNowPlayingListener(private val player: Player) : Player.List
     override fun onMetadata(metadata: Metadata) {
         val item = player.currentMediaItem ?: return
         if (MediaId.parse(item.mediaId) !is MediaId.RadioStation) return
-        val song = (0 until metadata.length())
-            .asSequence()
-            .map(metadata::get)
-            .filterIsInstance<IcyInfo>()
-            .firstNotNullOfOrNull { it.title?.trim()?.takeIf(String::isNotEmpty) }
-            ?: return
+        val song = streamSong(metadata) ?: return
         relayout(player.currentMediaItemIndex, item, song)
     }
 
@@ -74,3 +71,17 @@ internal class RadioNowPlayingListener(private val player: Player) : Player.List
         player.replaceMediaItem(index, item.buildUpon().setMediaMetadata(metadata).build())
     }
 }
+
+@OptIn(UnstableApi::class)
+internal fun streamSong(metadata: Metadata): String? {
+    val entries = (0 until metadata.length()).map(metadata::get)
+    entries.filterIsInstance<IcyInfo>()
+        .firstNotNullOfOrNull { it.title.nonBlank() }
+        ?.let { return it }
+    val frames = entries.filterIsInstance<TextInformationFrame>()
+    fun frame(id: String) = frames.firstOrNull { it.id == id }?.values?.firstOrNull().nonBlank()
+    val title = frame("TIT2") ?: return null
+    return frame("TPE1")?.let { "$it - $title" } ?: title
+}
+
+private fun String?.nonBlank(): String? = this?.trim()?.takeIf(String::isNotEmpty)
