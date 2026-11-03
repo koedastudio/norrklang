@@ -15,6 +15,8 @@ is the single source of truth).
   server reports release types, and Similar artists when it has them (#20).
 - Radio plays HLS (`.m3u8`) stations, with the song from their ID3 tags
   where the stream carries one (#22).
+- Assistant voice requests for a radio station ("play BBC World Service")
+  and for favourites ("play my favourites", "play liked songs").
 
 ### Fixed
 

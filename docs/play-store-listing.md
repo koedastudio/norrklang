@@ -45,7 +45,8 @@ ones you listen to most on Home, and next/previous to switch station. Heart
 a song you hear to note it — the list stays in the car, with a QR code to
 open it on your phone
 • Voice and keyboard search across artists, albums and tracks
-• Ask the car's assistant to play an artist, album, song or playlist
+• Ask the car's assistant to play an artist, album, song, playlist, radio
+station or your favourites
 • Streaming quality per connection: original files on Wi-Fi, a capped
 bitrate on mobile data — or pick your own tiers
 • Choose which of your server's music libraries to show — the rest stay

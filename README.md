@@ -94,6 +94,8 @@ phone/desktop clients in this monorepo.
 - Favourites from the car UI: heart the playing track, heart albums while browsing,
   save songs playing on radio (Settings → Saved from radio)
 - Voice/keyboard search across artists, albums and tracks
+- Assistant requests: play an artist, album, song, playlist, genre, radio station
+  or your favourites
 - Play reporting back to the server (Navidrome scrobbles, Plex timelines, Jellyfin sessions),
   with on/off and per-artist/per-playlist/per-library exclusions
 - Playback resumption after restarts; automatic recovery from network dropouts

@@ -2,17 +2,21 @@ package studio.koeda.norrklang.media
 
 import studio.koeda.norrklang.data.model.Album
 import studio.koeda.norrklang.data.model.Artist
+import studio.koeda.norrklang.data.model.RadioStation
 import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.repo.MusicRepository
 
 /**
- * Resolves an Assistant voice request ("Play <x>") into a playable queue.
+ * Resolves an Assistant voice request ("Play <x>") into something playable.
  *
  * A voice request is one library search plus ranking: an exact title/name
  * match beats server result order, and the structured focus extras (artist/
- * album/title/playlist/genre) pick the section when the assistant provides
- * them. An empty query ("play some music") is a random-mix queue; no match
- * at all resolves to null.
+ * album/title/playlist/genre/radio) pick the section when the assistant
+ * provides them. Two phrase families never reach the library search: the
+ * favourites phrases ("my favourites", "liked songs") play the starred
+ * tracks, and a radio station name plays that station. An empty query
+ * ("play some music") is a random-mix queue; no match at all resolves to
+ * null.
  *
  * Kept free of Android imports (the Bundle parsing lives in
  * [LibrarySessionCallback]) so it stays JVM-unit-testable.
@@ -31,9 +35,13 @@ internal class VoiceSearchResolver(
         val title: String? = null,
         val playlist: String? = null,
         val genre: String? = null,
+        val radioChannel: String? = null,
     )
 
-    enum class Focus { Unstructured, Artist, Album, Title, Playlist, Genre }
+    enum class Focus { Unstructured, Artist, Album, Title, Playlist, Genre, Radio }
+
+    /** What a request resolved to: a track queue or one radio station. */
+    sealed interface Resolved
 
     /**
      * The queue to play. A single-track result relies on queue radio for
@@ -42,29 +50,24 @@ internal class VoiceSearchResolver(
     data class Queue(
         val tracks: List<Track>,
         val container: MediaId.Container? = null,
-    )
+    ) : Resolved
 
-    suspend fun resolve(request: Request): Queue? {
-        when (request.focus) {
-            Focus.Artist ->
-                nameOrQuery(request.artist, request)?.let { artistQueue(it) }?.let { return it }
-            Focus.Album ->
-                nameOrQuery(request.album, request)
-                    ?.let { albumQueue(it, request.artist) }?.let { return it }
-            Focus.Playlist ->
-                nameOrQuery(request.playlist, request)?.let { playlistQueue(it) }?.let { return it }
-            Focus.Genre ->
-                nameOrQuery(request.genre, request)?.let { genreQueue(it) }?.let { return it }
-            // Title focus resolves through the generic search below, just with
-            // the structured title as the term.
-            Focus.Title, Focus.Unstructured -> Unit
-        }
+    /** A radio station to start; it plays amid the other stations ([StationQueue]). */
+    data class Station(val id: String) : Resolved
+
+    suspend fun resolve(request: Request): Resolved? {
+        focused(request)?.let { return it }
         val term = (if (request.focus == Focus.Title) request.title ?: request.query else request.query)
             .trim()
         // "Play some music" — nothing to match, so play the random mix.
         if (term.isEmpty()) return containerQueue(MediaId.HomeRandomMix)
+        if (FAVOURITES.matches(voiceKey(term))) return containerQueue(MediaId.HomeFavoriteSongs)
         // Generic resolution (also the fallback when a focused lookup missed):
-        // exact matches first, broad-to-specific only after that.
+        // exact matches first, broad-to-specific only after that. A station
+        // name ranks like a library name: exact beats everything, a partial
+        // match only beats the fuzzy library fallback.
+        val stations = repository.radioStations()
+        exactStation(stations, term)?.let { return it }
         val results = repository.search(term)
         val key = voiceKey(term)
         results.tracks.firstOrNull { voiceKey(it.title) == key }?.let { return Queue(listOf(it)) }
@@ -72,10 +75,23 @@ internal class VoiceSearchResolver(
             ?.let { bestOf(it) }?.let { return it }
         results.albums.firstOrNull { voiceKey(it.title) == key }
             ?.let { albumTracks(it) }?.let { return it }
+        partialStation(stations, term)?.let { return it }
         results.tracks.firstOrNull()?.let { return Queue(listOf(it)) }
         results.artists.firstOrNull()?.let { bestOf(it) }?.let { return it }
         results.albums.firstOrNull()?.let { albumTracks(it) }?.let { return it }
         return null
+    }
+
+    /** The focused lookup when the assistant structured the request; null when it missed. */
+    private suspend fun focused(request: Request): Resolved? = when (request.focus) {
+        Focus.Artist -> nameOrQuery(request.artist, request)?.let { artistQueue(it) }
+        Focus.Album -> nameOrQuery(request.album, request)?.let { albumQueue(it, request.artist) }
+        Focus.Playlist -> nameOrQuery(request.playlist, request)?.let { playlistQueue(it) }
+        Focus.Genre -> nameOrQuery(request.genre, request)?.let { genreQueue(it) }
+        Focus.Radio -> nameOrQuery(request.radioChannel, request)?.let { stationByName(it) }
+        // Title focus resolves through the generic search, just with the
+        // structured title as the term.
+        Focus.Title, Focus.Unstructured -> null
     }
 
     /** The structured extra when present, else the spoken query; null when both are blank. */
@@ -134,6 +150,27 @@ internal class VoiceSearchResolver(
         return containerQueue(MediaId.HomeGenre(genre.name))
     }
 
+    private suspend fun stationByName(name: String): Station? {
+        val stations = repository.radioStations()
+        return exactStation(stations, name) ?: partialStation(stations, name)
+    }
+
+    /**
+     * Exact station name; a bare "radio" (empty key) is the first station,
+     * the same one the top of the Radio tab plays.
+     */
+    private fun exactStation(stations: List<RadioStation>, name: String): Station? {
+        val key = stationKey(name)
+        val station = if (key.isEmpty()) stations.firstOrNull()
+        else stations.firstOrNull { stationKey(it.name) == key }
+        return station?.let { Station(it.id) }
+    }
+
+    private fun partialStation(stations: List<RadioStation>, name: String): Station? {
+        val key = stationKey(name).ifEmpty { return null }
+        return stations.firstOrNull { stationKey(it.name).contains(key) }?.let { Station(it.id) }
+    }
+
     private suspend fun containerQueue(container: MediaId.Container): Queue? =
         containerTracks(container).ifEmpty { null }?.let { Queue(it, container) }
 
@@ -142,11 +179,20 @@ internal class VoiceSearchResolver(
 
         private val WHITESPACE = Regex("\\s+")
 
+        /** "my favourites", "liked songs", "starred tracks", "favourites playlist"… */
+        private val FAVOURITES =
+            Regex("(my |the )?(favou?rites?|liked|starred|loved)( (songs|tracks|music|playlist))?")
+
+        private val RADIO_WORD = Regex("^radio\\b|\\bradio$")
+
         /**
          * Speech-tolerant comparison key: case, surrounding/duplicate
          * whitespace and a leading "the" never break an exact match.
          */
         fun voiceKey(raw: String): String =
             raw.trim().lowercase().replace(WHITESPACE, " ").removePrefix("the ")
+
+        /** [voiceKey] minus a leading/trailing "radio", so "BBC radio" finds "Radio BBC". */
+        fun stationKey(raw: String): String = voiceKey(raw).replace(RADIO_WORD, "").trim()
     }
 }

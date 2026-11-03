@@ -304,11 +304,14 @@ internal class LibrarySessionCallback(
         // Assistant voice requests (legacy playFromSearch) arrive as one item
         // with no media id, carrying only requestMetadata.
         mediaItems.singleOrNull()?.takeIf(::isVoiceRequest)?.let { requested ->
-            return@future MediaItemsWithStartPosition(
-                resolveVoiceRequest(requested),
-                /* startIndex = */ 0,
-                startPositionMs,
-            )
+            return@future when (val resolved = resolveVoiceRequest(requested)) {
+                is VoiceSearchResolver.Station -> stationQueue.startingAt(resolved.id)
+                is VoiceSearchResolver.Queue -> MediaItemsWithStartPosition(
+                    resolved.tracks.map { buildTrack(it, resolved.container) },
+                    /* startIndex = */ 0,
+                    startPositionMs,
+                )
+            }
         }
         // Tapping one track in an album/playlist sends a single item carrying a
         // container context — rebuild the sibling queue around it. A tapped
@@ -417,8 +420,8 @@ internal class LibrarySessionCallback(
      * leaves the current queue playing, where an empty success would replace
      * it with silence on a misheard query.
      */
-    private suspend fun resolveVoiceRequest(item: MediaItem): List<MediaItem> {
-        val queue = try {
+    private suspend fun resolveVoiceRequest(item: MediaItem): VoiceSearchResolver.Resolved {
+        val resolved = try {
             voiceSearch.resolve(voiceRequest(item))
         } catch (e: CancellationException) {
             throw e
@@ -426,10 +429,7 @@ internal class LibrarySessionCallback(
             Diagnostics.record("voice-search", e)
             throw e
         }
-        if (queue == null) {
-            throw IllegalArgumentException("No match for voice query")
-        }
-        return queue.tracks.map { buildTrack(it, queue.container) }
+        return resolved ?: throw IllegalArgumentException("No match for voice query")
     }
 
     private fun voiceRequest(item: MediaItem): VoiceSearchResolver.Request {
@@ -440,6 +440,7 @@ internal class LibrarySessionCallback(
             MediaStore.Audio.Media.ENTRY_CONTENT_TYPE -> VoiceSearchResolver.Focus.Title
             FOCUS_PLAYLIST -> VoiceSearchResolver.Focus.Playlist
             FOCUS_GENRE -> VoiceSearchResolver.Focus.Genre
+            MediaStore.Audio.Radio.ENTRY_CONTENT_TYPE -> VoiceSearchResolver.Focus.Radio
             else -> VoiceSearchResolver.Focus.Unstructured
         }
         return VoiceSearchResolver.Request(
@@ -450,6 +451,7 @@ internal class LibrarySessionCallback(
             title = extras?.getString(MediaStore.EXTRA_MEDIA_TITLE),
             playlist = extras?.getString(MediaStore.EXTRA_MEDIA_PLAYLIST),
             genre = extras?.getString(MediaStore.EXTRA_MEDIA_GENRE),
+            radioChannel = extras?.getString(MediaStore.EXTRA_MEDIA_RADIO_CHANNEL),
         )
     }
 
