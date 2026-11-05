@@ -6,17 +6,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -43,7 +38,6 @@ import studio.koeda.norrklang.plex.model.PlexConnection
 import studio.koeda.norrklang.plex.model.PlexHomeUser
 import studio.koeda.norrklang.plex.model.PlexResource
 import studio.koeda.norrklang.ui.R
-import studio.koeda.norrklang.ui.components.BackButton
 import studio.koeda.norrklang.ui.components.LibraryChecklist
 import studio.koeda.norrklang.ui.theme.LocalFormDimens
 
@@ -66,104 +60,61 @@ internal fun PlexSignInPage(
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
 ) {
-    val dimens = LocalFormDimens.current
     // Back from the PIN page returns to the profile list, not the provider picker.
     val back = if (state is PlexSignInViewModel.UiState.EnterPin) onCancelPin else onBack
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (back != null) {
-            BackButton(
-                onBack = back,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(16.dp),
-            )
-        }
-        Column(
-            modifier = Modifier
-                .widthInForm()
-                .verticalScroll(rememberScrollState())
-                .padding(dimens.screenPadding),
-            horizontalAlignment = Alignment.Start,
-            verticalArrangement = Arrangement.spacedBy(dimens.itemSpacing),
-        ) {
-            when (state) {
-                is PlexSignInViewModel.UiState.Idle,
-                is PlexSignInViewModel.UiState.CreatingPin,
-                -> LoadingBody(stringResource(R.string.plex_link_title))
+    FormPage(modifier = modifier, onBack = back) {
+        when (state) {
+            is PlexSignInViewModel.UiState.Idle,
+            is PlexSignInViewModel.UiState.CreatingPin,
+            -> LoadingBody(stringResource(R.string.plex_link_title))
 
-                is PlexSignInViewModel.UiState.WaitingForLink ->
-                    LinkBody(code = state.code, linkUrl = state.linkUrl)
+            is PlexSignInViewModel.UiState.WaitingForLink ->
+                LinkBody(code = state.code, linkUrl = state.linkUrl)
 
-                is PlexSignInViewModel.UiState.PickUser ->
-                    UsersBody(state.users, onSelectUser)
+            is PlexSignInViewModel.UiState.PickUser ->
+                UsersBody(state.users, onSelectUser)
 
-                is PlexSignInViewModel.UiState.EnterPin ->
-                    PinBody(state, onSubmitPin)
+            is PlexSignInViewModel.UiState.EnterPin ->
+                PinBody(state, onSubmitPin)
 
-                is PlexSignInViewModel.UiState.SwitchingUser ->
-                    LoadingBody(stringResource(R.string.plex_switching_user))
+            is PlexSignInViewModel.UiState.SwitchingUser ->
+                LoadingBody(stringResource(R.string.plex_switching_user))
 
-                is PlexSignInViewModel.UiState.FetchingServers ->
-                    LoadingBody(stringResource(R.string.plex_pick_server_title))
+            is PlexSignInViewModel.UiState.FetchingServers ->
+                LoadingBody(stringResource(R.string.plex_pick_server_title))
 
-                is PlexSignInViewModel.UiState.PickServer ->
-                    ServersBody(state.servers, onSelectServer)
+            is PlexSignInViewModel.UiState.PickServer ->
+                ServersBody(state.servers, onSelectServer)
 
-                is PlexSignInViewModel.UiState.PickConnection ->
-                    ConnectionsBody(state, onSelectConnection)
+            is PlexSignInViewModel.UiState.PickConnection ->
+                ConnectionsBody(state, onSelectConnection)
 
-                is PlexSignInViewModel.UiState.PickLibraries ->
-                    LibrariesBody(state, onToggleLibrary, onConfirmLibraries)
+            is PlexSignInViewModel.UiState.PickLibraries ->
+                LibrariesBody(state, onToggleLibrary, onConfirmLibraries)
 
-                is PlexSignInViewModel.UiState.Validating ->
-                    LoadingBody(stringResource(R.string.plex_validating))
+            is PlexSignInViewModel.UiState.Validating ->
+                LoadingBody(stringResource(R.string.plex_validating))
 
-                is PlexSignInViewModel.UiState.Error -> ErrorBody(state.kind, onRetry)
+            is PlexSignInViewModel.UiState.Error -> ErrorBody(state.kind, onRetry)
 
-                // The flow host navigates away on Done; render nothing.
-                is PlexSignInViewModel.UiState.Done -> Unit
-            }
+            // The flow host navigates away on Done; render nothing.
+            is PlexSignInViewModel.UiState.Done -> Unit
         }
     }
 }
 
 @Composable
-private fun Modifier.widthInForm(): Modifier {
-    val dimens = LocalFormDimens.current
-    return widthIn(max = dimens.maxWidth).fillMaxWidth()
-}
-
-@Composable
-private fun PageTitle(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.displaySmall,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.primary,
-    )
-}
-
-@Composable
 private fun LoadingBody(title: String) {
-    PageTitle(title)
+    FormTitle(title)
     CircularProgressIndicator()
 }
 
 @Composable
 private fun LinkBody(code: String, linkUrl: String) {
     val dimens = LocalFormDimens.current
-    PageTitle(stringResource(R.string.plex_link_title))
-    Text(
-        text = stringResource(R.string.plex_link_instruction),
-        style = MaterialTheme.typography.bodyLarge,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
+    FormTitle(stringResource(R.string.plex_link_title))
+    FormSubtitle(stringResource(R.string.plex_link_instruction))
     Text(
         text = code.toCharArray().joinToString(" "),
         style = MaterialTheme.typography.displayLarge,
@@ -206,12 +157,8 @@ private fun LinkBody(code: String, linkUrl: String) {
 
 @Composable
 private fun UsersBody(users: List<PlexHomeUser>, onSelect: (PlexHomeUser) -> Unit) {
-    PageTitle(stringResource(R.string.plex_pick_user_title))
-    Text(
-        text = stringResource(R.string.plex_pick_user_subtitle),
-        style = MaterialTheme.typography.bodyLarge,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
+    FormTitle(stringResource(R.string.plex_pick_user_title))
+    FormSubtitle(stringResource(R.string.plex_pick_user_subtitle))
     users.forEach { user ->
         SelectionCard(onClick = { onSelect(user) }) {
             Row(
@@ -237,15 +184,10 @@ private fun UsersBody(users: List<PlexHomeUser>, onSelect: (PlexHomeUser) -> Uni
 
 @Composable
 private fun PinBody(state: PlexSignInViewModel.UiState.EnterPin, onSubmit: (String) -> Unit) {
-    val dimens = LocalFormDimens.current
     // Keyed on the state so a rejected attempt starts from an empty field.
     var pin by remember(state) { mutableStateOf("") }
-    PageTitle(stringResource(R.string.plex_pin_title))
-    Text(
-        text = stringResource(R.string.plex_pin_instruction, state.user.title),
-        style = MaterialTheme.typography.bodyLarge,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
+    FormTitle(stringResource(R.string.plex_pin_title))
+    FormSubtitle(stringResource(R.string.plex_pin_instruction, state.user.title))
     OutlinedTextField(
         value = pin,
         onValueChange = { pin = it.filter(Char::isDigit) },
@@ -263,24 +205,16 @@ private fun PinBody(state: PlexSignInViewModel.UiState.EnterPin, onSubmit: (Stri
             style = MaterialTheme.typography.bodyMedium,
         )
     }
-    Button(
+    FormButton(
+        text = stringResource(R.string.signin_continue),
         onClick = { onSubmit(pin) },
         enabled = pin.isNotEmpty(),
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = dimens.controlMinHeight),
-    ) {
-        Text(
-            text = stringResource(R.string.signin_continue),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-        )
-    }
+    )
 }
 
 @Composable
 private fun ServersBody(servers: List<PlexResource>, onSelect: (PlexResource) -> Unit) {
-    PageTitle(stringResource(R.string.plex_pick_server_title))
+    FormTitle(stringResource(R.string.plex_pick_server_title))
     servers.forEach { server ->
         SelectionCard(onClick = { onSelect(server) }) {
             Row(
@@ -306,12 +240,8 @@ private fun ConnectionsBody(
     state: PlexSignInViewModel.UiState.PickConnection,
     onSelect: (PlexResource, PlexConnection) -> Unit,
 ) {
-    PageTitle(stringResource(R.string.plex_pick_connection_title))
-    Text(
-        text = state.server.name,
-        style = MaterialTheme.typography.bodyLarge,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
+    FormTitle(stringResource(R.string.plex_pick_connection_title))
+    FormSubtitle(state.server.name)
     if (state.probing) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -375,13 +305,8 @@ private fun LibrariesBody(
     onToggle: (String, Boolean) -> Unit,
     onConfirm: () -> Unit,
 ) {
-    val dimens = LocalFormDimens.current
-    PageTitle(stringResource(R.string.plex_pick_libraries_title))
-    Text(
-        text = state.server.name,
-        style = MaterialTheme.typography.bodyLarge,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
+    FormTitle(stringResource(R.string.signin_pick_libraries_title))
+    FormSubtitle(state.server.name)
     Text(
         text = stringResource(R.string.signin_pick_libraries_subtitle),
         style = MaterialTheme.typography.bodyMedium,
@@ -392,25 +317,16 @@ private fun LibrariesBody(
         selectedIds = state.selected,
         onToggle = onToggle,
     )
-    Button(
+    FormButton(
+        text = stringResource(R.string.signin_continue),
         onClick = onConfirm,
         enabled = state.selected.isNotEmpty(),
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = dimens.controlMinHeight),
-    ) {
-        Text(
-            text = stringResource(R.string.signin_continue),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-        )
-    }
+    )
 }
 
 @Composable
 private fun ErrorBody(kind: PlexSignInViewModel.ErrorKind, onRetry: () -> Unit) {
-    val dimens = LocalFormDimens.current
-    PageTitle(stringResource(R.string.signin_provider_plex))
+    FormTitle(stringResource(R.string.signin_provider_plex))
     Text(
         text = stringResource(
             when (kind) {
@@ -425,18 +341,7 @@ private fun ErrorBody(kind: PlexSignInViewModel.ErrorKind, onRetry: () -> Unit) 
         color = MaterialTheme.colorScheme.error,
         style = MaterialTheme.typography.bodyLarge,
     )
-    Button(
-        onClick = onRetry,
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = dimens.controlMinHeight),
-    ) {
-        Text(
-            text = stringResource(R.string.plex_retry),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-        )
-    }
+    FormButton(text = stringResource(R.string.plex_retry), onClick = onRetry)
 }
 
 @Composable

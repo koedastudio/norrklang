@@ -1,12 +1,8 @@
 package studio.koeda.norrklang.ui.settings
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
@@ -18,11 +14,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import studio.koeda.norrklang.data.model.MusicLibrary
 import studio.koeda.norrklang.ui.R
-import studio.koeda.norrklang.ui.components.BackButton
+import studio.koeda.norrklang.ui.components.CenteredBox
 import studio.koeda.norrklang.ui.components.LibraryChecklist
 import studio.koeda.norrklang.ui.settings.SettingsViewModel.PickerState
 import studio.koeda.norrklang.ui.theme.LocalFormDimens
@@ -42,31 +36,14 @@ internal fun LibrariesPage(
     modifier: Modifier = Modifier,
 ) {
     val dimens = LocalFormDimens.current
-
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = dimens.screenPadding, vertical = dimens.itemSpacing),
+    SettingsPageScaffold(
+        title = stringResource(R.string.settings_libraries),
+        onBack = onBack,
+        modifier = modifier,
+        hint = stringResource(R.string.settings_libraries_hint),
+        scroll = false,
+        divider = false,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            BackButton(onBack)
-            Text(
-                text = stringResource(R.string.settings_libraries),
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(start = 8.dp),
-            )
-        }
-        Spacer(Modifier.height(dimens.itemSpacing / 2))
-        Text(
-            text = stringResource(R.string.settings_libraries_hint),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(dimens.itemSpacing))
-
         when (state) {
             PickerState.Loading -> CenteredBox { CircularProgressIndicator() }
             PickerState.Error -> CenteredBox {

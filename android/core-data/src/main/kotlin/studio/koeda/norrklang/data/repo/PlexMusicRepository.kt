@@ -7,9 +7,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import studio.koeda.norrklang.data.artwork.ArtworkContract
 import studio.koeda.norrklang.data.di.AppPackageName
 import studio.koeda.norrklang.data.di.ApplicationScope
@@ -26,13 +23,14 @@ import studio.koeda.norrklang.data.model.ReleaseType
 import studio.koeda.norrklang.data.model.SearchResults
 import studio.koeda.norrklang.data.model.StreamRef
 import studio.koeda.norrklang.data.model.Track
+import studio.koeda.norrklang.data.repo.MusicRepository.Companion.SEARCH_COUNT_PER_TYPE
+import studio.koeda.norrklang.data.repo.MusicRepository.Companion.SIMILAR_TRACK_ARTISTS
 import studio.koeda.norrklang.data.session.MusicProvider
 import studio.koeda.norrklang.data.session.PlexSession
 import studio.koeda.norrklang.data.session.ProviderSession
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
 import studio.koeda.norrklang.plex.PlexException
-import studio.koeda.norrklang.plex.PlexServerClient
 import studio.koeda.norrklang.plex.PlexServerClient.ItemType
 import studio.koeda.norrklang.plex.model.PlexDirectory
 import studio.koeda.norrklang.plex.model.PlexHub
@@ -56,44 +54,35 @@ import studio.koeda.norrklang.plex.model.PlexMetadata
  */
 @Singleton
 class PlexMusicRepository @Inject constructor(
-    private val sessionManager: SessionManager,
-    private val settings: ServerSettingsRepository,
+    sessionManager: SessionManager,
+    settings: ServerSettingsRepository,
     @AppPackageName private val packageName: String,
     @ApplicationScope scope: CoroutineScope,
-) : MusicRepository {
+) : ProviderMusicRepository<PlexSession>(sessionManager, settings, scope) {
 
-    private val cache = TtlCache(ttlMillis = 5 * 60 * 1000L)
+    override fun sessionOf(session: ProviderSession) = session as? PlexSession
 
-    init {
-        // Sign-out purges entries; fingerprint keys isolate direct account
-        // switches (see SubsonicMusicRepository).
-        scope.launch {
-            sessionManager.state.drop(1).collect { state ->
-                // Connected caches are already keyed by account fingerprint.
-                // Clearing on connect can invalidate that account's first load.
-                if (state is SessionManager.SessionState.SignedOut) cache.clear()
-            }
-        }
-    }
+    override fun translate(e: Exception) = (e as? PlexException)?.toMusicException()
 
-    override suspend fun libraries(): List<MusicLibrary> = librariesFor(plexSession())
+    override suspend fun loadLibraries(session: PlexSession) =
+        session.client.musicSections().map { MusicLibrary(it.key, it.title) }
 
     override suspend fun artists(): List<Artist> =
-        scoped("artists") { client, scope ->
+        scoped("artists") { session, scope ->
             scope.merged(BY_TITLE) { section ->
-                client.sectionItems(section, ItemType.ARTIST, sort = "titleSort:asc")
+                session.client.sectionItems(section, ItemType.ARTIST, sort = "titleSort:asc")
             }.mapNotNull { (_, dto) -> dto.toArtistOrNull(sortGroup = dto.sortBucket()) }
         }
 
     override suspend fun artist(id: String): ArtistDetail =
-        cached("artist/$id") { client ->
-            val dto = client.metadata(id)
+        cached("artist/$id") { session ->
+            val dto = session.client.metadata(id)
             val releaseTypes = releaseTypesByAlbum(relatedHubs(id))
             ArtistDetail(
                 artist = dto.toArtistOrNull()
                     ?: throw MusicException.NotFound("Artist $id has no rating key"),
                 // Newest first, like the Subsonic side; unknown years sink.
-                albums = artistReleases(client, id, dto.librarySectionId)
+                albums = artistReleases(session, id, dto.librarySectionId)
                     .mapNotNull { it.toAlbumOrNull(releaseTypes[it.ratingKey] ?: ReleaseType.ALBUM) }
                     .sortedByDescending { it.year ?: Int.MIN_VALUE },
             )
@@ -103,20 +92,20 @@ class PlexMusicRepository @Inject constructor(
     // compilations etc. to the artist's hubs, which are section queries on
     // artist.id. The same query here lists every release in one request.
     private suspend fun artistReleases(
-        client: PlexServerClient,
+        session: PlexSession,
         artistId: String,
         sectionId: Int?,
     ): List<PlexMetadata> {
-        val section = sectionId?.toString() ?: return client.children(artistId)
-        return client.sectionItems(section, ItemType.ALBUM, filters = listOf("artist.id" to artistId))
+        val section = sectionId?.toString() ?: return session.client.children(artistId)
+        return session.client.sectionItems(section, ItemType.ALBUM, filters = listOf("artist.id" to artistId))
     }
 
     // One section keeps the server-paged request; several materialise one
     // merged sorted list (same memory order as the unpaged host path) and slice.
     override suspend fun albums(offset: Int, size: Int): List<Album> =
-        if (currentScope().selectedIds.size == 1) {
-            scoped("albums/$offset/$size") { client, scope ->
-                client.sectionItems(
+        if (scope(session()).selectedIds.size == 1) {
+            scoped("albums/$offset/$size") { session, scope ->
+                session.client.sectionItems(
                     scope.selectedIds.single(),
                     ItemType.ALBUM,
                     sort = "titleSort:asc",
@@ -125,45 +114,45 @@ class PlexMusicRepository @Inject constructor(
                 ).mapNotNull { it.toAlbumOrNull() }
             }
         } else {
-            scoped("albums-all") { client, scope ->
+            scoped("albums-all") { session, scope ->
                 scope.merged(BY_TITLE) { section ->
-                    client.sectionItems(section, ItemType.ALBUM, sort = "titleSort:asc")
+                    session.client.sectionItems(section, ItemType.ALBUM, sort = "titleSort:asc")
                 }.mapNotNull { (_, dto) -> dto.toAlbumOrNull() }
             }.drop(offset).take(size)
         }
 
     override suspend fun recentlyAdded(size: Int): List<Album> =
-        scoped("recent/$size") { client, scope ->
+        scoped("recent/$size") { session, scope ->
             scope.merged(BY_ADDED_DESC) { section ->
-                client.sectionItems(section, ItemType.ALBUM, sort = "addedAt:desc", size = size)
+                session.client.sectionItems(section, ItemType.ALBUM, sort = "addedAt:desc", size = size)
             }.mapNotNull { (_, dto) -> dto.toAlbumOrNull() }.take(size)
         }
 
     override suspend fun favoriteAlbums(size: Int): List<Album> =
-        scoped("favorites/$size") { client, scope ->
+        scoped("favorites/$size") { session, scope ->
             scope.merged(BY_TITLE) { section ->
-                client.sectionItems(section, ItemType.ALBUM, filters = LOVED, size = size)
+                session.client.sectionItems(section, ItemType.ALBUM, filters = LOVED, size = size)
             }.mapNotNull { (_, dto) -> dto.toAlbumOrNull() }.take(size)
         }
 
     override suspend fun favoriteTracks(): List<Track> =
-        scoped("favorite-tracks") { client, scope ->
+        scoped("favorite-tracks") { session, scope ->
             scope.merged(BY_TITLE) { section ->
-                client.sectionItems(section, ItemType.TRACK, filters = LOVED)
+                session.client.sectionItems(section, ItemType.TRACK, filters = LOVED)
             }.mapNotNull { (section, dto) -> dto.toTrackOrNull(section) }
         }
 
     override suspend fun favoriteArtists(): List<Artist> =
-        scoped("favorite-artists") { client, scope ->
+        scoped("favorite-artists") { session, scope ->
             scope.merged(BY_TITLE) { section ->
-                client.sectionItems(section, ItemType.ARTIST, filters = LOVED)
+                session.client.sectionItems(section, ItemType.ARTIST, filters = LOVED)
             }.mapNotNull { (_, dto) -> dto.toArtistOrNull() }
         }
 
     override suspend fun recentlyAddedTracks(size: Int): List<Track> =
-        scoped("recently-added-tracks/$size") { client, scope ->
+        scoped("recently-added-tracks/$size") { session, scope ->
             scope.merged(BY_ADDED_DESC) { section ->
-                client.sectionItems(section, ItemType.TRACK, sort = "addedAt:desc", size = size)
+                session.client.sectionItems(section, ItemType.TRACK, sort = "addedAt:desc", size = size)
             }.mapNotNull { (section, dto) -> dto.toTrackOrNull(section) }.take(size)
         }
 
@@ -171,7 +160,7 @@ class PlexMusicRepository @Inject constructor(
     // list stability, and a TTL here would defeat its regeneration. Draws
     // are split across sections by track count so big sections dominate.
     override suspend fun randomTracks(size: Int): List<Track> =
-        withScope { client, scope ->
+        withScope { session, scope ->
             val sections = scope.selectedIds
             val shares = if (sections.size == 1) {
                 listOf(size)
@@ -179,18 +168,19 @@ class PlexMusicRepository @Inject constructor(
                 val counts = trackCounts()
                 allocate(size, sections.map { counts[it] ?: 0 })
             }
-            fanOut(sections) { section ->
-                val share = shares[sections.indexOf(section)]
-                if (share == 0) return@fanOut emptyList()
-                client.sectionItems(section, ItemType.TRACK, sort = "random", size = share)
+            val shareOf = sections.zip(shares).toMap()
+            drawAcross(sections) { section ->
+                val share = shareOf.getValue(section)
+                if (share == 0) return@drawAcross emptyList()
+                session.client.sectionItems(section, ItemType.TRACK, sort = "random", size = share)
                     .mapNotNull { it.toTrackOrNull(section) }
-            }.flatMap { it.second }.shuffled()
+            }
         }
 
     override suspend fun recentlyPlayedAlbums(size: Int): List<Album> =
-        scoped("recently-played-albums/$size") { client, scope ->
+        scoped("recently-played-albums/$size") { session, scope ->
             scope.merged(BY_LAST_PLAYED_DESC) { section ->
-                client.sectionItems(
+                session.client.sectionItems(
                     section,
                     ItemType.ALBUM,
                     filters = PLAYED,
@@ -201,9 +191,9 @@ class PlexMusicRepository @Inject constructor(
         }
 
     override suspend fun mostPlayedAlbums(size: Int): List<Album> =
-        scoped("most-played-albums/$size") { client, scope ->
+        scoped("most-played-albums/$size") { session, scope ->
             scope.merged(BY_PLAYS_DESC) { section ->
-                client.sectionItems(
+                session.client.sectionItems(
                     section,
                     ItemType.ALBUM,
                     filters = PLAYED,
@@ -214,7 +204,7 @@ class PlexMusicRepository @Inject constructor(
         }
 
     override suspend fun genres(): List<Genre> =
-        scoped("genres") { client, scope ->
+        scoped("genres") { session, scope ->
             // Plex's genre directory has no song counts, but the home tab's
             // genre mixes rank and threshold on them — count each genre's
             // tracks with a zero-size page (totalSize only, so the fan-out
@@ -228,7 +218,7 @@ class PlexMusicRepository @Inject constructor(
                             // One flaky probe degrades its genre to count 0
                             // instead of failing the whole genre list.
                             val count = try {
-                                client.sectionItemCount(
+                                session.client.sectionItemCount(
                                     section,
                                     ItemType.TRACK,
                                     filters = listOf("album.genre" to genre.key),
@@ -256,11 +246,11 @@ class PlexMusicRepository @Inject constructor(
         }
 
     override suspend fun albumsByGenre(genre: String, size: Int): List<Album> =
-        scoped("albums-by-genre/$genre/$size") { client, _ ->
+        scoped("albums-by-genre/$genre/$size") { session, _ ->
             val ids = genreIds(genre)
             if (ids.isEmpty()) return@scoped emptyList()
-            merged(ids.keys.toList(), BY_TITLE) { section ->
-                client.sectionItems(
+            mergeTagged(ids.keys.toList(), BY_TITLE) { section ->
+                session.client.sectionItems(
                     section,
                     ItemType.ALBUM,
                     filters = listOf("genre" to ids.getValue(section)),
@@ -270,9 +260,9 @@ class PlexMusicRepository @Inject constructor(
         }
 
     override suspend fun albumsByYearRange(fromYear: Int, toYear: Int, size: Int): List<Album> =
-        scoped("albums-by-year/$fromYear-$toYear/$size") { client, scope ->
+        scoped("albums-by-year/$fromYear-$toYear/$size") { session, scope ->
             scope.merged(BY_TITLE) { section ->
-                client.sectionItems(
+                session.client.sectionItems(
                     section,
                     ItemType.ALBUM,
                     filters = yearRange("year", fromYear, toYear),
@@ -285,18 +275,18 @@ class PlexMusicRepository @Inject constructor(
     // Tracks rarely carry their own genre tags in Plex, so filter on the
     // album's genre instead.
     override suspend fun randomTracksByGenre(genre: String, size: Int): List<Track> =
-        withScope { client, _ ->
+        withScope { session, _ ->
             val ids = genreIds(genre)
             if (ids.isEmpty()) return@withScope emptyList()
-            fanOut(ids.keys.toList()) { section ->
-                client.sectionItems(
+            drawAcross(ids.keys.toList()) { section ->
+                session.client.sectionItems(
                     section,
                     ItemType.TRACK,
                     filters = listOf("album.genre" to ids.getValue(section)),
                     sort = "random",
                     size = size,
                 ).mapNotNull { it.toTrackOrNull(section) }
-            }.flatMap { it.second }.shuffled().take(size)
+            }.take(size)
         }
 
     override suspend fun randomTracksByYearRange(
@@ -304,16 +294,16 @@ class PlexMusicRepository @Inject constructor(
         toYear: Int,
         size: Int,
     ): List<Track> =
-        withScope { client, scope ->
-            fanOut(scope.selectedIds) { section ->
-                client.sectionItems(
+        withScope { session, scope ->
+            drawAcross(scope.selectedIds) { section ->
+                session.client.sectionItems(
                     section,
                     ItemType.TRACK,
                     filters = yearRange("album.year", fromYear, toYear),
                     sort = "random",
                     size = size,
                 ).mapNotNull { it.toTrackOrNull(section) }
-            }.flatMap { it.second }.shuffled().take(size)
+            }.take(size)
         }
 
     override suspend fun mostPlayedArtists(size: Int): List<Artist> =
@@ -328,7 +318,7 @@ class PlexMusicRepository @Inject constructor(
      * serves both the artist view and the similar-artists section.
      */
     private suspend fun relatedHubs(artistId: String): List<PlexHub> =
-        cached("related/$artistId") { client -> client.related(artistId) }
+        cached("related/$artistId") { session -> session.client.related(artistId) }
 
     // Album listings carry no release-type tags; the typed release hubs are
     // where Plex says which albums are singles/EPs or compilations. Albums in
@@ -368,28 +358,28 @@ class PlexMusicRepository @Inject constructor(
     override suspend fun similarTracks(artistId: String, count: Int): List<Track> {
         val similar = similarArtists(artistId, SIMILAR_TRACK_ARTISTS)
         if (similar.isEmpty()) return emptyList()
-        return withScope { client, scope ->
+        return withScope { session, scope ->
             // Comma-separated filter values are OR'd by Plex: one request per
             // section draws random tracks across the seed and all similar artists.
             val ids = (listOf(artistId) + similar.map { it.id }).joinToString(",")
-            fanOut(scope.selectedIds) { section ->
-                client.sectionItems(
+            drawAcross(scope.selectedIds) { section ->
+                session.client.sectionItems(
                     section,
                     ItemType.TRACK,
                     filters = listOf("artist.id" to ids),
                     sort = "random",
                     size = count,
                 ).mapNotNull { it.toTrackOrNull(section) }
-            }.flatMap { it.second }.shuffled().take(count)
+            }.take(count)
         }
     }
 
     override suspend fun topTracks(artistName: String, count: Int): List<Track> =
-        scoped("top-songs/$artistName/$count") { client, scope ->
+        scoped("top-songs/$artistName/$count") { session, scope ->
             // The contract keys by artist NAME (a Subsonic API quirk); resolve
             // to a rating key first — the first section holding it wins.
             val match = fanOut(scope.selectedIds) { section ->
-                client.sectionItems(section, ItemType.ARTIST, filters = listOf("title" to artistName))
+                session.client.sectionItems(section, ItemType.ARTIST, filters = listOf("title" to artistName))
             }.firstNotNullOfOrNull { (section, artists) ->
                 artists.firstOrNull { it.title.equals(artistName, ignoreCase = true) }
                     ?.ratingKey?.let { section to it }
@@ -397,7 +387,7 @@ class PlexMusicRepository @Inject constructor(
             val (section, key) = match
 
             suspend fun tier(filters: List<Pair<String, String>>, sort: String) =
-                client.sectionItems(
+                session.client.sectionItems(
                     section,
                     ItemType.TRACK,
                     filters = listOf("artist.id" to key) + filters,
@@ -428,54 +418,54 @@ class PlexMusicRepository @Inject constructor(
     // never lags a local change. Unscoped on purpose: the heart must be right
     // for a playlist track from a hidden section.
     override suspend fun isFavoriteTrack(trackId: String): Boolean =
-        trackId in cached("favorite-track-ids") { client ->
+        trackId in cached("favorite-track-ids") { session ->
             fanOut(libraries().map { it.id }) { section ->
-                client.sectionItems(section, ItemType.TRACK, filters = LOVED)
+                session.client.sectionItems(section, ItemType.TRACK, filters = LOVED)
             }.flatMap { it.second }.mapNotNullTo(HashSet()) { it.ratingKey }
         }
 
     override suspend fun setTrackFavorite(trackId: String, favorite: Boolean) =
-        withSession { client ->
-            client.rate(trackId, if (favorite) LOVED_RATING else CLEAR_RATING)
+        withSession { session ->
+            session.client.rate(trackId, if (favorite) LOVED_RATING else CLEAR_RATING)
             cache.clear()
         }
 
     override suspend fun setAlbumFavorite(albumId: String, favorite: Boolean) =
-        withSession { client ->
-            client.rate(albumId, if (favorite) LOVED_RATING else CLEAR_RATING)
+        withSession { session ->
+            session.client.rate(albumId, if (favorite) LOVED_RATING else CLEAR_RATING)
             // Albums carry their loved state; every cached album list is
             // stale the moment a rating changes.
             cache.clear()
         }
 
     override suspend fun album(id: String): AlbumDetail =
-        cached("album/$id") { client ->
-            val dto = client.metadata(id)
+        cached("album/$id") { session ->
+            val dto = session.client.metadata(id)
             AlbumDetail(
                 album = dto.toAlbumOrNull()
                     ?: throw MusicException.NotFound("Album $id has no rating key"),
-                tracks = client.children(id).mapNotNull { it.toTrackOrNull() },
+                tracks = session.client.children(id).mapNotNull { it.toTrackOrNull() },
             )
         }
 
     override suspend fun playlists(): List<Playlist> =
-        cached("playlists") { client ->
-            client.playlists().mapNotNull { it.toPlaylistOrNull() }
+        cached("playlists") { session ->
+            session.client.playlists().mapNotNull { it.toPlaylistOrNull() }
         }
 
     override suspend fun playlist(id: String): PlaylistDetail =
-        cached("playlist/$id") { client ->
-            val dto = client.metadata(id)
+        cached("playlist/$id") { session ->
+            val dto = session.client.metadata(id)
             PlaylistDetail(
                 playlist = dto.toPlaylistOrNull()
                     ?: throw MusicException.NotFound("Playlist $id not found"),
-                tracks = client.playlistItems(id).mapNotNull { it.toTrackOrNull() },
+                tracks = session.client.playlistItems(id).mapNotNull { it.toTrackOrNull() },
             )
         }
 
     override suspend fun track(id: String): Track =
-        cached("track/$id") { client ->
-            client.metadata(id).toTrackOrNull()
+        cached("track/$id") { session ->
+            session.client.metadata(id).toTrackOrNull()
                 ?: throw MusicException.NotFound("Track $id has no playable media")
         }
 
@@ -486,9 +476,9 @@ class PlexMusicRepository @Inject constructor(
     // Cached so the host's onSearch → onGetSearchResult (paged) sequence hits
     // the server once per query, not once per page.
     override suspend fun search(query: String): SearchResults =
-        scoped("search/$query") { client, scope ->
+        scoped("search/$query") { session, scope ->
             val perSection = fanOut(scope.selectedIds) { section ->
-                client.search(section, query, limit = SEARCH_COUNT_PER_TYPE)
+                session.client.search(section, query, limit = SEARCH_COUNT_PER_TYPE)
             }
             // Round-robin keeps each section's relevance order; an item
             // reachable from several sections is listed once.
@@ -509,13 +499,13 @@ class PlexMusicRepository @Inject constructor(
         submission: Boolean,
         expectedSession: ProviderSession?,
     ) =
-        withSession(expectedSession) { client ->
+        withSession(expectedSession) { session ->
             if (submission) {
                 // Deterministic mark-played: with session-less direct play the
                 // app owns the "counts as played" threshold, not the server.
-                client.markPlayed(trackId)
+                session.client.markPlayed(trackId)
             } else {
-                client.timeline(trackId, state = "playing", timeMs = 0, durationMs = null)
+                session.client.timeline(trackId, state = "playing", timeMs = 0, durationMs = null)
             }
         }
 
@@ -527,107 +517,20 @@ class PlexMusicRepository @Inject constructor(
         positionMs: Long,
         durationMs: Long?,
         expectedSession: ProviderSession?,
-    ) = withSession(expectedSession) { client ->
+    ) = withSession(expectedSession) { session ->
         val plexState = when (state) {
             PlayState.PLAYING -> "playing"
             PlayState.PAUSED -> "paused"
             PlayState.STOPPED -> "stopped"
         }
-        client.timeline(trackId, plexState, positionMs, durationMs)
+        session.client.timeline(trackId, plexState, positionMs, durationMs)
     }
 
-    override fun invalidateCache() = cache.clear()
-
-    private fun plexSession(): PlexSession =
-        sessionManager.connectedOrNull()?.session as? PlexSession
-            ?: throw MusicException.AuthFailed("Not signed in")
-
-    /** The server's music sections (cached per account); also runs the one-shot legacy seed. */
-    private suspend fun librariesFor(session: PlexSession): List<MusicLibrary> {
-        val libraries = cache.getOrLoad("${session.cacheFingerprint}/libraries") {
-            translatingErrors(session) {
-                session.client.musicSections().map { MusicLibrary(it.key, it.title) }
-            }
-        }
-        settings.migrateLegacyLibrarySelection(libraries.map { it.id })
-        return libraries
-    }
-
-    private suspend fun scope(session: PlexSession): LibraryScope =
-        LibraryScope.resolve(librariesFor(session), settings.excludedLibraryIds.first())
-
-    private suspend fun currentScope(): LibraryScope = scope(plexSession())
-
-    /** Unscoped cache: by-id lookups and anything that must ignore the selection. */
-    private suspend fun <T : Any> cached(
-        key: String,
-        loader: suspend (PlexServerClient) -> T,
-    ): T {
-        val session = plexSession()
-        // The loader uses the SAME session snapshot the key was computed from
-        // (see SubsonicMusicRepository.cached).
-        return cache.getOrLoad("${session.cacheFingerprint}/$key") {
-            translatingErrors(session) { loader(session.client) }
-        }
-    }
-
-    /** Selection-scoped cache: the scope key in the entry key replaces explicit invalidation. */
-    private suspend fun <T : Any> scoped(
-        key: String,
-        loader: suspend (PlexServerClient, LibraryScope) -> T,
-    ): T {
-        val session = plexSession()
-        val scope = scope(session)
-        return cache.getOrLoad("${session.cacheFingerprint}/${scope.key}/$key") {
-            translatingErrors(session) { loader(session.client, scope) }
-        }
-    }
-
-    private suspend fun <T> withSession(
-        expectedSession: ProviderSession? = null,
-        block: suspend (PlexServerClient) -> T,
-    ): T {
-        val session = plexSession()
-        if (expectedSession != null && session !== expectedSession) {
-            throw MusicException.AuthFailed("Playback account changed")
-        }
-        return translatingErrors(session) { block(session.client) }
-    }
-
-    /** Uncached, selection-scoped work (random draws, similar tracks). */
-    private suspend fun <T> withScope(block: suspend (PlexServerClient, LibraryScope) -> T): T {
-        val session = plexSession()
-        val scope = scope(session)
-        return translatingErrors(session) { block(session.client, scope) }
-    }
-
-    /**
-     * The [MusicException] boundary: nothing above core-data sees a
-     * [PlexException]. Auth rejections also flip the session state.
-     */
-    private suspend fun <T> translatingErrors(session: PlexSession, block: suspend () -> T): T =
-        try {
-            block()
-        } catch (e: PlexException) {
-            if (e is PlexException.AuthFailed) sessionManager.onAuthRejected(session)
-            throw e.toMusicException()
-        }
-
-    /** Fans [fetch] out over [sections] and sort-merges, each item tagged with its section. */
-    private suspend fun merged(
-        sections: List<String>,
-        comparator: Comparator<in PlexMetadata>,
-        fetch: suspend (String) -> List<PlexMetadata>,
-    ): List<Pair<String, PlexMetadata>> =
-        mergeSorted(
-            fanOut(sections) { section -> fetch(section).map { section to it } }.map { it.second },
-            compareBy(comparator) { it.second },
-        )
-
+    /** [mergeTagged] over the selected sections. */
     private suspend fun LibraryScope.merged(
         comparator: Comparator<in PlexMetadata>,
         fetch: suspend (String) -> List<PlexMetadata>,
-    ): List<Pair<String, PlexMetadata>> = merged(selectedIds, comparator, fetch)
+    ): List<Pair<String, PlexMetadata>> = mergeTagged(selectedIds, comparator, fetch)
 
     /**
      * Plex's only integer comparison operators are the strict `>>` and `<<`
@@ -640,16 +543,16 @@ class PlexMusicRepository @Inject constructor(
 
     /** Track count per selected section — the random-draw weights. */
     private suspend fun trackCounts(): Map<String, Int> =
-        scoped("track-counts") { client, scope ->
+        scoped("track-counts") { session, scope ->
             fanOut(scope.selectedIds) { section ->
-                listOf(client.sectionItemCount(section, ItemType.TRACK))
+                listOf(session.client.sectionItemCount(section, ItemType.TRACK))
             }.associate { (section, count) -> section to count.single() }
         }
 
     /** Each selected section's genre directory; genre keys are per section. */
     private suspend fun genreDirectory(): Map<String, List<PlexDirectory>> =
-        scoped("genre-directory") { client, scope ->
-            fanOut(scope.selectedIds) { section -> client.genres(section) }.toMap()
+        scoped("genre-directory") { session, scope ->
+            fanOut(scope.selectedIds) { section -> session.client.genres(section) }.toMap()
         }
 
     /** Case-insensitive genre name → filter id, for every selected section that has it. */
@@ -665,9 +568,9 @@ class PlexMusicRepository @Inject constructor(
         comparator: Comparator<in PlexMetadata>,
         size: Int,
     ): List<Artist> =
-        scoped(key) { client, scope ->
+        scoped(key) { session, scope ->
             scope.merged(comparator) { section ->
-                client.sectionItems(section, ItemType.ALBUM, filters = PLAYED, sort = sort, size = size)
+                session.client.sectionItems(section, ItemType.ALBUM, filters = PLAYED, sort = sort, size = size)
             }.mapNotNull { (_, album) ->
                 val artistId = album.parentRatingKey ?: return@mapNotNull null
                 val artistName = album.parentTitle ?: return@mapNotNull null
@@ -754,18 +657,6 @@ class PlexMusicRepository @Inject constructor(
 
         /** What Plex's own clients use for timeline pings while playing. */
         const val TIMELINE_INTERVAL_MS = 15_000L
-
-        /**
-         * Similar artists pooled into one similarTracks selection; with the
-         * seed, matches SimilarMixesSession's 10-artist mix spread.
-         */
-        const val SIMILAR_TRACK_ARTISTS = 9
-
-        /**
-         * Paged hosts need something to page through; same cap as the
-         * Subsonic side (SubsonicMusicRepository.SEARCH_COUNT_PER_TYPE).
-         */
-        const val SEARCH_COUNT_PER_TYPE = 50
 
         val LOVED = listOf("userRating" to "10")
         val PLAYED = listOf("viewCount>>" to "0")

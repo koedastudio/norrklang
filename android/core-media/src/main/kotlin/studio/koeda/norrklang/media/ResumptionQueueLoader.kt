@@ -4,9 +4,9 @@ import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession.MediaItemsWithStartPosition
-import kotlin.coroutines.cancellation.CancellationException
 import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.repo.MusicRepository
+import studio.koeda.norrklang.data.runSuspendCatching
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
 
 /**
@@ -18,96 +18,44 @@ import studio.koeda.norrklang.data.settings.ServerSettingsRepository
 internal class ResumptionQueueLoader(
     private val settings: ServerSettingsRepository,
     private val repository: MusicRepository,
-    private val randomMix: RandomMixSession,
-    private val similarMixes: SimilarMixesSession,
-    private val bestOfMixes: BestOfMixesSession,
-    private val catalogMixes: CatalogMixesSession,
+    private val containers: ContainerTracks,
     private val stationQueue: StationQueue,
     private val buildItem: (Track, MediaId.Container?) -> MediaItem = MediaItemFactory::playableTrack,
 ) {
 
     /** The restored queue, or null when there is nothing (or no way) to restore. */
-    suspend fun load(): MediaItemsWithStartPosition? {
-        return try {
-            restore(settings.resumptionState())
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    internal suspend fun restore(
-        state: ServerSettingsRepository.ResumptionState?,
-    ): MediaItemsWithStartPosition? {
-        return try {
-            state ?: return null
-            val parsed = MediaId.parse(state.mediaId)
-            if (parsed is MediaId.RadioStation) return stationQueue.startingAt(parsed.id)
-            val id = parsed as? MediaId.Track ?: return null
-            val container = id.container
-            if (container != null) {
-                val queue = resumeTracks(container, id.id)
-                if (queue.isEmpty()) return null
-                val index = queue.indexOfFirst { it.id == id.id }
-                MediaItemsWithStartPosition(
-                    queue.map { buildItem(it, container) },
-                    index.coerceAtLeast(0),
-                    if (index >= 0) state.positionMs else 0L,
-                )
-            } else {
-                MediaItemsWithStartPosition(
-                    listOf(buildItem(repository.track(id.id), null)),
-                    /* startIndex = */ 0,
-                    state.positionMs,
-                )
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            // Offline, signed out, or unreadable persisted state — resume
-            // silently becomes "nothing to resume". Deliberately broader than
-            // MusicException: this runs inside the service scope at every
-            // signed-in start, where the same bad persisted state would
-            // otherwise replay a failure on every bind.
-            null
-        }
-    }
+    suspend fun load(): MediaItemsWithStartPosition? =
+        runSuspendCatching { restore(settings.resumptionState()) }.getOrNull()
 
     /**
-     * Mix containers resume as [saved] + fresh mix (resumeQueue adopts it,
-     * keeping later browsing consistent). Exhaustive on purpose: a new
-     * Container type must decide its resume semantics here.
+     * Offline, signed out, or unreadable persisted state — resume silently
+     * becomes "nothing to resume". Deliberately broader than MusicException:
+     * this runs inside the service scope at every signed-in start, where the
+     * same bad persisted state would otherwise replay a failure on every bind.
      */
-    suspend fun resumeTracks(container: MediaId.Container, savedTrackId: String): List<Track> =
-        when (container) {
-            MediaId.HomeRandomMix -> randomMix.resumeQueue(savedTrackId)
-            is MediaId.HomeSimilar ->
-                similarMixes.resumeQueue(container.artistId, savedTrackId)
-            is MediaId.HomeBestOf ->
-                bestOfMixes.resumeQueue(container.artistId, savedTrackId)
-            is MediaId.CatalogMix -> catalogMixes.resumeQueue(container, savedTrackId)
-            is MediaId.SongRadio ->
-                savedTrackFirst(
-                    repository,
-                    savedTrackId,
-                    repository.similarTracks(container.seedArtistId),
-                )
-            is MediaId.Album, is MediaId.Playlist, MediaId.HomeFavoriteSongs,
-            MediaId.HomeRecentlyAddedSongs,
-            -> containerTracks(container)
+    internal suspend fun restore(
+        state: ServerSettingsRepository.ResumptionState?,
+    ): MediaItemsWithStartPosition? = runSuspendCatching {
+        state ?: return null
+        val parsed = MediaId.parse(state.mediaId)
+        if (parsed is MediaId.RadioStation) return stationQueue.startingAt(parsed.id)
+        val id = parsed as? MediaId.Track ?: return null
+        val container = id.container
+        if (container != null) {
+            val queue = containers.resume(container, id.id)
+            if (queue.isEmpty()) return null
+            val index = queue.indexOfFirst { it.id == id.id }
+            MediaItemsWithStartPosition(
+                queue.map { buildItem(it, container) },
+                index.coerceAtLeast(0),
+                if (index >= 0) state.positionMs else 0L,
+            )
+        } else {
+            MediaItemsWithStartPosition(
+                listOf(buildItem(repository.track(id.id), null)),
+                /* startIndex = */ 0,
+                state.positionMs,
+            )
         }
-
-    suspend fun containerTracks(container: MediaId.Container): List<Track> =
-        when (container) {
-            is MediaId.Album -> repository.album(container.id).tracks
-            is MediaId.Playlist -> repository.playlist(container.id).tracks
-            MediaId.HomeFavoriteSongs -> repository.favoriteTracks()
-            MediaId.HomeRecentlyAddedSongs -> repository.recentlyAddedTracks()
-            MediaId.HomeRandomMix -> randomMix.queueTracks()
-            is MediaId.HomeSimilar -> similarMixes.queueTracks(container.artistId)
-            is MediaId.HomeBestOf -> bestOfMixes.queueTracks(container.artistId)
-            is MediaId.CatalogMix -> catalogMixes.queueTracks(container)
-            is MediaId.SongRadio -> repository.similarTracks(container.seedArtistId)
-        }
+    }.getOrNull()
 }

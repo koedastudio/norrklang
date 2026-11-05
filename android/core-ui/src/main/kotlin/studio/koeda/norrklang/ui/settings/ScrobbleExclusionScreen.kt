@@ -1,8 +1,6 @@
 package studio.koeda.norrklang.ui.settings
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -26,9 +24,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import studio.koeda.norrklang.ui.R
-import studio.koeda.norrklang.ui.components.BackButton
+import studio.koeda.norrklang.ui.components.CenteredBox
 import studio.koeda.norrklang.ui.components.CheckboxRow
 import studio.koeda.norrklang.ui.settings.SettingsViewModel.PickerItem
 import studio.koeda.norrklang.ui.settings.SettingsViewModel.PickerState
@@ -57,24 +54,13 @@ internal fun ScrobbleExclusionScreen(
     val dimens = LocalFormDimens.current
     var query by rememberSaveable { mutableStateOf("") }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = dimens.screenPadding, vertical = dimens.itemSpacing),
+    SettingsPageScaffold(
+        title = title,
+        onBack = onBack,
+        modifier = modifier,
+        scroll = false,
+        divider = false,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            BackButton(onBack)
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(start = 8.dp),
-            )
-        }
-        Spacer(Modifier.height(dimens.itemSpacing))
-
         if (searchPlaceholder != null && state is PickerState.Loaded) {
             OutlinedTextField(
                 value = query,

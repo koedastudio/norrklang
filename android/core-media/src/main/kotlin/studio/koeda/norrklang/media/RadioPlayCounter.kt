@@ -2,11 +2,11 @@ package studio.koeda.norrklang.media
 
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
-import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import studio.koeda.norrklang.data.runSuspendCatching
 
 /**
  * Feeds the home tab's "Radio" section: a station counts as listened to once
@@ -46,15 +46,8 @@ internal class RadioPlayCounter(
         job = scope.launch {
             delay(LISTEN_THRESHOLD_MS)
             counted = true
-            try {
-                record(stationId)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                // Best effort: a failed write is a missed count, nothing more.
-                return@launch
-            }
-            onRecorded()
+            // Best effort: a failed write is a missed count, nothing more.
+            runSuspendCatching { record(stationId) }.onSuccess { onRecorded() }
         }
     }
 

@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import studio.koeda.norrklang.data.repo.MusicRepository
 import studio.koeda.norrklang.data.repo.PlayState
+import studio.koeda.norrklang.data.runSuspendCatching
 import studio.koeda.norrklang.data.session.ProviderSession
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository.ScrobbleSettings
@@ -254,13 +255,7 @@ internal class PlaybackReporter(
      */
     private suspend fun resolveLibraryId(trackId: String, excluded: Set<String>): String? {
         if (excluded.isEmpty()) return null
-        return try {
-            repository.trackLibraryId(trackId, excluded)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            null
-        }
+        return runSuspendCatching { repository.trackLibraryId(trackId, excluded) }.getOrNull()
     }
 
     private companion object {

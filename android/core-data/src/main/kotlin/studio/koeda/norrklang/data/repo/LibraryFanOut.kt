@@ -25,6 +25,21 @@ internal fun <T> mergeSorted(lists: List<List<T>>, comparator: Comparator<in T>)
         else -> lists.flatten().sortedWith(comparator)
     }
 
+/** Fans [fetch] out over [ids] and sort-merges, each item tagged with the id it came from. */
+internal suspend fun <T> mergeTagged(
+    ids: List<String>,
+    comparator: Comparator<in T>,
+    fetch: suspend (String) -> List<T>,
+): List<Pair<String, T>> =
+    mergeSorted(
+        fanOut(ids) { id -> fetch(id).map { id to it } }.map { it.second },
+        compareBy(comparator) { it.second },
+    )
+
+/** The random-draw idiom: [fetch] per id concurrently, then one shuffled union. */
+internal suspend fun <T> drawAcross(ids: List<String>, fetch: suspend (String) -> List<T>): List<T> =
+    fanOut(ids, fetch).flatMap { it.second }.shuffled()
+
 /** Round-robin interleave, keeping each list's own order (search relevance). */
 internal fun <T> interleave(lists: List<List<T>>): List<T> {
     if (lists.size == 1) return lists[0]

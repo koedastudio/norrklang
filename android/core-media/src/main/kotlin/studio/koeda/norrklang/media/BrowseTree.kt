@@ -60,6 +60,7 @@ internal class BrowseTree(
     private val similarMixes: SimilarMixesSession,
     private val bestOfMixes: BestOfMixesSession,
     private val catalogMixes: CatalogMixesSession,
+    private val containers: ContainerTracks,
     /** Version segment for tile artwork URIs; changes with the library selection. */
     private val tileVersion: suspend () -> String = { "" },
     /** Local radio listening history, most listened first (see RadioPlayCounter). */
@@ -119,22 +120,12 @@ internal class BrowseTree(
                 albumItems(repository.recentlyPlayedAlbums(SERVER_PAGE_SIZE), page, pageSize)
             MediaId.HomeMostPlayed ->
                 albumItems(repository.mostPlayedAlbums(SERVER_PAGE_SIZE), page, pageSize)
-            MediaId.HomeFavoriteSongs ->
-                trackItems(repository.favoriteTracks(), MediaId.HomeFavoriteSongs, page, pageSize)
-            MediaId.HomeRecentlyAddedSongs ->
-                trackItems(
-                    repository.recentlyAddedTracks(),
-                    MediaId.HomeRecentlyAddedSongs,
-                    page,
-                    pageSize,
-                )
+            // Browsing the random mix may regenerate it (see RandomMixSession.browseTracks).
             MediaId.HomeRandomMix ->
                 trackItems(randomMix.browseTracks(), MediaId.HomeRandomMix, page, pageSize)
-            is MediaId.HomeSimilar ->
-                trackItems(similarMixes.queueTracks(id.artistId), id, page, pageSize)
-            is MediaId.HomeBestOf ->
-                trackItems(bestOfMixes.queueTracks(id.artistId), id, page, pageSize)
-            is MediaId.CatalogMix -> trackItems(catalogMixes.queueTracks(id), id, page, pageSize)
+            // Queue-radio provenance token, never a browse node.
+            is MediaId.SongRadio -> null
+            is MediaId.Container -> trackItems(containers.tracks(id), id, page, pageSize)
             MediaId.HomeFavoriteArtists ->
                 Paging.slice(repository.favoriteArtists(), page, pageSize)
                     .map(MediaItemFactory::forArtist)
@@ -153,10 +144,6 @@ internal class BrowseTree(
                 Paging.slice(albumBucketMembers(id.key), page, pageSize)
                     .map(MediaItemFactory::forAlbum)
             is MediaId.Artist -> Paging.slice(artistView(id.id), page, pageSize)
-            is MediaId.Album -> trackItems(repository.album(id.id).tracks, id, page, pageSize)
-            is MediaId.Playlist -> trackItems(repository.playlist(id.id).tracks, id, page, pageSize)
-            // Queue-radio provenance token, never a browse node.
-            is MediaId.SongRadio -> null
             is MediaId.RadioStation, is MediaId.Track, null -> null
         }
 
@@ -203,31 +190,35 @@ internal class BrowseTree(
         artist.sortGroup?.takeIf { it.length == 1 } ?: Buckets.letterKey(artist.name)
 
     private fun artistBucketItems(artists: List<Artist>): List<MediaItem> =
-        Buckets.partition(artists, ::artistLetter, Artist::name).map { bucket ->
-            MediaItemFactory.browsable(
-                mediaId = MediaId.ArtistBucket(bucket.key),
-                title = bucket.label,
-                artworkUrl = bucket.items.firstNotNullOfOrNull { it.artworkUrl },
-                mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_ARTISTS,
-                childrenStyle = MediaItemFactory.listChildrenExtras(),
-            )
-        }
+        Buckets.partition(artists, ::artistLetter, Artist::name)
+            .map { artistBucketItem(it.key, it.label, it.items) }
+
+    private fun artistBucketItem(key: String, label: String, members: List<Artist>): MediaItem =
+        MediaItemFactory.browsable(
+            mediaId = MediaId.ArtistBucket(key),
+            title = label,
+            artworkUrl = members.firstNotNullOfOrNull { it.artworkUrl },
+            mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_ARTISTS,
+            childrenStyle = MediaItemFactory.listChildrenExtras(),
+        )
 
     private suspend fun artistBucketMembers(key: String): List<Artist> =
         Buckets.select(repository.artists(), key, ::artistLetter, Artist::name)
 
     private fun albumBucketItems(albums: List<Album>): List<MediaItem> =
-        Buckets.partition(albums, { Buckets.letterKey(it.title) }, Album::title).map { bucket ->
-            MediaItemFactory.browsable(
-                mediaId = MediaId.AlbumBucket(bucket.key),
-                title = bucket.label,
-                artworkUrl = bucket.items.firstNotNullOfOrNull { it.artworkUrl },
-                mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_ALBUMS,
-                // The A–Z folders render as list rows; each folder's albums
-                // stay an artwork grid.
-                childrenStyle = MediaItemFactory.asListItem(MediaItemFactory.gridChildrenExtras()),
-            )
-        }
+        Buckets.partition(albums, { Buckets.letterKey(it.title) }, Album::title)
+            .map { albumBucketItem(it.key, it.label, it.items) }
+
+    private fun albumBucketItem(key: String, label: String, members: List<Album>): MediaItem =
+        MediaItemFactory.browsable(
+            mediaId = MediaId.AlbumBucket(key),
+            title = label,
+            artworkUrl = members.firstNotNullOfOrNull { it.artworkUrl },
+            mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_ALBUMS,
+            // The A–Z folders render as list rows; each folder's albums
+            // stay an artwork grid.
+            childrenStyle = MediaItemFactory.asListItem(MediaItemFactory.gridChildrenExtras()),
+        )
 
     private suspend fun albumBucketMembers(key: String): List<Album> =
         Buckets.select(allAlbums(), key, { Buckets.letterKey(it.title) }, Album::title)
@@ -270,67 +261,32 @@ internal class BrowseTree(
         }
 
     private suspend fun similarArtistsOrEmpty(artistId: String): List<Artist> =
-        try {
-            repository.similarArtists(artistId, ArtistSections.SIMILAR_ARTISTS_SHOWN)
-        } catch (_: MusicException) {
-            emptyList()
-        }
+        emptyOnError { repository.similarArtists(artistId, ArtistSections.SIMILAR_ARTISTS_SHOWN) }
 
     /** A single item for `onGetItem`. */
     suspend fun item(mediaId: String): MediaItem? =
         when (val id = MediaId.parse(mediaId)) {
             MediaId.Root -> rootItem
             MediaId.TabHome -> homeTab()
-            MediaId.HomeRecentlyAdded, MediaId.HomeFavoriteAlbums,
-            MediaId.HomeFavoriteArtists,
-            MediaId.HomeRecentlyPlayed, MediaId.HomeMostPlayed,
-            MediaId.HomeFavoriteSongs, MediaId.HomeRecentlyAddedSongs,
-            MediaId.HomeRandomMix,
+            MediaId.HomeRecentlyAdded, MediaId.HomeFavoriteAlbums, MediaId.HomeFavoriteArtists,
+            MediaId.HomeRecentlyPlayed, MediaId.HomeMostPlayed, MediaId.HomeFavoriteSongs,
+            MediaId.HomeRecentlyAddedSongs, MediaId.HomeRandomMix,
+            MediaId.TabArtists, MediaId.TabAlbums, MediaId.TabRadio,
             -> HomeTile.forMediaId(id)?.let { staticTile(it, tileVersion()) }
             is MediaId.HomeSimilar ->
-                similarMixes.currentMixes()
-                    .firstOrNull { it.artist.id == id.artistId }
-                    ?.let { similarMixButton(it, tileVersion()) }
+                similarMixes.mixFor(id.artistId)?.let { similarMixButton(it, tileVersion()) }
             is MediaId.HomeBestOf ->
-                bestOfMixes.currentMixes()
-                    .firstOrNull { it.artist.id == id.artistId }
-                    ?.let { bestOfMixButton(it, tileVersion()) }
-            is MediaId.HomeGenre ->
-                catalogMixes.currentGenreMixes()
-                    .firstOrNull { it.name == id.name }
-                    ?.let { genreMixButton(it, tileVersion()) }
+                bestOfMixes.mixFor(id.artistId)?.let { bestOfMixButton(it, tileVersion()) }
+            is MediaId.HomeGenre -> catalogMixes.genreMix(id.name)?.let { genreMixButton(it, tileVersion()) }
             is MediaId.HomeDecade ->
-                catalogMixes.currentDecadeMixes()
-                    .firstOrNull { it.startYear == id.startYear }
-                    ?.let { decadeMixButton(it, tileVersion()) }
+                catalogMixes.decadeMix(id.startYear)?.let { decadeMixButton(it, tileVersion()) }
             MediaId.TabLibrary -> libraryTab()
-            MediaId.TabArtists -> staticTile(HomeTile.ALL_ARTISTS, tileVersion())
-            MediaId.TabAlbums -> staticTile(HomeTile.ALL_ALBUMS, tileVersion())
             MediaId.TabPlaylists -> playlistsTab()
-            MediaId.TabRadio -> staticTile(HomeTile.RADIO, tileVersion())
             is MediaId.RadioStation -> stationItem(repository.radioStation(id.id))
-            is MediaId.ArtistBucket -> Buckets.labelFor(id.key)?.let { label ->
-                MediaItemFactory.browsable(
-                    mediaId = id,
-                    title = label,
-                    artworkUrl = artistBucketMembers(id.key)
-                        .firstNotNullOfOrNull { it.artworkUrl },
-                    mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_ARTISTS,
-                    childrenStyle = MediaItemFactory.listChildrenExtras(),
-                )
-            }
-            is MediaId.AlbumBucket -> Buckets.labelFor(id.key)?.let { label ->
-                MediaItemFactory.browsable(
-                    mediaId = id,
-                    title = label,
-                    artworkUrl = albumBucketMembers(id.key)
-                        .firstNotNullOfOrNull { it.artworkUrl },
-                    mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_ALBUMS,
-                    childrenStyle = MediaItemFactory.asListItem(
-                        MediaItemFactory.gridChildrenExtras(),
-                    ),
-                )
-            }
+            is MediaId.ArtistBucket ->
+                Buckets.labelFor(id.key)?.let { artistBucketItem(id.key, it, artistBucketMembers(id.key)) }
+            is MediaId.AlbumBucket ->
+                Buckets.labelFor(id.key)?.let { albumBucketItem(id.key, it, albumBucketMembers(id.key)) }
             is MediaId.Artist -> MediaItemFactory.forArtist(repository.artist(id.id).artist)
             is MediaId.Album -> MediaItemFactory.forAlbum(repository.album(id.id).album)
             is MediaId.Playlist -> MediaItemFactory.forPlaylist(repository.playlist(id.id).playlist)
@@ -358,10 +314,13 @@ internal class BrowseTree(
             }
     }
 
-    /** For the decorating sections: a server that can't answer hides them, not the tab. */
     private suspend fun radioStationsOrEmpty(): List<RadioStation> =
+        emptyOnError { repository.radioStations() }
+
+    /** For the decorating sections: a server that can't answer hides them, not the node. */
+    private suspend fun <T> emptyOnError(block: suspend () -> List<T>): List<T> =
         try {
-            repository.radioStations()
+            block()
         } catch (_: MusicException) {
             emptyList()
         }

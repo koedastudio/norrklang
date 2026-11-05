@@ -36,8 +36,13 @@ internal class CatalogMixesSession(
     /** The genre tiles as the home grid should show them; never generates. */
     suspend fun currentGenreMixes(): List<GenreMix> = currentSnapshot()?.genres.orEmpty()
 
+    suspend fun genreMix(name: String): GenreMix? = currentGenreMixes().firstOrNull { it.name == name }
+
     /** The decade tiles as the home grid should show them; never generates. */
     suspend fun currentDecadeMixes(): List<DecadeMix> = currentSnapshot()?.decades.orEmpty()
+
+    suspend fun decadeMix(startYear: Int): DecadeMix? =
+        currentDecadeMixes().firstOrNull { it.startYear == startYear }
 
     override fun isEmpty(snapshot: Snapshot): Boolean =
         snapshot.genres.isEmpty() && snapshot.decades.isEmpty()

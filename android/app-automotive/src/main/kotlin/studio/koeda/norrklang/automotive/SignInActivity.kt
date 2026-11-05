@@ -8,7 +8,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import studio.koeda.norrklang.ui.signin.JellyfinSignInViewModel
 import studio.koeda.norrklang.ui.signin.PlexSignInViewModel
 import studio.koeda.norrklang.ui.signin.SignInFlow
-import studio.koeda.norrklang.ui.signin.SignInViewModel
+import studio.koeda.norrklang.ui.signin.SubsonicSignInViewModel
 import studio.koeda.norrklang.ui.theme.NorrklangTheme
 
 /**
@@ -21,7 +21,7 @@ import studio.koeda.norrklang.ui.theme.NorrklangTheme
 @AndroidEntryPoint
 class SignInActivity : ComponentActivity() {
 
-    private val viewModel: SignInViewModel by viewModels()
+    private val viewModel: SubsonicSignInViewModel by viewModels()
     private val plexViewModel: PlexSignInViewModel by viewModels()
     private val jellyfinViewModel: JellyfinSignInViewModel by viewModels()
 

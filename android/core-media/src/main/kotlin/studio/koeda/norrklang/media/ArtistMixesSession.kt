@@ -28,6 +28,9 @@ internal abstract class ArtistMixesSession(
     /** The section as the home grid should show it; never generates. */
     suspend fun currentMixes(): List<Mix> = currentSnapshot().orEmpty()
 
+    /** The current mix seeded by [artistId], if the snapshot has one. */
+    suspend fun mixFor(artistId: String): Mix? = currentMixes().firstOrNull { it.artist.id == artistId }
+
     final override fun isEmpty(snapshot: List<Mix>): Boolean = snapshot.isEmpty()
 
     final override fun sectionTracks(snapshot: List<Mix>): Map<String, List<Track>> =

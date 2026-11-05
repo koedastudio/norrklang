@@ -20,10 +20,11 @@ import androidx.media3.session.SessionResult
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
-import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.guava.future
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import studio.koeda.norrklang.data.diagnostics.Diagnostics
 import studio.koeda.norrklang.data.model.Track
@@ -31,6 +32,7 @@ import studio.koeda.norrklang.data.radio.SavedRadioSongs
 import studio.koeda.norrklang.data.repo.MusicRepository
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.data.repo.MusicException
+import studio.koeda.norrklang.data.runSuspendCatching
 
 /**
  * All browse/playback resolution for the car UI.
@@ -47,6 +49,7 @@ internal class LibrarySessionCallback(
     private val savedSongs: SavedRadioSongs,
     private val browseTree: BrowseTree,
     private val resumption: ResumptionQueueLoader,
+    private val containers: ContainerTracks,
     private val stationQueue: StationQueue,
     private val voiceSearch: VoiceSearchResolver,
     private val signInIntent: PendingIntent,
@@ -60,7 +63,7 @@ internal class LibrarySessionCallback(
         session: MediaSession,
         controller: ControllerInfo,
     ): MediaSession.ConnectionResult =
-        MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+        MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
             .setAvailableSessionCommands(
                 MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
                     .buildUpon()
@@ -109,34 +112,27 @@ internal class LibrarySessionCallback(
         if (currentMediaId?.let(MediaId::parse) is MediaId.RadioStation) {
             return toggleRadioSong(session, current)
         }
-        return scope.future {
+        return commandFuture("toggle-favorite") {
             val trackId = (currentMediaId?.let(MediaId::parse) as? MediaId.Track)?.id
-                ?: return@future SessionResult(SessionError.ERROR_INVALID_STATE)
-            try {
-                // Toggle off the same cached state the button rendering used,
-                // so display and action can't disagree.
-                val favorite = !repository.isFavoriteTrack(trackId)
-                repository.setTrackFavorite(trackId, favorite)
-                // Only flip the button if the toggled track is still current —
-                // the user may have skipped meanwhile.
-                if (session.player.currentMediaItem?.mediaId == currentMediaId) {
-                    session.setMediaButtonPreferences(
-                        playbackButtons(
-                            context,
-                            shuffleOn = session.player.shuffleModeEnabled,
-                            heart = Heart.Track(favorite),
-                        ),
-                    )
-                }
-                // Have the car re-query the home tab's "Favourite songs" list.
-                (session as? MediaLibrarySession)
-                    ?.notifyChildrenChanged(MediaId.HomeFavoriteSongs.encode(), Int.MAX_VALUE, null)
-                SessionResult(SessionResult.RESULT_SUCCESS)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                SessionResult(SessionError.ERROR_IO)
+                ?: return@commandFuture SessionResult(SessionError.ERROR_INVALID_STATE)
+            // Toggle off the same cached state the button rendering used,
+            // so display and action can't disagree.
+            val favorite = !repository.isFavoriteTrack(trackId)
+            repository.setTrackFavorite(trackId, favorite)
+            // Only flip the button if the toggled track is still current —
+            // the user may have skipped meanwhile.
+            if (session.player.currentMediaItem?.mediaId == currentMediaId) {
+                session.setMediaButtonPreferences(
+                    playbackButtons(
+                        context,
+                        shuffleOn = session.player.shuffleModeEnabled,
+                        heart = Heart.Track(favorite),
+                    ),
+                )
             }
+            // Have the car re-query the home tab's "Favourite songs" list.
+            (session as? MediaLibrarySession)?.notifyChanged(MediaId.HomeFavoriteSongs)
+            SessionResult(SessionResult.RESULT_SUCCESS)
         }
     }
 
@@ -148,26 +144,19 @@ internal class LibrarySessionCallback(
         val song = radioSong(item) ?: return Futures.immediateFuture(
             SessionResult(SessionError.ERROR_INVALID_STATE),
         )
-        return scope.future {
-            try {
-                val saved = savedSongs.toggle(song.station, song.title)
-                // Only flip the button if that song is still what's playing.
-                if (session.player.currentMediaItem?.let(::radioSong) == song) {
-                    session.setMediaButtonPreferences(
-                        playbackButtons(
-                            context,
-                            shuffleOn = session.player.shuffleModeEnabled,
-                            heart = Heart.RadioSong(saved),
-                        ),
-                    )
-                }
-                SessionResult(SessionResult.RESULT_SUCCESS)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Diagnostics.record("save-radio-song", e)
-                SessionResult(SessionError.ERROR_IO)
+        return commandFuture("save-radio-song") {
+            val saved = savedSongs.toggle(song.station, song.title)
+            // Only flip the button if that song is still what's playing.
+            if (session.player.currentMediaItem?.let(::radioSong) == song) {
+                session.setMediaButtonPreferences(
+                    playbackButtons(
+                        context,
+                        shuffleOn = session.player.shuffleModeEnabled,
+                        heart = Heart.RadioSong(saved),
+                    ),
+                )
             }
+            SessionResult(SessionResult.RESULT_SUCCESS)
         }
     }
 
@@ -181,48 +170,39 @@ internal class LibrarySessionCallback(
         session: MediaSession,
         args: Bundle,
         favorite: Boolean,
-    ): ListenableFuture<SessionResult> = scope.future {
+    ): ListenableFuture<SessionResult> = commandFuture("favorite-album") {
         val encodedMediaId = args.getString(MediaConstants.EXTRA_KEY_MEDIA_ID)
         val albumId = (encodedMediaId?.let(MediaId::parse) as? MediaId.Album)?.id
-            ?: return@future SessionResult(SessionError.ERROR_BAD_VALUE)
-        try {
-            // Resolve the album's artist before the toggle wipes the repository
-            // cache — the artist's album list renders the heart too.
-            val artistId = runCatching { repository.album(albumId).album.artistId }.getOrNull()
-            repository.setAlbumFavorite(albumId, favorite)
-            // Re-query every list that shows album hearts (and, for the
-            // favorites list, membership).
-            val library = session as? MediaLibrarySession
-            library?.notifyChildrenChanged(MediaId.HomeFavoriteAlbums.encode(), Int.MAX_VALUE, null)
-            library?.notifyChildrenChanged(MediaId.HomeRecentlyAdded.encode(), Int.MAX_VALUE, null)
-            library?.notifyChildrenChanged(MediaId.TabAlbums.encode(), Int.MAX_VALUE, null)
-            artistId?.let {
-                library?.notifyChildrenChanged(MediaId.Artist(it).encode(), Int.MAX_VALUE, null)
-            }
-            // Have the host re-fetch the tapped item right away, flipping the
-            // heart in place — without this it only updates on re-entry.
-            val refreshTappedItem = Bundle().apply {
-                putString(EXTRAS_KEY_BROWSE_ACTION_RESULT_REFRESH_ITEM, encodedMediaId)
-            }
-            SessionResult(SessionResult.RESULT_SUCCESS, refreshTappedItem)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            SessionResult(SessionError.ERROR_IO)
+            ?: return@commandFuture SessionResult(SessionError.ERROR_BAD_VALUE)
+        // Resolve the album's artist before the toggle wipes the repository
+        // cache — the artist's album list renders the heart too.
+        val artistId = runSuspendCatching { repository.album(albumId).album.artistId }.getOrNull()
+        repository.setAlbumFavorite(albumId, favorite)
+        // Re-query every list that shows album hearts (and, for the
+        // favorites list, membership).
+        val library = session as? MediaLibrarySession
+        library?.notifyChanged(MediaId.HomeFavoriteAlbums)
+        library?.notifyChanged(MediaId.HomeRecentlyAdded)
+        library?.notifyChanged(MediaId.TabAlbums)
+        artistId?.let { library?.notifyChanged(MediaId.Artist(it)) }
+        // Have the host re-fetch the tapped item right away, flipping the
+        // heart in place — without this it only updates on re-entry.
+        val refreshTappedItem = Bundle().apply {
+            putString(EXTRAS_KEY_BROWSE_ACTION_RESULT_REFRESH_ITEM, encodedMediaId)
         }
+        SessionResult(SessionResult.RESULT_SUCCESS, refreshTappedItem)
     }
 
     override fun onGetLibraryRoot(
         session: MediaLibrarySession,
         browser: ControllerInfo,
         params: LibraryParams?,
-    ): ListenableFuture<LibraryResult<MediaItem>> = scope.future {
+    ): ListenableFuture<LibraryResult<MediaItem>> =
         // Never error here: for legacy browsers (the car hosts) a root error
         // becomes a *rejected connection* — blank screen. Signed-out is
         // signaled via a player-level auth error (AuthGatePlayer) plus an
         // empty tree.
-        LibraryResult.ofItem(browseTree.rootItem, rootParams())
-    }
+        Futures.immediateFuture(LibraryResult.ofItem(browseTree.rootItem, rootParams()))
 
     override fun onGetChildren(
         session: MediaLibrarySession,
@@ -231,8 +211,7 @@ internal class LibrarySessionCallback(
         page: Int,
         pageSize: Int,
         params: LibraryParams?,
-    ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = scope.future {
-        val sessionState = awaitResolvedSession()
+    ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = resolved { sessionState ->
         if (MediaId.parse(parentId) == MediaId.Root &&
             sessionState is SessionManager.SessionState.SignedOut
         ) {
@@ -241,22 +220,12 @@ internal class LibrarySessionCallback(
             // dismissed. The error keeps the host in its error view, which
             // offers the sign-in resolution from the player-level auth error
             // (AuthGatePlayer).
-            return@future authenticationExpiredResult()
+            return@resolved authenticationExpiredResult()
         }
-        try {
-            val children = browseTree.children(parentId, page, pageSize)
-            if (children == null) {
-                LibraryResult.ofError(SessionError(SessionError.ERROR_BAD_VALUE, "Unknown id $parentId"))
-            } else {
-                LibraryResult.ofItemList(ImmutableList.copyOf(children), params)
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            // Broader than MusicException on purpose: the host retries a
-            // graceful error result, but a failed future on a car host can
-            // read as a dead service. Anything unexpected is still recorded.
-            errorResult(e)
+        library {
+            offMain { browseTree.children(parentId, page, pageSize) }
+                ?.let { LibraryResult.ofItemList(ImmutableList.copyOf(it), params) }
+                ?: unknownId(parentId)
         }
     }
 
@@ -264,22 +233,9 @@ internal class LibrarySessionCallback(
         session: MediaLibrarySession,
         browser: ControllerInfo,
         mediaId: String,
-    ): ListenableFuture<LibraryResult<MediaItem>> = scope.future {
-        awaitResolvedSession()
-        try {
-            val item = browseTree.item(mediaId)
-            if (item == null) {
-                LibraryResult.ofError(SessionError(SessionError.ERROR_BAD_VALUE, "Unknown id $mediaId"))
-            } else {
-                LibraryResult.ofItem(item, null)
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            // Broader than MusicException on purpose: the host retries a
-            // graceful error result, but a failed future on a car host can
-            // read as a dead service. Anything unexpected is still recorded.
-            errorResult(e)
+    ): ListenableFuture<LibraryResult<MediaItem>> = resolved {
+        library {
+            offMain { browseTree.item(mediaId) }?.let { LibraryResult.ofItem(it, null) } ?: unknownId(mediaId)
         }
     }
 
@@ -287,8 +243,7 @@ internal class LibrarySessionCallback(
         mediaSession: MediaSession,
         controller: ControllerInfo,
         mediaItems: List<MediaItem>,
-    ): ListenableFuture<List<MediaItem>> = scope.future {
-        awaitResolvedSession()
+    ): ListenableFuture<List<MediaItem>> = resolved {
         mediaItems.flatMap { resolve(it) }
     }
 
@@ -298,12 +253,11 @@ internal class LibrarySessionCallback(
         mediaItems: List<MediaItem>,
         startIndex: Int,
         startPositionMs: Long,
-    ): ListenableFuture<MediaItemsWithStartPosition> = scope.future {
-        awaitResolvedSession()
+    ): ListenableFuture<MediaItemsWithStartPosition> = resolved {
         // Assistant voice requests (legacy playFromSearch) arrive as one item
         // with no media id, carrying only requestMetadata.
         mediaItems.singleOrNull()?.takeIf(::isVoiceRequest)?.let { requested ->
-            return@future when (val resolved = resolveVoiceRequest(requested)) {
+            return@resolved when (val resolved = resolveVoiceRequest(requested)) {
                 is VoiceSearchResolver.Station -> stationQueue.startingAt(resolved.id)
                 is VoiceSearchResolver.Queue -> MediaItemsWithStartPosition(
                     resolved.tracks.map { buildTrack(it, resolved.container) },
@@ -317,7 +271,7 @@ internal class LibrarySessionCallback(
         // station likewise plays amid the other stations.
         val single = mediaItems.singleOrNull()?.let { MediaId.parse(it.mediaId) }
         if (single is MediaId.Track && single.container != null) {
-            val queue = resumption.containerTracks(single.container)
+            val queue = containers.tracks(single.container)
             val index = queue.indexOfFirst { it.id == single.id }.coerceAtLeast(0)
             MediaItemsWithStartPosition(
                 queue.map { buildTrack(it, single.container) },
@@ -341,19 +295,11 @@ internal class LibrarySessionCallback(
         browser: ControllerInfo,
         query: String,
         params: LibraryParams?,
-    ): ListenableFuture<LibraryResult<Void>> = scope.future {
-        awaitResolvedSession()
-        try {
-            val results = searchItems(query)
+    ): ListenableFuture<LibraryResult<Void>> = resolved {
+        library {
+            val results = offMain { searchItems(query) }
             session.notifySearchResultChanged(browser, query, results.size, params)
             LibraryResult.ofVoid(params)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            // Broader than MusicException on purpose: the host retries a
-            // graceful error result, but a failed future on a car host can
-            // read as a dead service. Anything unexpected is still recorded.
-            errorResult(e)
         }
     }
 
@@ -364,18 +310,10 @@ internal class LibrarySessionCallback(
         page: Int,
         pageSize: Int,
         params: LibraryParams?,
-    ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = scope.future {
-        awaitResolvedSession()
-        try {
-            val pageItems = Paging.slice(searchItems(query), page, pageSize)
+    ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = resolved {
+        library {
+            val pageItems = offMain { Paging.slice(searchItems(query), page, pageSize) }
             LibraryResult.ofItemList(ImmutableList.copyOf(pageItems), params)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            // Broader than MusicException on purpose: the host retries a
-            // graceful error result, but a failed future on a car host can
-            // read as a dead service. Anything unexpected is still recorded.
-            errorResult(e)
         }
     }
 
@@ -383,8 +321,7 @@ internal class LibrarySessionCallback(
         mediaSession: MediaSession,
         controller: ControllerInfo,
         isForPlayback: Boolean,
-    ): ListenableFuture<MediaItemsWithStartPosition> = scope.future {
-        awaitResolvedSession()
+    ): ListenableFuture<MediaItemsWithStartPosition> = resolved {
         resumption.load() ?: throw IllegalStateException("Nothing to resume")
     }
 
@@ -395,10 +332,8 @@ internal class LibrarySessionCallback(
         when (val id = MediaId.parse(item.mediaId)) {
             is MediaId.Track ->
                 listOf(buildTrack(repository.track(id.id), id.container))
-            is MediaId.Album ->
-                repository.album(id.id).tracks.map { buildTrack(it, id) }
-            is MediaId.Playlist ->
-                repository.playlist(id.id).tracks.map { buildTrack(it, id) }
+            is MediaId.Album, is MediaId.Playlist ->
+                containers.tracks(id).map { buildTrack(it, id) }
             is MediaId.RadioStation ->
                 listOf(browseTree.playableStation(repository.radioStation(id.id)))
             else -> emptyList()
@@ -420,14 +355,9 @@ internal class LibrarySessionCallback(
      * it with silence on a misheard query.
      */
     private suspend fun resolveVoiceRequest(item: MediaItem): VoiceSearchResolver.Resolved {
-        val resolved = try {
-            voiceSearch.resolve(voiceRequest(item))
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Diagnostics.record("voice-search", e)
-            throw e
-        }
+        val resolved = runSuspendCatching { voiceSearch.resolve(voiceRequest(item)) }
+            .onFailure { Diagnostics.record("voice-search", it) }
+            .getOrThrow()
         return resolved ?: throw IllegalArgumentException("No match for voice query")
     }
 
@@ -482,7 +412,40 @@ internal class LibrarySessionCallback(
         return LibraryParams.Builder().setExtras(extras).build()
     }
 
-    private fun <T : Any> errorResult(e: Exception): LibraryResult<T> =
+    /** A future that first waits out session restore ([awaitResolvedSession]); [block] gets the resolved state. */
+    private fun <T> resolved(block: suspend (SessionManager.SessionState) -> T): ListenableFuture<T> =
+        scope.future { block(awaitResolvedSession()) }
+
+    /**
+     * Maps any failure to a graceful error result. Broader than
+     * MusicException on purpose: the host retries a graceful error result,
+     * but a failed future on a car host can read as a dead service. Anything
+     * unexpected is still recorded.
+     */
+    private suspend fun <T : Any> library(block: suspend () -> LibraryResult<T>): LibraryResult<T> =
+        runSuspendCatching { block() }.getOrElse(::errorResult)
+
+    /** A custom-command future; any failure is recorded under [where] and answered with ERROR_IO. */
+    private fun commandFuture(where: String, block: suspend () -> SessionResult): ListenableFuture<SessionResult> =
+        scope.future {
+            runSuspendCatching { block() }.getOrElse { e ->
+                Diagnostics.record(where, e)
+                SessionResult(SessionError.ERROR_IO)
+            }
+        }
+
+    /**
+     * List building (bucket partitions of thousands of artists, hundreds of
+     * MediaItems with Bundles) has no main-thread affinity; keeping it off
+     * [scope]'s application thread leaves that thread to the player and the
+     * session's own IPC.
+     */
+    private suspend fun <T> offMain(block: suspend () -> T): T = withContext(Dispatchers.Default) { block() }
+
+    private fun <T : Any> unknownId(id: String): LibraryResult<T> =
+        LibraryResult.ofError(SessionError(SessionError.ERROR_BAD_VALUE, "Unknown id $id"))
+
+    private fun <T : Any> errorResult(e: Throwable): LibraryResult<T> =
         when (e) {
             is MusicException.AuthFailed -> authenticationExpiredResult()
             else -> {
@@ -553,3 +516,7 @@ internal class LibrarySessionCallback(
             "androidx.media.utils.extras.KEY_CUSTOM_BROWSER_ACTION_RESULT_REFRESH_ITEM"
     }
 }
+
+/** Has the host re-query [id]'s children; [itemCount] is only a hint, by default unknown. */
+internal fun MediaLibrarySession.notifyChanged(id: MediaId, itemCount: Int = Int.MAX_VALUE) =
+    notifyChildrenChanged(id.encode(), itemCount, null)

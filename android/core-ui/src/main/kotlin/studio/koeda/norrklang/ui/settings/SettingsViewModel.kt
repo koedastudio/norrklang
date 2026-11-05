@@ -23,6 +23,7 @@ import studio.koeda.norrklang.data.radio.SavedRadioSong
 import studio.koeda.norrklang.data.radio.SavedRadioSongs
 import studio.koeda.norrklang.data.radio.SavedSongsExport
 import studio.koeda.norrklang.data.repo.MusicRepository
+import studio.koeda.norrklang.data.runSuspendCatching
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository.ScrobbleSettings
@@ -173,7 +174,7 @@ class SettingsViewModel @Inject constructor(
     ) {
         state.value = PickerState.Loading
         viewModelScope.launch {
-            state.value = runCatching { PickerState.Loaded(fetch()) }
+            state.value = runSuspendCatching { PickerState.Loaded(fetch()) }
                 .getOrDefault(PickerState.Error)
         }
     }

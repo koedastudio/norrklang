@@ -1,6 +1,5 @@
 package studio.koeda.norrklang.media
 
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -8,6 +7,7 @@ import kotlinx.coroutines.withContext
 import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.repo.MusicException
 import studio.koeda.norrklang.data.repo.MusicRepository
+import studio.koeda.norrklang.data.runSuspendCatching
 
 /**
  * Shared shell for the generated home-tab mix sections: a tile snapshot of
@@ -66,17 +66,13 @@ internal abstract class HomeMixesSession<K : Any, S : Any>(
             }
             epoch
         }
-        val generated = try {
-            // The caller launches from the service's main-thread scope; list
-            // building and response parsing have no main-thread affinity.
-            withContext(Dispatchers.Default) { generate() }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            // Broader than MusicException: refresh runs in a bare launch on
-            // the service scope, where anything escaping kills the process.
-            return false
-        }
+        // The caller launches from the service's main-thread scope; list
+        // building and response parsing have no main-thread affinity.
+        // Any failure (broader than MusicException) yields false: refresh runs
+        // in a bare launch on the service scope, where anything escaping
+        // kills the process.
+        val generated = runSuspendCatching { withContext(Dispatchers.Default) { generate() } }
+            .getOrElse { return false }
         return stateMutex.withLock {
             // Cleared (sign-out) or already regenerated while we were working —
             // discard rather than resurrect tracks with stale auth URLs.
@@ -105,13 +101,8 @@ internal abstract class HomeMixesSession<K : Any, S : Any>(
             // May have been built while we waited for the build lock.
             stateMutex.withLock { tracksByMix[key] }?.let { return it }
             val startEpoch = stateMutex.withLock { epoch }
-            val built = try {
-                withContext(Dispatchers.Default) { buildTracksFor(key) }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                emptyList()
-            }
+            val built = runSuspendCatching { withContext(Dispatchers.Default) { buildTracksFor(key) } }
+                .getOrDefault(emptyList())
             if (built.isNotEmpty()) {
                 stateMutex.withLock {
                     // A clear (sign-out) while building must win — the

@@ -7,9 +7,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import studio.koeda.norrklang.data.artwork.ArtworkContract
 import studio.koeda.norrklang.data.di.AppPackageName
 import studio.koeda.norrklang.data.di.ApplicationScope
@@ -25,13 +22,16 @@ import studio.koeda.norrklang.data.model.PlaylistDetail
 import studio.koeda.norrklang.data.model.SearchResults
 import studio.koeda.norrklang.data.model.StreamRef
 import studio.koeda.norrklang.data.model.Track
+import studio.koeda.norrklang.data.repo.MusicRepository.Companion.SEARCH_COUNT_PER_TYPE
+import studio.koeda.norrklang.data.repo.MusicRepository.Companion.SIMILAR_TRACK_ARTISTS
 import studio.koeda.norrklang.data.session.JellyfinSession
 import studio.koeda.norrklang.data.session.MusicProvider
 import studio.koeda.norrklang.data.session.ProviderSession
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
-import studio.koeda.norrklang.jellyfin.JellyfinAccount
 import studio.koeda.norrklang.jellyfin.JellyfinClient
+import studio.koeda.norrklang.jellyfin.JellyfinClient.ItemType
+import studio.koeda.norrklang.jellyfin.model.JellyfinItemsResult
 import studio.koeda.norrklang.jellyfin.JellyfinClient.Companion.TICKS_PER_MS
 import studio.koeda.norrklang.jellyfin.JellyfinException
 import studio.koeda.norrklang.jellyfin.model.JellyfinItem
@@ -60,55 +60,46 @@ import studio.koeda.norrklang.jellyfin.model.JellyfinPlaybackBody
  */
 @Singleton
 class JellyfinMusicRepository @Inject constructor(
-    private val sessionManager: SessionManager,
-    private val settings: ServerSettingsRepository,
+    sessionManager: SessionManager,
+    settings: ServerSettingsRepository,
     @AppPackageName private val packageName: String,
     @ApplicationScope scope: CoroutineScope,
-) : MusicRepository {
-
-    private val cache = TtlCache(ttlMillis = 5 * 60 * 1000L)
+) : ProviderMusicRepository<JellyfinSession>(sessionManager, settings, scope) {
 
     // The open play session reported to /Sessions/Playing; reportPlayState is
     // state-only, so the repository tracks which item the start was sent for.
     @Volatile
     private var startedPlayback: Pair<JellyfinClient, String>? = null
 
-    init {
-        // Sign-out purges entries; fingerprint keys isolate direct account
-        // switches (see SubsonicMusicRepository).
-        scope.launch {
-            sessionManager.state.drop(1).collect { state ->
-                // Connected caches are already keyed by account fingerprint.
-                // Clearing on connect can invalidate that account's first load.
-                if (state is SessionManager.SessionState.SignedOut) cache.clear()
-            }
-        }
-    }
+    override fun sessionOf(session: ProviderSession) = session as? JellyfinSession
 
-    override suspend fun libraries(): List<MusicLibrary> = librariesFor(jellyfinSession())
+    override fun translate(e: Exception) = (e as? JellyfinException)?.toMusicException()
+
+    override suspend fun loadLibraries(session: JellyfinSession) =
+        session.client.musicLibraries(session.userId)
+            .mapNotNull { view -> view.id?.let { MusicLibrary(it, view.name) } }
 
     override suspend fun artists(): List<Artist> =
-        scoped("artists") { client, account, scope ->
+        scoped("artists") { session, scope ->
             // Artists are server-wide entities: one spanning libraries comes
             // back from each, so dedupe by id after the merge.
-            mergeSorted(scope.perLibrary { client.albumArtists(account.userId, it) }, BY_SORT_NAME)
+            mergeSorted(scope.perLibrary { session.client.albumArtists(session.userId, it) }, BY_SORT_NAME)
                 .distinctBy { it.id }
                 .mapNotNull { it.toArtistOrNull(sortGroup = it.sortBucket()) }
         }
 
     override suspend fun artist(id: String): ArtistDetail =
-        scoped("artist/$id") { client, account, scope ->
-            val dto = client.item(account.userId, id)
+        scoped("artist/$id") { session, scope ->
+            val dto = session.client.item(session.userId, id)
             ArtistDetail(
                 artist = dto.toArtistOrNull()
                     ?: throw MusicException.NotFound("Artist $id has no id"),
                 // An artist can span libraries; newest first, like the
                 // Subsonic side, unknown years sink.
                 albums = scope.perLibrary { lib ->
-                    client.items(
-                        account.userId,
+                    session.items(
                         parentId = lib,
-                        includeItemTypes = "MusicAlbum",
+                        type = ItemType.ALBUM,
                         params = listOf("AlbumArtistIds" to id),
                     ).items
                 }.flatten()
@@ -118,13 +109,12 @@ class JellyfinMusicRepository @Inject constructor(
         }
 
     override suspend fun albums(offset: Int, size: Int): List<Album> {
-        val ids = scope(jellyfinSession()).selectedIds
+        val ids = scope(session()).selectedIds
         if (ids.size == 1) {
-            return scoped("albums/$offset/$size") { client, account, scope ->
-                client.items(
-                    account.userId,
+            return scoped("albums/$offset/$size") { session, scope ->
+                session.items(
                     parentId = scope.selectedIds.single(),
-                    includeItemTypes = "MusicAlbum",
+                    type = ItemType.ALBUM,
                     sortBy = "SortName",
                     startIndex = offset,
                     limit = size,
@@ -132,13 +122,12 @@ class JellyfinMusicRepository @Inject constructor(
             }
         }
         // Several libraries: one merged sorted list, paged in memory.
-        return scoped("albums-all") { client, account, scope ->
+        return scoped("albums-all") { session, scope ->
             mergeSorted(
                 scope.perLibrary { lib ->
-                    client.items(
-                        account.userId,
+                    session.items(
                         parentId = lib,
-                        includeItemTypes = "MusicAlbum",
+                        type = ItemType.ALBUM,
                         sortBy = "SortName",
                     ).items
                 },
@@ -148,15 +137,14 @@ class JellyfinMusicRepository @Inject constructor(
     }
 
     override suspend fun recentlyAdded(size: Int): List<Album> =
-        scoped("recent/$size") { client, account, scope ->
+        scoped("recent/$size") { session, scope ->
             mergeSorted(
                 scope.perLibrary { lib ->
-                    client.items(
-                        account.userId,
+                    session.items(
                         parentId = lib,
-                        includeItemTypes = "MusicAlbum",
+                        type = ItemType.ALBUM,
                         sortBy = "DateCreated",
-                        sortOrder = "Descending",
+                        descending = true,
                         limit = size,
                     ).items
                 },
@@ -165,13 +153,12 @@ class JellyfinMusicRepository @Inject constructor(
         }
 
     override suspend fun favoriteAlbums(size: Int): List<Album> =
-        scoped("favorites/$size") { client, account, scope ->
+        scoped("favorites/$size") { session, scope ->
             mergeSorted(
                 scope.perLibrary { lib ->
-                    client.items(
-                        account.userId,
+                    session.items(
                         parentId = lib,
-                        includeItemTypes = "MusicAlbum",
+                        type = ItemType.ALBUM,
                         filters = IS_FAVORITE,
                         limit = size,
                     ).items
@@ -181,47 +168,37 @@ class JellyfinMusicRepository @Inject constructor(
         }
 
     override suspend fun favoriteTracks(): List<Track> =
-        scoped("favorite-tracks") { client, account, scope ->
-            fanOut(scope.selectedIds) { lib ->
-                client.items(
-                    account.userId,
-                    parentId = lib,
-                    includeItemTypes = "Audio",
-                    filters = IS_FAVORITE,
-                ).items.mapNotNull { it.toTrackOrNull(lib) }
-            }.let { perLibrary ->
-                mergeSorted(perLibrary.map { it.second }, compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
-            }
+        scoped("favorite-tracks") { session, scope ->
+            mergeTagged(scope.selectedIds, BY_NAME) { lib ->
+                session.items(type = ItemType.AUDIO, parentId = lib, filters = IS_FAVORITE).items
+            }.mapNotNull { (lib, item) -> item.toTrackOrNull(lib) }
         }
 
     override suspend fun favoriteArtists(): List<Artist> =
-        scoped("favorite-artists") { client, account, scope ->
+        scoped("favorite-artists") { session, scope ->
             mergeSorted(
-                scope.perLibrary { client.albumArtists(account.userId, it, isFavorite = true) },
+                scope.perLibrary { session.client.albumArtists(session.userId, it, isFavorite = true) },
                 BY_SORT_NAME,
             ).distinctBy { it.id }.mapNotNull { it.toArtistOrNull() }
         }
 
     override suspend fun recentlyAddedTracks(size: Int): List<Track> =
-        scoped("recently-added-tracks/$size") { client, account, scope ->
-            fanOut(scope.selectedIds) { lib ->
-                client.items(
-                    account.userId,
+        scoped("recently-added-tracks/$size") { session, scope ->
+            mergeTagged(scope.selectedIds, BY_DATE_CREATED_DESC) { lib ->
+                session.items(
+                    type = ItemType.AUDIO,
                     parentId = lib,
-                    includeItemTypes = "Audio",
                     sortBy = "DateCreated",
-                    sortOrder = "Descending",
+                    descending = true,
                     limit = size,
-                ).items.map { it to lib }
-            }.let { perLibrary ->
-                mergeSorted(perLibrary.map { it.second }, compareByDescending { it.first.dateCreated.orEmpty() })
-            }.mapNotNull { (item, lib) -> item.toTrackOrNull(lib) }.take(size)
+                ).items
+            }.mapNotNull { (lib, item) -> item.toTrackOrNull(lib) }.take(size)
         }
 
     // Deliberately uncached: the random-mix snapshot (RandomMixSession) owns
     // list stability, and a TTL here would defeat its regeneration.
     override suspend fun randomTracks(size: Int): List<Track> =
-        withScope { client, account, scope ->
+        withScope { session, scope ->
             val ids = scope.selectedIds
             // Split the draw by library size so a small library does not
             // dominate the mix; one library needs no count probe.
@@ -230,17 +207,16 @@ class JellyfinMusicRepository @Inject constructor(
                 allocate(size, ids.map { counts[it] ?: 0 })
             }
             val shareOf = ids.zip(shares).toMap()
-            fanOut(ids) { lib ->
+            drawAcross(ids) { lib ->
                 val share = shareOf.getValue(lib)
-                if (share == 0) return@fanOut emptyList()
-                client.items(
-                    account.userId,
+                if (share == 0) return@drawAcross emptyList()
+                session.items(
                     parentId = lib,
-                    includeItemTypes = "Audio",
+                    type = ItemType.AUDIO,
                     sortBy = "Random",
                     limit = share,
                 ).items.mapNotNull { it.toTrackOrNull(lib) }
-            }.flatMap { it.second }.shuffled()
+            }
         }
 
     override suspend fun recentlyPlayedAlbums(size: Int): List<Album> =
@@ -250,23 +226,22 @@ class JellyfinMusicRepository @Inject constructor(
         playedAlbums("most-played-albums/$size", "PlayCount", size)
 
     override suspend fun genres(): List<Genre> =
-        scoped("genres") { client, account, scope ->
+        scoped("genres") { session, scope ->
             // Jellyfin's genre list has no song counts, but the home tab's
             // genre mixes rank and threshold on them — count each genre's
             // tracks with a zero-size page (TotalRecordCount only, so the
             // fan-out is cheap; OkHttp's per-host cap keeps it polite).
             scope.perLibrary { lib ->
                 coroutineScope {
-                    client.genres(account.userId, lib).map { genre ->
+                    session.client.genres(session.userId, lib).map { genre ->
                         async {
                             // One flaky probe degrades its genre to count 0
                             // instead of failing the whole genre list.
                             val count = try {
                                 genre.id?.let { genreId ->
-                                    client.items(
-                                        account.userId,
+                                    session.items(
                                         parentId = lib,
-                                        includeItemTypes = "Audio",
+                                        type = ItemType.AUDIO,
                                         params = listOf("GenreIds" to genreId),
                                         limit = 0,
                                     ).totalRecordCount
@@ -287,15 +262,14 @@ class JellyfinMusicRepository @Inject constructor(
         }
 
     override suspend fun albumsByGenre(genre: String, size: Int): List<Album> =
-        scoped("albums-by-genre/$genre/$size") { client, account, _ ->
+        scoped("albums-by-genre/$genre/$size") { session, _ ->
             val ids = genreIds(genre)
             if (ids.isEmpty()) return@scoped emptyList()
             mergeSorted(
                 fanOut(ids.keys.toList()) { lib ->
-                    client.items(
-                        account.userId,
+                    session.items(
                         parentId = lib,
-                        includeItemTypes = "MusicAlbum",
+                        type = ItemType.ALBUM,
                         params = listOf("GenreIds" to ids.getValue(lib)),
                         limit = size,
                     ).items
@@ -305,13 +279,12 @@ class JellyfinMusicRepository @Inject constructor(
         }
 
     override suspend fun albumsByYearRange(fromYear: Int, toYear: Int, size: Int): List<Album> =
-        scoped("albums-by-year/$fromYear-$toYear/$size") { client, account, scope ->
+        scoped("albums-by-year/$fromYear-$toYear/$size") { session, scope ->
             mergeSorted(
                 scope.perLibrary { lib ->
-                    client.items(
-                        account.userId,
+                    session.items(
                         parentId = lib,
-                        includeItemTypes = "MusicAlbum",
+                        type = ItemType.ALBUM,
                         params = listOf("Years" to yearList(fromYear, toYear)),
                         limit = size,
                     ).items
@@ -324,19 +297,18 @@ class JellyfinMusicRepository @Inject constructor(
     // Track-level genre works here — Jellyfin aggregates album genres from
     // the track tags, so tracks carry them.
     override suspend fun randomTracksByGenre(genre: String, size: Int): List<Track> =
-        withScope { client, account, _ ->
+        withScope { session, _ ->
             val ids = genreIds(genre)
             if (ids.isEmpty()) return@withScope emptyList()
-            fanOut(ids.keys.toList()) { lib ->
-                client.items(
-                    account.userId,
+            drawAcross(ids.keys.toList()) { lib ->
+                session.items(
                     parentId = lib,
-                    includeItemTypes = "Audio",
+                    type = ItemType.AUDIO,
                     params = listOf("GenreIds" to ids.getValue(lib)),
                     sortBy = "Random",
                     limit = size,
                 ).items.mapNotNull { it.toTrackOrNull(lib) }
-            }.flatMap { it.second }.shuffled().take(size)
+            }.take(size)
         }
 
     override suspend fun randomTracksByYearRange(
@@ -344,17 +316,16 @@ class JellyfinMusicRepository @Inject constructor(
         toYear: Int,
         size: Int,
     ): List<Track> =
-        withScope { client, account, scope ->
-            fanOut(scope.selectedIds) { lib ->
-                client.items(
-                    account.userId,
+        withScope { session, scope ->
+            drawAcross(scope.selectedIds) { lib ->
+                session.items(
                     parentId = lib,
-                    includeItemTypes = "Audio",
+                    type = ItemType.AUDIO,
                     params = listOf("Years" to yearList(fromYear, toYear)),
                     sortBy = "Random",
                     limit = size,
                 ).items.mapNotNull { it.toTrackOrNull(lib) }
-            }.flatMap { it.second }.shuffled().take(size)
+            }.take(size)
         }
 
     override suspend fun mostPlayedArtists(size: Int): List<Artist> =
@@ -367,9 +338,9 @@ class JellyfinMusicRepository @Inject constructor(
     // is tagged. The endpoint is server-wide and its items carry no library,
     // so a partial scope is applied by filtering to the scoped artist ids.
     override suspend fun similarArtists(artistId: String, count: Int): List<Artist> =
-        scoped("similar-artists/$artistId") { client, account, scope ->
+        scoped("similar-artists/$artistId") { session, scope ->
             val inScope = if (scope.isAll) null else scopedArtistIds()
-            client.similar(account.userId, artistId, limit = SIMILAR_ARTIST_FETCH)
+            session.client.similar(session.userId, artistId, limit = SIMILAR_ARTIST_FETCH)
                 .filter { it.type == "MusicArtist" && it.id != artistId }
                 .filter { inScope == null || it.id in inScope }
                 .distinctBy { it.id }
@@ -384,43 +355,41 @@ class JellyfinMusicRepository @Inject constructor(
     override suspend fun similarTracks(artistId: String, count: Int): List<Track> {
         val similar = similarArtists(artistId, SIMILAR_TRACK_ARTISTS)
         if (similar.isEmpty()) return emptyList()
-        return withScope { client, account, scope ->
+        return withScope { session, scope ->
             // Comma-separated ArtistIds are OR'd by Jellyfin: one request per
             // library draws random tracks across the seed and all similar artists.
             val ids = (listOf(artistId) + similar.map { it.id }).joinToString(",")
-            fanOut(scope.selectedIds) { lib ->
-                client.items(
-                    account.userId,
+            drawAcross(scope.selectedIds) { lib ->
+                session.items(
                     parentId = lib,
-                    includeItemTypes = "Audio",
+                    type = ItemType.AUDIO,
                     params = listOf("ArtistIds" to ids),
                     sortBy = "Random",
                     limit = count,
                 ).items.mapNotNull { it.toTrackOrNull(lib) }
-            }.flatMap { it.second }.shuffled().take(count)
+            }.take(count)
         }
     }
 
     override suspend fun topTracks(artistName: String, count: Int): List<Track> =
-        scoped("top-songs/$artistName/$count") { client, account, scope ->
+        scoped("top-songs/$artistName/$count") { session, scope ->
             // The contract keys by artist NAME (a Subsonic API quirk); resolve
             // to an item id first — the first library that has it wins.
             val (libraryId, artistId) = fanOut(scope.selectedIds) { lib ->
-                client.albumArtists(account.userId, lib, searchTerm = artistName)
+                session.client.albumArtists(session.userId, lib, searchTerm = artistName)
                     .filter { it.name.equals(artistName, ignoreCase = true) }
                     .mapNotNull { it.id }
             }.firstNotNullOfOrNull { (lib, ids) -> ids.firstOrNull()?.let { lib to it } }
                 ?: return@scoped emptyList()
 
             suspend fun tier(filters: List<String>, sortBy: String?) =
-                client.items(
-                    account.userId,
+                session.items(
                     parentId = libraryId,
-                    includeItemTypes = "Audio",
+                    type = ItemType.AUDIO,
                     filters = filters,
                     params = listOf("ArtistIds" to artistId),
                     sortBy = sortBy,
-                    sortOrder = sortBy?.let { "Descending" },
+                    descending = sortBy != null,
                     limit = count,
                 ).items.mapNotNull { it.toTrackOrNull(libraryId) }
 
@@ -446,38 +415,36 @@ class JellyfinMusicRepository @Inject constructor(
     // never lags a local change. Unscoped: the heart must be right for a
     // playlist track from a hidden library. Cached as an id Set.
     override suspend fun isFavoriteTrack(trackId: String): Boolean =
-        trackId in cached("favorite-track-ids") { client, account ->
-            client.items(
-                account.userId,
-                includeItemTypes = "Audio",
+        trackId in cached("favorite-track-ids") { session ->
+            session.items(
+                type = ItemType.AUDIO,
                 filters = IS_FAVORITE,
             ).items.mapNotNullTo(HashSet()) { it.id }
         }
 
     override suspend fun setTrackFavorite(trackId: String, favorite: Boolean) =
-        withSession { client, account ->
-            client.setFavorite(account.userId, trackId, favorite)
+        withSession { session ->
+            session.client.setFavorite(session.userId, trackId, favorite)
             cache.clear()
         }
 
     override suspend fun setAlbumFavorite(albumId: String, favorite: Boolean) =
-        withSession { client, account ->
-            client.setFavorite(account.userId, albumId, favorite)
+        withSession { session ->
+            session.client.setFavorite(session.userId, albumId, favorite)
             // Albums carry their favorite state; every cached album list is
             // stale the moment the flag changes.
             cache.clear()
         }
 
     override suspend fun album(id: String): AlbumDetail =
-        cached("album/$id") { client, account ->
-            val dto = client.item(account.userId, id)
+        cached("album/$id") { session ->
+            val dto = session.client.item(session.userId, id)
             AlbumDetail(
                 album = dto.toAlbumOrNull()
                     ?: throw MusicException.NotFound("Album $id has no id"),
-                tracks = client.items(
-                    account.userId,
+                tracks = session.items(
                     parentId = id,
-                    includeItemTypes = "Audio",
+                    type = ItemType.AUDIO,
                     recursive = false,
                     sortBy = "ParentIndexNumber,IndexNumber,SortName",
                 ).items.mapNotNull { it.toTrackOrNull() },
@@ -485,31 +452,30 @@ class JellyfinMusicRepository @Inject constructor(
         }
 
     override suspend fun playlists(): List<Playlist> =
-        cached("playlists") { client, account ->
+        cached("playlists") { session ->
             // Playlists live outside the music libraries, so no ParentId here;
             // MediaType keeps video playlists out.
-            client.items(
-                account.userId,
-                includeItemTypes = "Playlist",
+            session.items(
+                type = ItemType.PLAYLIST,
                 sortBy = "SortName",
             ).items.filter { it.mediaType == "Audio" }
                 .mapNotNull { it.toPlaylistOrNull() }
         }
 
     override suspend fun playlist(id: String): PlaylistDetail =
-        cached("playlist/$id") { client, account ->
-            val dto = client.item(account.userId, id)
+        cached("playlist/$id") { session ->
+            val dto = session.client.item(session.userId, id)
             PlaylistDetail(
                 playlist = dto.toPlaylistOrNull()
                     ?: throw MusicException.NotFound("Playlist $id not found"),
-                tracks = client.playlistItems(account.userId, id)
+                tracks = session.client.playlistItems(session.userId, id)
                     .mapNotNull { it.toTrackOrNull() },
             )
         }
 
     override suspend fun track(id: String): Track =
-        cached("track/$id") { client, account ->
-            client.item(account.userId, id).toTrackOrNull()
+        cached("track/$id") { session ->
+            session.client.item(session.userId, id).toTrackOrNull()
                 ?: throw MusicException.NotFound("Track $id has no id")
         }
 
@@ -517,8 +483,8 @@ class JellyfinMusicRepository @Inject constructor(
     // CollectionFolder. Cached per album, an empty string meaning "unknown".
     override suspend fun trackLibraryId(trackId: String, candidates: Set<String>): String? {
         val itemId = track(trackId).albumId ?: trackId
-        return cached("album-library/$itemId") { client, account ->
-            client.ancestors(account.userId, itemId)
+        return cached("album-library/$itemId") { session ->
+            session.client.ancestors(session.userId, itemId)
                 .firstOrNull { it.type == "CollectionFolder" }?.id.orEmpty()
         }.ifEmpty { null }
     }
@@ -526,27 +492,26 @@ class JellyfinMusicRepository @Inject constructor(
     // Cached so the host's onSearch → onGetSearchResult (paged) sequence hits
     // the server once per query, not once per page.
     override suspend fun search(query: String): SearchResults =
-        scoped("search/$query") { client, account, scope ->
+        scoped("search/$query") { session, scope ->
             coroutineScope {
-                suspend fun items(lib: String, type: String) = client.items(
-                    account.userId,
+                suspend fun items(lib: String, type: ItemType) = session.items(
                     parentId = lib,
-                    includeItemTypes = type,
+                    type = type,
                     params = listOf("SearchTerm" to query),
                     limit = SEARCH_COUNT_PER_TYPE,
                 ).items
                 val perLibrary = scope.selectedIds.map { lib ->
                     Triple(
                         async {
-                            client.albumArtists(
-                                account.userId,
+                            session.client.albumArtists(
+                                session.userId,
                                 lib,
                                 searchTerm = query,
                                 limit = SEARCH_COUNT_PER_TYPE,
                             ).mapNotNull { it.toArtistOrNull() }
                         },
-                        async { items(lib, "MusicAlbum").mapNotNull { it.toAlbumOrNull() } },
-                        async { items(lib, "Audio").mapNotNull { it.toTrackOrNull(lib) } },
+                        async { items(lib, ItemType.ALBUM).mapNotNull { it.toAlbumOrNull() } },
+                        async { items(lib, ItemType.AUDIO).mapNotNull { it.toTrackOrNull(lib) } },
                     )
                 }
                 // Round-robin keeps each library's relevance order; artists
@@ -567,13 +532,13 @@ class JellyfinMusicRepository @Inject constructor(
         submission: Boolean,
         expectedSession: ProviderSession?,
     ) =
-        withSession(expectedSession) { client, account ->
+        withSession(expectedSession) { session ->
             if (submission) {
                 // Deterministic mark-played: with session-less direct play the
                 // app owns the "counts as played" threshold, not the server.
-                client.markPlayed(account.userId, trackId)
+                session.client.markPlayed(session.userId, trackId)
             } else {
-                sendPlaybackStart(client, trackId)
+                sendPlaybackStart(session, trackId)
             }
         }
 
@@ -585,7 +550,7 @@ class JellyfinMusicRepository @Inject constructor(
         positionMs: Long,
         durationMs: Long?,
         expectedSession: ProviderSession?,
-    ) = withSession(expectedSession) { client, _ ->
+    ) = withSession(expectedSession) { session ->
         val body = JellyfinPlaybackBody(
             itemId = trackId,
             positionTicks = positionMs * TICKS_PER_MS,
@@ -599,104 +564,51 @@ class JellyfinMusicRepository @Inject constructor(
             // session first. PlaybackReporter serializes reports, so the
             // start/progress order holds.
             PlayState.PLAYING, PlayState.PAUSED -> {
-                if (startedPlayback != (client to trackId)) sendPlaybackStart(client, trackId)
-                client.reportPlaybackProgress(body)
+                if (startedPlayback != (session.client to trackId)) sendPlaybackStart(session, trackId)
+                session.client.reportPlaybackProgress(body)
             }
 
             PlayState.STOPPED -> {
-                client.reportPlaybackStopped(body)
+                session.client.reportPlaybackStopped(body)
                 startedPlayback = null
             }
         }
     }
 
-    private suspend fun sendPlaybackStart(client: JellyfinClient, trackId: String) {
-        client.reportPlaybackStart(JellyfinPlaybackBody(itemId = trackId, positionTicks = 0))
-        startedPlayback = client to trackId
+    private suspend fun sendPlaybackStart(session: JellyfinSession, trackId: String) {
+        session.client.reportPlaybackStart(JellyfinPlaybackBody(itemId = trackId, positionTicks = 0))
+        startedPlayback = session.client to trackId
     }
 
-    override fun invalidateCache() = cache.clear()
+    private val JellyfinSession.userId: String get() = account.userId
 
-    private fun jellyfinSession(): JellyfinSession =
-        sessionManager.connectedOrNull()?.session as? JellyfinSession
-            ?: throw MusicException.AuthFailed("Not signed in")
-
-    /** The user's music views (cached per account); also runs the one-shot legacy seed. */
-    private suspend fun librariesFor(session: JellyfinSession): List<MusicLibrary> {
-        val libraries = cache.getOrLoad("${session.cacheFingerprint}/libraries") {
-            translatingErrors(session) {
-                session.client.musicLibraries(session.account.userId)
-                    .mapNotNull { view -> view.id?.let { MusicLibrary(it, view.name) } }
-            }
-        }
-        settings.migrateLegacyLibrarySelection(libraries.map { it.id })
-        return libraries
-    }
-
-    private suspend fun scope(session: JellyfinSession): LibraryScope =
-        LibraryScope.resolve(librariesFor(session), settings.excludedLibraryIds.first())
+    /** [JellyfinClient.items] as the signed-in user; the whole result, for [JellyfinItemsResult.totalRecordCount]. */
+    private suspend fun JellyfinSession.items(
+        type: ItemType,
+        parentId: String? = null,
+        sortBy: String? = null,
+        descending: Boolean = false,
+        filters: List<String> = emptyList(),
+        params: List<Pair<String, String>> = emptyList(),
+        startIndex: Int = 0,
+        limit: Int? = null,
+        recursive: Boolean = true,
+    ): JellyfinItemsResult = client.items(
+        userId,
+        parentId = parentId,
+        includeItemTypes = type,
+        recursive = recursive,
+        sortBy = sortBy,
+        sortOrder = if (descending) "Descending" else null,
+        filters = filters,
+        params = params,
+        startIndex = startIndex,
+        limit = limit,
+    )
 
     /** Runs [fetch] per selected library, results in selection order. */
     private suspend fun <T> LibraryScope.perLibrary(fetch: suspend (String) -> List<T>): List<List<T>> =
         fanOut(selectedIds, fetch).map { it.second }
-
-    /** Unscoped cache: by-id lookups, playlists, favourite ids, libraries. */
-    private suspend fun <T : Any> cached(
-        key: String,
-        loader: suspend (JellyfinClient, JellyfinAccount) -> T,
-    ): T {
-        val session = jellyfinSession()
-        // The loader uses the SAME session snapshot the key was computed from
-        // (see SubsonicMusicRepository.cached).
-        return cache.getOrLoad("${session.cacheFingerprint}/$key") {
-            translatingErrors(session) { loader(session.client, session.account) }
-        }
-    }
-
-    /** Library-scoped cache: the scope key is part of the cache key, so a selection change misses. */
-    private suspend fun <T : Any> scoped(
-        key: String,
-        loader: suspend (JellyfinClient, JellyfinAccount, LibraryScope) -> T,
-    ): T {
-        val session = jellyfinSession()
-        val scope = scope(session)
-        return cache.getOrLoad("${session.cacheFingerprint}/${scope.key}/$key") {
-            translatingErrors(session) { loader(session.client, session.account, scope) }
-        }
-    }
-
-    /** Uncached, unscoped: writes and playback reports. */
-    private suspend fun <T> withSession(
-        expectedSession: ProviderSession? = null,
-        block: suspend (JellyfinClient, JellyfinAccount) -> T,
-    ): T {
-        val session = jellyfinSession()
-        if (expectedSession != null && session !== expectedSession) {
-            throw MusicException.AuthFailed("Playback account changed")
-        }
-        return translatingErrors(session) { block(session.client, session.account) }
-    }
-
-    /** Uncached, library-scoped: the random/similar draws. */
-    private suspend fun <T> withScope(
-        block: suspend (JellyfinClient, JellyfinAccount, LibraryScope) -> T,
-    ): T {
-        val session = jellyfinSession()
-        val scope = scope(session)
-        return translatingErrors(session) { block(session.client, session.account, scope) }
-    }
-
-    /**
-     * The [MusicException] boundary: nothing above core-data sees a
-     * [JellyfinException]. Auth rejections also flip the session state.
-     */
-    private suspend fun <T> translatingErrors(session: JellyfinSession, block: suspend () -> T): T =
-        try {
-            block()
-        } catch (e: JellyfinException) {
-            if (e is JellyfinException.AuthFailed) sessionManager.onAuthRejected(session)
-            throw e.toMusicException()
-        }
 
     /**
      * Jellyfin's only year filter is `Years` — an exact-match comma list on
@@ -708,10 +620,10 @@ class JellyfinMusicRepository @Inject constructor(
 
     /** Per selected library, the number of tracks — the random-draw weights. */
     private suspend fun trackCounts(): Map<String, Int> =
-        scoped("track-counts") { client, account, scope ->
+        scoped("track-counts") { session, scope ->
             fanOut(scope.selectedIds) { lib ->
                 listOf(
-                    client.items(account.userId, parentId = lib, includeItemTypes = "Audio", limit = 0)
+                    session.items(type = ItemType.AUDIO, parentId = lib, limit = 0)
                         .totalRecordCount ?: 0,
                 )
             }.associate { (lib, count) -> lib to count.single() }
@@ -719,16 +631,16 @@ class JellyfinMusicRepository @Inject constructor(
 
     /** Ids of the scoped album artists, for filtering server-wide answers. */
     private suspend fun scopedArtistIds(): Set<String> =
-        scoped("artist-ids") { _, _, _ -> artists().mapTo(HashSet()) { it.id } }
+        scoped("artist-ids") { _, _ -> artists().mapTo(HashSet()) { it.id } }
 
     /**
      * Case-insensitive genre name → GenreIds value per library that has the
      * genre (library id → genre id), via the cached directory.
      */
     private suspend fun genreIds(name: String): Map<String, String> =
-        scoped("genre-ids") { client, account, scope ->
+        scoped("genre-ids") { session, scope ->
             val byName = LinkedHashMap<String, LinkedHashMap<String, String>>()
-            for ((lib, genres) in fanOut(scope.selectedIds) { client.genres(account.userId, it) }) {
+            for ((lib, genres) in fanOut(scope.selectedIds) { session.client.genres(session.userId, it) }) {
                 for (genre in genres) {
                     val id = genre.id ?: continue
                     byName.getOrPut(genre.name.lowercase()) { LinkedHashMap() }[lib] = id
@@ -739,21 +651,19 @@ class JellyfinMusicRepository @Inject constructor(
 
     /** The played tracks that back every played-albums/artists derivation. */
     private suspend fun playedTracks(
-        client: JellyfinClient,
-        account: JellyfinAccount,
+        session: JellyfinSession,
         scope: LibraryScope,
         sortBy: String,
         size: Int,
     ): List<JellyfinItem> =
         mergeSorted(
             scope.perLibrary { lib ->
-                client.items(
-                    account.userId,
+                session.items(
                     parentId = lib,
-                    includeItemTypes = "Audio",
+                    type = ItemType.AUDIO,
                     filters = IS_PLAYED,
                     sortBy = sortBy,
-                    sortOrder = "Descending",
+                    descending = true,
                     // Overfetch: many played tracks share an album, and the
                     // distinct pass below must still fill the requested page.
                     limit = size * PLAYED_OVERFETCH,
@@ -768,8 +678,8 @@ class JellyfinMusicRepository @Inject constructor(
      * the artist synthesis.
      */
     private suspend fun playedAlbums(key: String, sortBy: String, size: Int): List<Album> =
-        scoped(key) { client, account, scope ->
-            playedTracks(client, account, scope, sortBy, size)
+        scoped(key) { session, scope ->
+            playedTracks(session, scope, sortBy, size)
                 .mapNotNull { track ->
                     val albumId = track.albumId ?: return@mapNotNull null
                     Album(
@@ -791,8 +701,8 @@ class JellyfinMusicRepository @Inject constructor(
 
     /** Artists behind the played tracks, order preserved, first occurrence wins. */
     private suspend fun playedArtists(key: String, sortBy: String, size: Int): List<Artist> =
-        scoped(key) { client, account, scope ->
-            playedTracks(client, account, scope, sortBy, size)
+        scoped(key) { session, scope ->
+            playedTracks(session, scope, sortBy, size)
                 .mapNotNull { track ->
                     val artist = track.albumArtists.firstOrNull() ?: return@mapNotNull null
                     Artist(id = artist.id, name = artist.name, albumCount = 0, artworkUrl = null)
@@ -884,12 +794,6 @@ class JellyfinMusicRepository @Inject constructor(
         /** What jellyfin-web uses for progress reports while playing. */
         const val PROGRESS_INTERVAL_MS = 10_000L
 
-        /**
-         * Similar artists pooled into one similarTracks selection; with the
-         * seed, matches SimilarMixesSession's 10-artist mix spread.
-         */
-        const val SIMILAR_TRACK_ARTISTS = 9
-
         /** One fetch serves every similarArtists(count<=this) via the cache. */
         const val SIMILAR_ARTIST_FETCH = 18
 
@@ -900,12 +804,6 @@ class JellyfinMusicRepository @Inject constructor(
          */
         const val PLAYED_OVERFETCH = 10
 
-        /**
-         * Paged hosts need something to page through; same cap as the
-         * Subsonic side (SubsonicMusicRepository.SEARCH_COUNT_PER_TYPE).
-         */
-        const val SEARCH_COUNT_PER_TYPE = 50
-
         val IS_FAVORITE = listOf("IsFavorite")
         val IS_PLAYED = listOf("IsPlayed")
 
@@ -913,6 +811,7 @@ class JellyfinMusicRepository @Inject constructor(
         // a single library's server order is unchanged (mergeSorted skips it).
         val BY_SORT_NAME: Comparator<JellyfinItem> =
             compareBy(String.CASE_INSENSITIVE_ORDER) { it.sortName ?: it.name }
+        val BY_NAME: Comparator<JellyfinItem> = compareBy(String.CASE_INSENSITIVE_ORDER) { it.name }
         val BY_DATE_CREATED_DESC: Comparator<JellyfinItem> =
             compareByDescending { it.dateCreated.orEmpty() }
         val BY_LAST_PLAYED_DESC: Comparator<JellyfinItem> =

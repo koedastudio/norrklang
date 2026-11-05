@@ -42,7 +42,6 @@
   <string name="plex_error_no_servers">No Plex Media Server on this account</string>
   <string name="plex_error_no_music_library">This server has no music library</string>
   <string name="plex_error_validation">Couldn\'t connect to the server — try another connection</string>
-  <string name="plex_pick_libraries_title">Choose libraries</string>
   <string name="signin_pick_libraries_title">Choose libraries</string>
   <string name="signin_pick_libraries_subtitle">Pick the music libraries to show — you can change this later in Settings</string>
   <string name="signin_continue">Continue</string>
@@ -52,7 +51,6 @@
   <string name="signin_username_label">Username</string>
   <string name="signin_password_label">Password</string>
   <string name="signin_connect">Connect</string>
-  <string name="signin_connecting">Connecting…</string>
   <string name="signin_error_auth">Wrong username or password</string>
   <string name="signin_error_network">Can\'t reach the server. Check the address and your connection.</string>
   <string name="signin_error_generic">Something went wrong: %1$s</string>
@@ -63,8 +61,6 @@
   <string name="action_back">Back</string>
 
   <string name="settings_title">Settings</string>
-  <string name="settings_server">Server</string>
-  <string name="settings_account">Account</string>
   <string name="settings_signout">Sign out</string>
   <string name="settings_signed_out">Not signed in</string>
   <string name="settings_signin">Sign in</string>

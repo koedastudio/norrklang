@@ -22,7 +22,7 @@ import studio.koeda.norrklang.ui.settings.SettingsViewModel
 import studio.koeda.norrklang.ui.signin.JellyfinSignInViewModel
 import studio.koeda.norrklang.ui.signin.PlexSignInViewModel
 import studio.koeda.norrklang.ui.signin.SignInFlow
-import studio.koeda.norrklang.ui.signin.SignInViewModel
+import studio.koeda.norrklang.ui.signin.SubsonicSignInViewModel
 import studio.koeda.norrklang.ui.theme.NorrklangTheme
 
 /**
@@ -33,7 +33,7 @@ import studio.koeda.norrklang.ui.theme.NorrklangTheme
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    private val signInViewModel: SignInViewModel by viewModels()
+    private val signInViewModel: SubsonicSignInViewModel by viewModels()
     private val plexSignInViewModel: PlexSignInViewModel by viewModels()
     private val jellyfinSignInViewModel: JellyfinSignInViewModel by viewModels()
     private val settingsViewModel: SettingsViewModel by viewModels()

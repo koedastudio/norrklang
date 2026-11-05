@@ -1,18 +1,12 @@
 package studio.koeda.norrklang.ui.signin
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.LibraryMusic
@@ -34,7 +28,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import studio.koeda.norrklang.ui.R
-import studio.koeda.norrklang.ui.components.BackButton
 import studio.koeda.norrklang.ui.theme.LocalFormDimens
 
 /** Hand-rolled page state, same pattern as SettingsScreen's SettingsPage. */
@@ -48,7 +41,7 @@ private enum class SignInPage { ProviderPicker, SubsonicForm, Plex, JellyfinForm
  */
 @Composable
 fun SignInFlow(
-    subsonicViewModel: SignInViewModel,
+    subsonicViewModel: SubsonicSignInViewModel,
     plexViewModel: PlexSignInViewModel,
     jellyfinViewModel: JellyfinSignInViewModel,
     onSignedIn: () -> Unit,
@@ -57,12 +50,11 @@ fun SignInFlow(
 ) {
     var page by rememberSaveable { mutableStateOf(SignInPage.ProviderPicker) }
 
-    LaunchedEffect(plexViewModel.state) {
-        if (plexViewModel.state is PlexSignInViewModel.UiState.Done) onSignedIn()
-    }
-
-    LaunchedEffect(jellyfinViewModel.state) {
-        if (jellyfinViewModel.state is SignInViewModel.UiState.Done) onSignedIn()
+    val signedIn = subsonicViewModel.state is SignInUiState.Done ||
+        jellyfinViewModel.state is SignInUiState.Done ||
+        plexViewModel.state is PlexSignInViewModel.UiState.Done
+    LaunchedEffect(signedIn) {
+        if (signedIn) onSignedIn()
     }
 
     // start() from an effect, not the picker's click handler: after process
@@ -83,8 +75,14 @@ fun SignInFlow(
         )
 
         SignInPage.SubsonicForm -> SignInScreen(
-            viewModel = subsonicViewModel,
-            onSignedIn = onSignedIn,
+            serverUrl = subsonicViewModel.serverUrl,
+            username = subsonicViewModel.username,
+            password = subsonicViewModel.password,
+            state = subsonicViewModel.state,
+            onServerUrlChange = subsonicViewModel::onServerUrlChange,
+            onUsernameChange = subsonicViewModel::onUsernameChange,
+            onPasswordChange = subsonicViewModel::onPasswordChange,
+            onConnect = subsonicViewModel::connect,
             modifier = modifier,
             onBack = { page = SignInPage.ProviderPicker },
         )
@@ -114,7 +112,7 @@ fun SignInFlow(
                     selectedIds = pick.selected,
                     onToggle = jellyfinViewModel::toggleLibrary,
                     onContinue = jellyfinViewModel::confirmLibraries,
-                    continuing = jellyfinViewModel.state is SignInViewModel.UiState.Connecting,
+                    continuing = jellyfinViewModel.state is SignInUiState.Connecting,
                     onBack = jellyfinViewModel::cancelLibraryPick,
                     modifier = modifier,
                 )
@@ -145,61 +143,27 @@ private fun ProviderPickerPage(
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
 ) {
-    val dimens = LocalFormDimens.current
-
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (onBack != null) {
-            BackButton(
-                onBack = onBack,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(16.dp),
-            )
-        }
-        Column(
-            modifier = Modifier
-                .widthIn(max = dimens.maxWidth)
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(dimens.screenPadding),
-            horizontalAlignment = Alignment.Start,
-            verticalArrangement = Arrangement.spacedBy(dimens.itemSpacing),
-        ) {
-            Text(
-                text = stringResource(R.string.signin_choose_provider_title),
-                style = MaterialTheme.typography.displaySmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            Text(
-                text = stringResource(R.string.signin_choose_provider_subtitle),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            ProviderCard(
-                icon = Icons.Filled.Dns,
-                title = stringResource(R.string.signin_provider_subsonic),
-                description = stringResource(R.string.signin_provider_subsonic_desc),
-                onClick = onPickSubsonic,
-            )
-            ProviderCard(
-                icon = Icons.Filled.PlayCircleFilled,
-                title = stringResource(R.string.signin_provider_plex),
-                description = stringResource(R.string.signin_provider_plex_desc),
-                onClick = onPickPlex,
-            )
-            ProviderCard(
-                icon = Icons.Filled.LibraryMusic,
-                title = stringResource(R.string.signin_provider_jellyfin),
-                description = stringResource(R.string.signin_provider_jellyfin_desc),
-                onClick = onPickJellyfin,
-            )
-        }
+    FormPage(modifier = modifier, onBack = onBack) {
+        FormTitle(stringResource(R.string.signin_choose_provider_title))
+        FormSubtitle(stringResource(R.string.signin_choose_provider_subtitle))
+        ProviderCard(
+            icon = Icons.Filled.Dns,
+            title = stringResource(R.string.signin_provider_subsonic),
+            description = stringResource(R.string.signin_provider_subsonic_desc),
+            onClick = onPickSubsonic,
+        )
+        ProviderCard(
+            icon = Icons.Filled.PlayCircleFilled,
+            title = stringResource(R.string.signin_provider_plex),
+            description = stringResource(R.string.signin_provider_plex_desc),
+            onClick = onPickPlex,
+        )
+        ProviderCard(
+            icon = Icons.Filled.LibraryMusic,
+            title = stringResource(R.string.signin_provider_jellyfin),
+            description = stringResource(R.string.signin_provider_jellyfin_desc),
+            onClick = onPickJellyfin,
+        )
     }
 }
 

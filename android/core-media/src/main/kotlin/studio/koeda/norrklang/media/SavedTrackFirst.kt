@@ -2,6 +2,7 @@ package studio.koeda.norrklang.media
 
 import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.repo.MusicRepository
+import studio.koeda.norrklang.data.runSuspendCatching
 
 /**
  * The resumption-queue rule shared by the generated mixes: the saved track
@@ -14,6 +15,6 @@ internal suspend fun savedTrackFirst(
     savedTrackId: String,
     fresh: List<Track>,
 ): List<Track> {
-    val saved = runCatching { repository.track(savedTrackId) }.getOrNull() ?: return fresh
+    val saved = runSuspendCatching { repository.track(savedTrackId) }.getOrNull() ?: return fresh
     return listOf(saved) + fresh.filterNot { it.id == saved.id }
 }

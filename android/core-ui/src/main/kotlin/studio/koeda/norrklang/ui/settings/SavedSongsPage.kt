@@ -1,16 +1,13 @@
 package studio.koeda.norrklang.ui.settings
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -20,7 +17,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -28,13 +24,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import java.text.DateFormat
 import java.util.Date
 import studio.koeda.norrklang.data.radio.SavedRadioSong
 import studio.koeda.norrklang.data.radio.SavedSongsExport
 import studio.koeda.norrklang.ui.R
-import studio.koeda.norrklang.ui.components.BackButton
+import studio.koeda.norrklang.ui.components.CenteredBox
 import studio.koeda.norrklang.ui.components.QrCode
 import studio.koeda.norrklang.ui.theme.LocalFormDimens
 
@@ -53,25 +48,12 @@ internal fun SavedSongsPage(
     modifier: Modifier = Modifier,
 ) {
     val dimens = LocalFormDimens.current
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = dimens.screenPadding, vertical = dimens.itemSpacing),
+    SettingsPageScaffold(
+        title = stringResource(R.string.settings_saved_songs),
+        onBack = onBack,
+        modifier = modifier,
+        scroll = false,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            BackButton(onBack)
-            Text(
-                text = stringResource(R.string.settings_saved_songs),
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(start = 8.dp),
-            )
-        }
-        Spacer(Modifier.height(dimens.itemSpacing))
-        HorizontalDivider()
-
         when {
             songs == null -> CenteredBox { CircularProgressIndicator() }
             songs.isEmpty() -> CenteredBox {
@@ -116,18 +98,11 @@ private fun SongList(
         }
         item(key = "clear") {
             Spacer(Modifier.height(dimens.itemSpacing * 2))
-            OutlinedButton(
+            SettingsActionButton(
+                text = stringResource(R.string.settings_saved_songs_clear),
                 onClick = onClear,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .widthIn(min = 200.dp)
-                    .heightIn(min = dimens.controlMinHeight),
-            ) {
-                Text(
-                    text = stringResource(R.string.settings_saved_songs_clear),
-                    fontWeight = FontWeight.Bold,
-                )
-            }
+                modifier = Modifier.fillMaxWidth(),
+            )
             Spacer(Modifier.height(dimens.itemSpacing))
         }
     }

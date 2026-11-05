@@ -105,6 +105,13 @@ class JellyfinClient(
         return item
     }
 
+    /** `IncludeItemTypes` values the app queries. */
+    enum class ItemType(val apiValue: String) {
+        AUDIO("Audio"),
+        ALBUM("MusicAlbum"),
+        PLAYLIST("Playlist"),
+    }
+
     /**
      * The generic item query. [params] carries the free-form filters
      * (`GenreIds`, `ArtistIds`, `AlbumArtistIds`, `Years`, `SearchTerm`, ...).
@@ -114,7 +121,7 @@ class JellyfinClient(
     suspend fun items(
         userId: String,
         parentId: String? = null,
-        includeItemTypes: String? = null,
+        includeItemTypes: ItemType? = null,
         recursive: Boolean = true,
         sortBy: String? = null,
         sortOrder: String? = null,
@@ -127,7 +134,7 @@ class JellyfinClient(
         itemsResult("/Items") {
             parameter("userId", userId)
             parentId?.let { parameter("ParentId", it) }
-            includeItemTypes?.let { parameter("IncludeItemTypes", it) }
+            includeItemTypes?.let { parameter("IncludeItemTypes", it.apiValue) }
             parameter("Recursive", recursive.toString())
             sortBy?.let { parameter("SortBy", it) }
             sortOrder?.let { parameter("SortOrder", it) }

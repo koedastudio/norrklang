@@ -14,13 +14,18 @@ import studio.koeda.norrklang.data.settings.ServerSettingsRepository.ResumptionS
 
 class ResumptionQueueLoaderTest {
 
+    private fun containers(repository: MusicRepository) = ContainerTracks(
+        repository,
+        RandomMixSession(repository),
+        SimilarMixesSession(repository),
+        BestOfMixesSession(repository),
+        CatalogMixesSession(repository),
+    )
+
     private fun loader(repository: MusicRepository) = ResumptionQueueLoader(
         settings = defaultSettingsRepository(),
         repository = repository,
-        randomMix = RandomMixSession(repository),
-        similarMixes = SimilarMixesSession(repository),
-        bestOfMixes = BestOfMixesSession(repository),
-        catalogMixes = CatalogMixesSession(repository),
+        containers = containers(repository),
         stationQueue = StationQueue(repository) { station ->
             MediaItem.Builder().setMediaId(MediaId.RadioStation(station.id).encode()).build()
         },
@@ -59,7 +64,7 @@ class ResumptionQueueLoaderTest {
             override suspend fun track(id: String) = stubTrack(id, "ar-2")
         }
 
-        val queue = loader(repo).resumeTracks(MediaId.SongRadio("ar-seed"), savedTrackId = "tr-9")
+        val queue = containers(repo).resume(MediaId.SongRadio("ar-seed"), savedTrackId = "tr-9")
 
         // The saved track leads and its duplicate in the fresh batch is dropped.
         assertEquals(listOf("tr-9", "s-1", "s-2"), queue.map { it.id })
@@ -73,8 +78,8 @@ class ResumptionQueueLoaderTest {
         }
         assertEquals(
             listOf("tr-9"),
-            loader(repo)
-                .resumeTracks(MediaId.SongRadio("ar-seed"), savedTrackId = "tr-9")
+            containers(repo)
+                .resume(MediaId.SongRadio("ar-seed"), savedTrackId = "tr-9")
                 .map { it.id },
         )
     }
@@ -85,7 +90,7 @@ class ResumptionQueueLoaderTest {
         val repo = object : FakeMusicRepository() {
             override suspend fun similarTracks(artistId: String, count: Int) = fresh
         }
-        assertEquals(fresh, loader(repo).containerTracks(MediaId.SongRadio("ar-seed")))
+        assertEquals(fresh, containers(repo).tracks(MediaId.SongRadio("ar-seed")))
     }
 
     @Test
@@ -95,7 +100,7 @@ class ResumptionQueueLoaderTest {
                 throw MusicException.NetworkError(RuntimeException("offline"))
         }
         val thrown = runCatching {
-            loader(repo).resumeTracks(MediaId.SongRadio("ar-seed"), savedTrackId = "tr-9")
+            containers(repo).resume(MediaId.SongRadio("ar-seed"), savedTrackId = "tr-9")
         }.exceptionOrNull()
         assertEquals(MusicException.NetworkError::class, thrown!!::class)
     }

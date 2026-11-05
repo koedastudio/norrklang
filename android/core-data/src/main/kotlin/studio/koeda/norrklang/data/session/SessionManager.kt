@@ -11,7 +11,9 @@ import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.launch
 import studio.koeda.norrklang.data.di.ApplicationScope
 import studio.koeda.norrklang.data.diagnostics.Diagnostics
+import studio.koeda.norrklang.data.repo.MusicException
 import studio.koeda.norrklang.data.repo.toMusicException
+import studio.koeda.norrklang.data.runSuspendCatching
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
 import studio.koeda.norrklang.data.settings.StoredAccount
 import studio.koeda.norrklang.jellyfin.JellyfinAccount
@@ -60,17 +62,16 @@ class SessionManager(
 
     init {
         scope.launch {
-            val restored = try {
+            val restored = runSuspendCatching {
                 when (val stored = settings.currentAccount()) {
-                    is StoredAccount.Subsonic -> connectedState(stored.credentials)
+                    is StoredAccount.Subsonic ->
+                        SessionState.Connected(subsonicSession(stored.credentials))
                     is StoredAccount.Plex -> SessionState.Connected(plexSession(stored.account))
                     is StoredAccount.Jellyfin ->
                         SessionState.Connected(jellyfinSession(stored.account))
                     null -> SessionState.SignedOut
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
+            }.getOrElse { e ->
                 // A restore failure degrades to signed out (the car then shows
                 // the sign-in affordance). It must neither crash the process
                 // nor die leaving the state Initializing — every browse call
@@ -99,38 +100,22 @@ class SessionManager(
         } catch (e: IllegalArgumentException) {
             return Result.failure(e)
         }
-        return try {
-            try {
-                connectSubsonic(credentials)
-            } catch (e: SubsonicException.AuthFailed) {
-                if (!e.isTokenAuthUnsupported) throw e
-                connectSubsonic(credentials.withPasswordAuth(password))
-            }
-            Result.success(Unit)
-        } catch (e: SubsonicException) {
-            Result.failure(e.toMusicException())
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            // Broader than SubsonicException: save() can fail in the Keystore
-            // encrypt, and the sign-in form must render that as an error, not
-            // crash the caller's scope.
-            Result.failure(e)
+        val withToken = connectSubsonic(credentials)
+        val rejection = withToken.exceptionOrNull() as? SubsonicException.AuthFailed
+        val result = if (rejection?.isTokenAuthUnsupported == true) {
+            connectSubsonic(credentials.withPasswordAuth(password))
+        } else {
+            withToken
         }
+        return result.translating { (it as? SubsonicException)?.toMusicException() }
     }
 
-    /** Pings, persists and activates [credentials]; the candidate session is closed on any failure. */
-    private suspend fun connectSubsonic(credentials: SubsonicCredentials) {
-        val candidate = connectedState(credentials)
-        try {
-            (candidate.session as SubsonicSession).client.ping()
+    /** Pings, persists and activates [credentials]; the failure, if any, is the raw [SubsonicException]. */
+    private suspend fun connectSubsonic(credentials: SubsonicCredentials): Result<Unit> =
+        connect(subsonicSession(credentials)) { session ->
+            session.client.ping()
             settings.save(credentials)
-            replaceState(candidate)
-        } catch (e: Throwable) {
-            candidate.session.close()
-            throw e
         }
-    }
 
     /**
      * Validates the token and that the server has a music library, then
@@ -140,53 +125,45 @@ class SessionManager(
     suspend fun signInPlex(
         account: PlexAccount,
         excludedLibraryIds: Set<String> = emptySet(),
-    ): Result<Unit> {
-        val candidate = SessionState.Connected(plexSession(account))
-        return try {
-            (candidate.session as PlexSession).client.validateMusicLibraries()
+    ): Result<Unit> =
+        connect(plexSession(account)) { session ->
+            session.client.validateMusicLibraries()
             settings.savePlex(account, excludedLibraryIds)
-            replaceState(candidate)
-            Result.success(Unit)
-        } catch (e: PlexException) {
-            candidate.session.close()
-            Result.failure(e.toMusicException())
-        } catch (e: CancellationException) {
-            candidate.session.close()
-            throw e
-        } catch (e: Exception) {
-            // Broader than PlexException: save() can fail in the Keystore
-            // encrypt, and the sign-in form must render that as an error, not
-            // crash the caller's scope.
-            candidate.session.close()
-            Result.failure(e)
-        }
-    }
+        }.translating { (it as? PlexException)?.toMusicException() }
 
     /** See [signInPlex]. */
     suspend fun signInJellyfin(
         account: JellyfinAccount,
         excludedLibraryIds: Set<String> = emptySet(),
-    ): Result<Unit> {
-        val candidate = SessionState.Connected(jellyfinSession(account))
-        return try {
-            (candidate.session as JellyfinSession).client.validateMusicLibraries(account.userId)
+    ): Result<Unit> =
+        connect(jellyfinSession(account)) { session ->
+            session.client.validateMusicLibraries(account.userId)
             settings.saveJellyfin(account, excludedLibraryIds)
-            replaceState(candidate)
+        }.translating { (it as? JellyfinException)?.toMusicException() }
+
+    /**
+     * Runs [validateAndPersist] on the candidate [session] and makes it the
+     * active one. The candidate is closed on any failure; the failure comes
+     * back untranslated, since save() can fail in the Keystore encrypt and
+     * the sign-in form must render that as an error, not crash the caller.
+     */
+    private suspend fun <S : ProviderSession> connect(
+        session: S,
+        validateAndPersist: suspend (S) -> Unit,
+    ): Result<Unit> =
+        try {
+            validateAndPersist(session)
+            replaceState(SessionState.Connected(session))
             Result.success(Unit)
-        } catch (e: JellyfinException) {
-            candidate.session.close()
-            Result.failure(e.toMusicException())
-        } catch (e: CancellationException) {
-            candidate.session.close()
-            throw e
-        } catch (e: Exception) {
-            // Broader than JellyfinException: save() can fail in the Keystore
-            // encrypt, and the sign-in form must render that as an error, not
-            // crash the caller's scope.
-            candidate.session.close()
+        } catch (e: Throwable) {
+            session.close()
+            if (e is CancellationException || e !is Exception) throw e
             Result.failure(e)
         }
-    }
+
+    /** The provider's own exception becomes a [MusicException]; anything else is passed through. */
+    private inline fun Result<Unit>.translating(translate: (Throwable) -> MusicException?): Result<Unit> =
+        exceptionOrNull()?.let { Result.failure(translate(it) ?: it) } ?: this
 
     suspend fun signOut() {
         settings.clearAccount()
@@ -214,8 +191,8 @@ class SessionManager(
         }
     }
 
-    private fun connectedState(credentials: SubsonicCredentials) =
-        SessionState.Connected(SubsonicSession(credentials, clientFactory(credentials)))
+    private fun subsonicSession(credentials: SubsonicCredentials) =
+        SubsonicSession(credentials, clientFactory(credentials))
 
     private suspend fun plexSession(account: PlexAccount): PlexSession {
         val info = PlexClientInfo(settings.plexClientId(), PlexClientInfo.DEFAULT_VERSION)

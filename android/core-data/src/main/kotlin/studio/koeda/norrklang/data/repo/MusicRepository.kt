@@ -170,5 +170,14 @@ interface MusicRepository {
     companion object {
         /** Default [recentlyAddedTracks] length — a flat 200-track browse list. */
         const val RECENT_TRACKS_SIZE = 200
+
+        /** [search] cap per result type; paged hosts need something to page through. */
+        const val SEARCH_COUNT_PER_TYPE = 50
+
+        /**
+         * Similar artists pooled into one [similarTracks] selection; with the
+         * seed, matches SimilarMixesSession's 10-artist mix spread.
+         */
+        const val SIMILAR_TRACK_ARTISTS = 9
     }
 }

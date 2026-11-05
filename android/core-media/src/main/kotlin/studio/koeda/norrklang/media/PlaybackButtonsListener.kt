@@ -7,12 +7,12 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import studio.koeda.norrklang.data.radio.SavedRadioSongs
 import studio.koeda.norrklang.data.repo.MusicRepository
+import studio.koeda.norrklang.data.runSuspendCatching
 
 /**
  * Keeps the playback-row custom buttons in sync with the player: the shuffle
@@ -63,13 +63,8 @@ internal class PlaybackButtonsListener(
      * during service teardown the session is already released, and touching
      * it then throws.
      */
-    private suspend fun lookup(query: suspend () -> Boolean): Boolean = try {
-        query()
-    } catch (e: CancellationException) {
-        throw e
-    } catch (_: Exception) {
-        false
-    }
+    private suspend fun lookup(query: suspend () -> Boolean): Boolean =
+        runSuspendCatching { query() }.getOrDefault(false)
 }
 
 /**

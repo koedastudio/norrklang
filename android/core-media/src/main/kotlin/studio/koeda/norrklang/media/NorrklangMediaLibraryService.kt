@@ -23,7 +23,6 @@ import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession.ControllerInfo
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -39,6 +38,7 @@ import kotlinx.coroutines.launch
 import studio.koeda.norrklang.data.diagnostics.Diagnostics
 import studio.koeda.norrklang.data.radio.SavedRadioSongs
 import studio.koeda.norrklang.data.repo.MusicRepository
+import studio.koeda.norrklang.data.runSuspendCatching
 import studio.koeda.norrklang.data.session.ProviderSession
 import studio.koeda.norrklang.data.model.LibraryScope
 import studio.koeda.norrklang.data.model.Track
@@ -117,6 +117,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
             }
         }
 
+        val containers = ContainerTracks(repository, randomMix, similarMixes, bestOfMixes, catalogMixes)
         val browseTree = BrowseTree(
             this,
             repository,
@@ -124,6 +125,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
             similarMixes,
             bestOfMixes,
             catalogMixes,
+            containers,
             tileVersion = { LibraryScope.exclusionKey(settings.excludedLibraryIds.first()) },
             radioPlayStats = { settings.radioPlayStats.first() },
         )
@@ -131,10 +133,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
         val resumptionLoader = ResumptionQueueLoader(
             settings,
             repository,
-            randomMix,
-            similarMixes,
-            bestOfMixes,
-            catalogMixes,
+            containers,
             stationQueue,
             buildItem = ::playableTrack,
         )
@@ -146,8 +145,9 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
             savedSongs = savedSongs,
             browseTree = browseTree,
             resumption = resumptionLoader,
+            containers = containers,
             stationQueue = stationQueue,
-            voiceSearch = VoiceSearchResolver(repository, resumptionLoader::containerTracks),
+            voiceSearch = VoiceSearchResolver(repository, containers::tracks),
             signInIntent = signInPendingIntent(),
             buildTrack = ::playableTrack,
         )
@@ -283,20 +283,18 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
                             this@NorrklangMediaLibraryService, signInPendingIntent(),
                         ),
                     )
-                    session.notifyChildrenChanged(MediaId.Root.encode(), 0, null)
+                    session.notifyChanged(MediaId.Root, 0)
                 },
                 connected = { account ->
                     playbackAccount = account
                     player.setAuthError(null)
-                    session.notifyChildrenChanged(MediaId.Root.encode(), 3, null)
+                    session.notifyChanged(MediaId.Root, 3)
                     val reporter = PlaybackReporter(this, repository, settings, player, account)
-                    val persister = try {
+                    val persister = runSuspendCatching {
                         settings.accountRevision()?.let { revision ->
                             ResumptionPersister(this, settings, player, revision)
                         }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
+                    }.getOrElse { e ->
                         Diagnostics.record("resumption-setup", e)
                         null
                     }
@@ -312,7 +310,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
                         player = player,
                         record = { settings.recordRadioPlay(it) },
                         onRecorded = {
-                            session.notifyChildrenChanged(MediaId.TabHome.encode(), Int.MAX_VALUE, null)
+                            session.notifyChanged(MediaId.TabHome)
                         },
                     )
                     var homeNotify: Job? = null
@@ -326,7 +324,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
                             homeNotify?.cancel()
                             homeNotify = launch {
                                 delay(HOME_NOTIFY_COALESCE_MS)
-                                session.notifyChildrenChanged(MediaId.TabHome.encode(), Int.MAX_VALUE, null)
+                                session.notifyChanged(MediaId.TabHome)
                             }
                         }
                     }
@@ -377,23 +375,14 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
         }
     }
 
-    /** Every scoped browse node, like the favourite-toggle refresh in LibrarySessionCallback. */
+    /** Every scoped browse node: both tabs and every tile but Radio (stations belong to the server). */
     private fun notifyLibraryScopeChanged(session: MediaLibrarySession) {
-        session.notifyChildrenChanged(MediaId.Root.encode(), 3, null)
-        listOf(
-            MediaId.TabHome,
-            MediaId.TabLibrary,
-            MediaId.TabArtists,
-            MediaId.TabAlbums,
-            MediaId.HomeRecentlyAdded,
-            MediaId.HomeFavoriteAlbums,
-            MediaId.HomeFavoriteArtists,
-            MediaId.HomeRecentlyPlayed,
-            MediaId.HomeMostPlayed,
-            MediaId.HomeFavoriteSongs,
-            MediaId.HomeRecentlyAddedSongs,
-            MediaId.HomeRandomMix,
-        ).forEach { session.notifyChildrenChanged(it.encode(), Int.MAX_VALUE, null) }
+        session.notifyChanged(MediaId.Root, 3)
+        session.notifyChanged(MediaId.TabHome)
+        session.notifyChanged(MediaId.TabLibrary)
+        HomeTile.entries
+            .filter { it.section != HomeTile.Section.RADIO }
+            .forEach { session.notifyChanged(it.mediaId) }
     }
 
     override fun onGetSession(controllerInfo: ControllerInfo): MediaLibrarySession? = mediaSession

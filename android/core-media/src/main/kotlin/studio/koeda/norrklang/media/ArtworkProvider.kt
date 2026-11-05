@@ -215,19 +215,12 @@ class ArtworkProvider : ContentProvider() {
         ) {
             val urls = when (mixKind) {
                 HomeMixKind.BEST_OF ->
-                    dependencies.bestOfMixesSession().currentMixes()
-                        .firstOrNull { it.artist.id == key }
-                        ?.let { listOfNotNull(it.artworkUrl) }
+                    dependencies.bestOfMixesSession().mixFor(key)?.let { listOfNotNull(it.artworkUrl) }
                 HomeMixKind.SIMILAR ->
-                    dependencies.similarMixesSession().currentMixes()
-                        .firstOrNull { it.artist.id == key }
-                        ?.let { listOfNotNull(it.artworkUrl) }
-                HomeMixKind.GENRE ->
-                    dependencies.catalogMixesSession().currentGenreMixes()
-                        .firstOrNull { it.name == key }?.artworkUrls
+                    dependencies.similarMixesSession().mixFor(key)?.let { listOfNotNull(it.artworkUrl) }
+                HomeMixKind.GENRE -> dependencies.catalogMixesSession().genreMix(key)?.artworkUrls
                 HomeMixKind.DECADE ->
-                    dependencies.catalogMixesSession().currentDecadeMixes()
-                        .firstOrNull { it.startYear.toString() == key }?.artworkUrls
+                    key.toIntOrNull()?.let { dependencies.catalogMixesSession().decadeMix(it) }?.artworkUrls
             } ?: throw FileNotFoundException("Unknown mix: $kind/$key")
             coverFiles(session, accountDir, HomeButtonArtwork.coverIds(urls))
         }

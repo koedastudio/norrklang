@@ -32,8 +32,8 @@ import studio.koeda.norrklang.data.settings.CredentialCipher
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
 import studio.koeda.norrklang.jellyfin.JellyfinClient
 import studio.koeda.norrklang.subsonic.SubsonicClient
-import studio.koeda.norrklang.ui.signin.SignInViewModel.ErrorKind
-import studio.koeda.norrklang.ui.signin.SignInViewModel.UiState
+import studio.koeda.norrklang.ui.signin.SignInErrorKind as ErrorKind
+import studio.koeda.norrklang.ui.signin.SignInUiState as UiState
 
 private class PassthroughJellyfinCipher : CredentialCipher {
     override fun encrypt(plaintext: String) = "enc-test:$plaintext"

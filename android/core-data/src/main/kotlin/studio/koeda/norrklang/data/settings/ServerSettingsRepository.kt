@@ -11,7 +11,6 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -20,6 +19,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import studio.koeda.norrklang.data.diagnostics.Diagnostics
+import studio.koeda.norrklang.data.runSuspendCatching
 import studio.koeda.norrklang.jellyfin.JellyfinAccount
 import studio.koeda.norrklang.plex.PlexAccount
 import studio.koeda.norrklang.subsonic.SubsonicCredentials
@@ -150,14 +150,10 @@ class ServerSettingsRepository @Inject constructor(
             // A failed migration (Keystore hiccup mid-encrypt, disk error)
             // must not take down credential restore — the stored values still
             // decode below, and the migration retries on the next call.
-            try {
+            runSuspendCatching {
                 migrateLegacyPassword()
                 encryptLegacyPlaintext()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Diagnostics.record("credential-migration", e)
-            }
+            }.onFailure { Diagnostics.record("credential-migration", it) }
         }
         return credentials.first()
     }
@@ -165,15 +161,13 @@ class ServerSettingsRepository @Inject constructor(
     /** The persisted sign-in, whichever provider it belongs to. */
     suspend fun currentAccount(): StoredAccount? {
         val prefs = dataStore.data.first()
-        if (prefs[Keys.PROVIDER] == PROVIDER_PLEX) {
-            return decodePlex(prefs)?.let { StoredAccount.Plex(it) }
+        return when (prefs[Keys.PROVIDER]) {
+            PLEX.storageValue -> decodePlex(prefs)?.let { StoredAccount.Plex(it) }
+            JELLYFIN.storageValue -> decodeJellyfin(prefs)?.let { StoredAccount.Jellyfin(it) }
+            // No provider key (pre-Plex install) or "subsonic": Subsonic path,
+            // including its legacy migrations.
+            else -> currentCredentials()?.let { StoredAccount.Subsonic(it) }
         }
-        if (prefs[Keys.PROVIDER] == PROVIDER_JELLYFIN) {
-            return decodeJellyfin(prefs)?.let { StoredAccount.Jellyfin(it) }
-        }
-        // No provider key (pre-Plex install) or "subsonic": Subsonic path,
-        // including its legacy migrations.
-        return currentCredentials()?.let { StoredAccount.Subsonic(it) }
     }
 
     private fun decodePlex(prefs: Preferences): PlexAccount? {
@@ -203,15 +197,8 @@ class ServerSettingsRepository @Inject constructor(
         )
     }
 
-    suspend fun save(credentials: SubsonicCredentials) {
-        dataStore.edit { prefs ->
-            if (prefs[Keys.SERVER_URL] != credentials.baseUrl ||
-                prefs[Keys.USERNAME] != credentials.username
-            ) {
-                clearAccountPlayback(prefs)
-            }
-            prefs[Keys.ACCOUNT_REVISION] = UUID.randomUUID().toString()
-            prefs[Keys.PROVIDER] = PROVIDER_SUBSONIC
+    suspend fun save(credentials: SubsonicCredentials) =
+        saveAccount(SUBSONIC, identity = listOf(credentials.baseUrl, credentials.username)) { prefs ->
             prefs[Keys.SERVER_URL] = credentials.baseUrl
             prefs[Keys.USERNAME] = credentials.username
             when (val auth = credentials.auth) {
@@ -227,25 +214,15 @@ class ServerSettingsRepository @Inject constructor(
                 }
             }
             prefs.remove(Keys.LEGACY_PASSWORD)
-            removePlexAccount(prefs)
-            removeJellyfinAccount(prefs)
         }
-    }
 
     /**
      * Persists the account and, in the same write, the sign-in picker's
      * library selection — written after [clearAccountPlayback] so a new
      * server's choice survives the account switch.
      */
-    suspend fun savePlex(account: PlexAccount, excludedLibraryIds: Set<String> = emptySet()) {
-        dataStore.edit { prefs ->
-            if (prefs[Keys.PLEX_SERVER_URI] != account.serverUri ||
-                prefs[Keys.PLEX_USERNAME] != account.username
-            ) {
-                clearAccountPlayback(prefs)
-            }
-            prefs[Keys.ACCOUNT_REVISION] = UUID.randomUUID().toString()
-            prefs[Keys.PROVIDER] = PROVIDER_PLEX
+    suspend fun savePlex(account: PlexAccount, excludedLibraryIds: Set<String> = emptySet()) =
+        saveAccount(PLEX, identity = listOf(account.serverUri, account.username)) { prefs ->
             prefs[Keys.PLEX_TOKEN] = cipher.encrypt(account.token)
             prefs[Keys.PLEX_SERVER_URI] = account.serverUri
             prefs[Keys.PLEX_SERVER_NAME] = account.serverName
@@ -253,21 +230,11 @@ class ServerSettingsRepository @Inject constructor(
             prefs[Keys.PLEX_USERNAME] = account.username
             prefs.remove(Keys.PLEX_SECTION_ID)
             prefs.putSet(Keys.LIBRARIES_EXCLUDED, excludedLibraryIds)
-            removeSubsonicAccount(prefs)
-            removeJellyfinAccount(prefs)
         }
-    }
 
     /** See [savePlex]. */
-    suspend fun saveJellyfin(account: JellyfinAccount, excludedLibraryIds: Set<String> = emptySet()) {
-        dataStore.edit { prefs ->
-            if (prefs[Keys.JELLYFIN_BASE_URL] != account.baseUrl ||
-                prefs[Keys.JELLYFIN_USER_ID] != account.userId
-            ) {
-                clearAccountPlayback(prefs)
-            }
-            prefs[Keys.ACCOUNT_REVISION] = UUID.randomUUID().toString()
-            prefs[Keys.PROVIDER] = PROVIDER_JELLYFIN
+    suspend fun saveJellyfin(account: JellyfinAccount, excludedLibraryIds: Set<String> = emptySet()) =
+        saveAccount(JELLYFIN, identity = listOf(account.baseUrl, account.userId)) { prefs ->
             prefs[Keys.JELLYFIN_TOKEN] = cipher.encrypt(account.token)
             prefs[Keys.JELLYFIN_BASE_URL] = account.baseUrl
             prefs[Keys.JELLYFIN_SERVER_NAME] = account.serverName
@@ -275,37 +242,43 @@ class ServerSettingsRepository @Inject constructor(
             prefs[Keys.JELLYFIN_USERNAME] = account.username
             prefs.remove(Keys.JELLYFIN_LIBRARY_ID)
             prefs.putSet(Keys.LIBRARIES_EXCLUDED, excludedLibraryIds)
-            removeSubsonicAccount(prefs)
-            removePlexAccount(prefs)
+        }
+
+    /**
+     * One write: a changed [identity] (another server or user) first drops
+     * the old account's playback state, then the revision, provider and the
+     * other providers' keys are settled before [write] stores the account.
+     */
+    private suspend fun saveAccount(
+        keys: ProviderKeys,
+        identity: List<String>,
+        write: (MutablePreferences) -> Unit,
+    ) {
+        dataStore.edit { prefs ->
+            if (keys.identity.map { prefs[it] } != identity) clearAccountPlayback(prefs)
+            prefs[Keys.ACCOUNT_REVISION] = UUID.randomUUID().toString()
+            prefs[Keys.PROVIDER] = keys.storageValue
+            PROVIDERS.filter { it !== keys }.forEach { it.removeFrom(prefs) }
+            write(prefs)
         }
     }
 
-    /**
-     * This install's X-Plex-Client-Identifier, minted on first use. The edit
-     * re-checks under DataStore's own serialization so concurrent first calls
-     * agree on one id.
-     */
-    suspend fun plexClientId(): String {
-        dataStore.data.first()[Keys.PLEX_CLIENT_ID]?.let { return it }
-        val minted = UUID.randomUUID().toString()
-        val prefs = dataStore.edit { prefs ->
-            if (prefs[Keys.PLEX_CLIENT_ID] == null) prefs[Keys.PLEX_CLIENT_ID] = minted
-        }
-        return prefs[Keys.PLEX_CLIENT_ID] ?: minted
-    }
+    /** This install's X-Plex-Client-Identifier, minted on first use. */
+    suspend fun plexClientId(): String = mintedId(Keys.PLEX_CLIENT_ID)
+
+    /** This install's Jellyfin DeviceId, minted on first use. */
+    suspend fun jellyfinDeviceId(): String = mintedId(Keys.JELLYFIN_DEVICE_ID)
 
     /**
-     * This install's Jellyfin DeviceId, minted on first use. The edit
-     * re-checks under DataStore's own serialization so concurrent first calls
-     * agree on one id.
+     * The id stored under [key], minted on first use. The edit re-checks
+     * under DataStore's own serialization so concurrent first calls agree
+     * on one id.
      */
-    suspend fun jellyfinDeviceId(): String {
-        dataStore.data.first()[Keys.JELLYFIN_DEVICE_ID]?.let { return it }
+    private suspend fun mintedId(key: Preferences.Key<String>): String {
+        dataStore.data.first()[key]?.let { return it }
         val minted = UUID.randomUUID().toString()
-        val prefs = dataStore.edit { prefs ->
-            if (prefs[Keys.JELLYFIN_DEVICE_ID] == null) prefs[Keys.JELLYFIN_DEVICE_ID] = minted
-        }
-        return prefs[Keys.JELLYFIN_DEVICE_ID] ?: minted
+        val prefs = dataStore.edit { prefs -> if (prefs[key] == null) prefs[key] = minted }
+        return prefs[key] ?: minted
     }
 
     /**
@@ -344,9 +317,7 @@ class ServerSettingsRepository @Inject constructor(
         dataStore.edit { prefs ->
             prefs.remove(Keys.PROVIDER)
             prefs.remove(Keys.ACCOUNT_REVISION)
-            removeSubsonicAccount(prefs)
-            removePlexAccount(prefs)
-            removeJellyfinAccount(prefs)
+            PROVIDERS.forEach { it.removeFrom(prefs) }
             clearAccountPlayback(prefs)
         }
     }
@@ -369,35 +340,6 @@ class ServerSettingsRepository @Inject constructor(
             prefs[Keys.ACCOUNT_REVISION] = UUID.randomUUID().toString()
         }
     }[Keys.ACCOUNT_REVISION]
-
-    private fun removeSubsonicAccount(prefs: MutablePreferences) {
-        prefs.remove(Keys.SERVER_URL)
-        prefs.remove(Keys.USERNAME)
-        prefs.remove(Keys.AUTH_SALT)
-        prefs.remove(Keys.AUTH_TOKEN)
-        prefs.remove(Keys.AUTH_PASSWORD)
-        prefs.remove(Keys.LEGACY_PASSWORD)
-    }
-
-    /** Keeps [Keys.PLEX_CLIENT_ID] — the device identity outlives sign-ins. */
-    private fun removePlexAccount(prefs: MutablePreferences) {
-        prefs.remove(Keys.PLEX_TOKEN)
-        prefs.remove(Keys.PLEX_SERVER_URI)
-        prefs.remove(Keys.PLEX_SERVER_NAME)
-        prefs.remove(Keys.PLEX_MACHINE_ID)
-        prefs.remove(Keys.PLEX_SECTION_ID)
-        prefs.remove(Keys.PLEX_USERNAME)
-    }
-
-    /** Keeps [Keys.JELLYFIN_DEVICE_ID] — the device identity outlives sign-ins. */
-    private fun removeJellyfinAccount(prefs: MutablePreferences) {
-        prefs.remove(Keys.JELLYFIN_TOKEN)
-        prefs.remove(Keys.JELLYFIN_BASE_URL)
-        prefs.remove(Keys.JELLYFIN_SERVER_NAME)
-        prefs.remove(Keys.JELLYFIN_USER_ID)
-        prefs.remove(Keys.JELLYFIN_USERNAME)
-        prefs.remove(Keys.JELLYFIN_LIBRARY_ID)
-    }
 
     // --- Playback quality ---
 
@@ -496,11 +438,8 @@ class ServerSettingsRepository @Inject constructor(
      */
     suspend fun migrateLegacyLibrarySelection(availableIds: Collection<String>) {
         val snapshot = dataStore.data.first()
-        val legacyKey = when (snapshot[Keys.PROVIDER]) {
-            PROVIDER_PLEX -> Keys.PLEX_SECTION_ID
-            PROVIDER_JELLYFIN -> Keys.JELLYFIN_LIBRARY_ID
-            else -> return
-        }
+        val legacyKey = PROVIDERS.firstOrNull { it.storageValue == snapshot[Keys.PROVIDER] }
+            ?.legacyLibraryKey ?: return
         if (snapshot[legacyKey] == null) return
         dataStore.edit { prefs ->
             val legacy = prefs[legacyKey] ?: return@edit
@@ -572,8 +511,8 @@ class ServerSettingsRepository @Inject constructor(
         value: String,
         add: Boolean,
     ) {
-        val current = this[key] ?: emptySet()
-        this[key] = if (add) current + value else current - value
+        val current = this[key].orEmpty()
+        putSet(key, if (add) current + value else current - value)
     }
 
     // --- Internet radio ---
@@ -644,8 +583,49 @@ class ServerSettingsRepository @Inject constructor(
         /** Stations kept in [radioPlayStats]; the least listened drop off beyond it. */
         const val MAX_RADIO_STATS = 50
 
-        private const val PROVIDER_SUBSONIC = "subsonic"
-        private const val PROVIDER_PLEX = "plex"
-        private const val PROVIDER_JELLYFIN = "jellyfin"
+        /**
+         * The device ids ([Keys.PLEX_CLIENT_ID], [Keys.JELLYFIN_DEVICE_ID]) are
+         * deliberately in no table: they outlive sign-ins.
+         */
+        private val SUBSONIC = ProviderKeys(
+            storageValue = "subsonic",
+            identity = listOf(Keys.SERVER_URL, Keys.USERNAME),
+            all = listOf(
+                Keys.SERVER_URL, Keys.USERNAME, Keys.AUTH_SALT, Keys.AUTH_TOKEN,
+                Keys.AUTH_PASSWORD, Keys.LEGACY_PASSWORD,
+            ),
+        )
+        private val PLEX = ProviderKeys(
+            storageValue = "plex",
+            identity = listOf(Keys.PLEX_SERVER_URI, Keys.PLEX_USERNAME),
+            all = listOf(
+                Keys.PLEX_TOKEN, Keys.PLEX_SERVER_URI, Keys.PLEX_SERVER_NAME,
+                Keys.PLEX_MACHINE_ID, Keys.PLEX_SECTION_ID, Keys.PLEX_USERNAME,
+            ),
+            legacyLibraryKey = Keys.PLEX_SECTION_ID,
+        )
+        private val JELLYFIN = ProviderKeys(
+            storageValue = "jellyfin",
+            identity = listOf(Keys.JELLYFIN_BASE_URL, Keys.JELLYFIN_USER_ID),
+            all = listOf(
+                Keys.JELLYFIN_TOKEN, Keys.JELLYFIN_BASE_URL, Keys.JELLYFIN_SERVER_NAME,
+                Keys.JELLYFIN_USER_ID, Keys.JELLYFIN_USERNAME, Keys.JELLYFIN_LIBRARY_ID,
+            ),
+            legacyLibraryKey = Keys.JELLYFIN_LIBRARY_ID,
+        )
+        private val PROVIDERS = listOf(SUBSONIC, PLEX, JELLYFIN)
+    }
+
+    /** The keys one provider's sign-in owns. */
+    private class ProviderKeys(
+        /** What [Keys.PROVIDER] holds for this provider. */
+        val storageValue: String,
+        /** A change in these values is an account switch, which drops the old account's playback state. */
+        val identity: List<Preferences.Key<String>>,
+        val all: List<Preferences.Key<String>>,
+        /** Pre-1.3 pinned library, read once by [migrateLegacyLibrarySelection]. */
+        val legacyLibraryKey: Preferences.Key<String>? = null,
+    ) {
+        fun removeFrom(prefs: MutablePreferences) = all.forEach(prefs::remove)
     }
 }

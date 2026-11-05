@@ -6,9 +6,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import studio.koeda.norrklang.data.artwork.ArtworkContract
 import studio.koeda.norrklang.data.di.AppPackageName
 import studio.koeda.norrklang.data.di.ApplicationScope
@@ -26,6 +24,7 @@ import studio.koeda.norrklang.data.model.ReleaseType
 import studio.koeda.norrklang.data.model.SearchResults
 import studio.koeda.norrklang.data.model.StreamRef
 import studio.koeda.norrklang.data.model.Track
+import studio.koeda.norrklang.data.repo.MusicRepository.Companion.SEARCH_COUNT_PER_TYPE
 import studio.koeda.norrklang.data.session.MusicProvider
 import studio.koeda.norrklang.data.session.ProviderSession
 import studio.koeda.norrklang.data.session.SessionManager
@@ -45,39 +44,37 @@ import studio.koeda.norrklang.subsonic.model.Playlist as PlaylistDto
  */
 @Singleton
 class SubsonicMusicRepository @Inject constructor(
-    private val sessionManager: SessionManager,
-    private val settings: ServerSettingsRepository,
+    sessionManager: SessionManager,
+    settings: ServerSettingsRepository,
     @AppPackageName private val packageName: String,
     @ApplicationScope scope: CoroutineScope,
-) : MusicRepository {
+) : ProviderMusicRepository<SubsonicSession>(sessionManager, settings, scope) {
 
-    private val cache = TtlCache(ttlMillis = 5 * 60 * 1000L)
+    override fun sessionOf(session: ProviderSession) = session as? SubsonicSession
 
-    init {
-        // Explicit sign-out drops cached library data. Direct account switches
-        // use different fingerprint keys, so they cannot reuse another account's
-        // data. The TTL prunes those retired keys as new requests arrive.
-        scope.launch {
-            sessionManager.state.drop(1).collect { state ->
-                // Connected caches are already keyed by account fingerprint.
-                // Clearing on connect can invalidate that account's first load.
-                if (state is SessionManager.SessionState.SignedOut) cache.clear()
-            }
-        }
+    override fun translate(e: Exception) = (e as? SubsonicException)?.toMusicException()
+
+    override suspend fun loadLibraries(session: SubsonicSession) =
+        session.client.getMusicFolders().map { MusicLibrary(it.id.toString(), it.name) }
+
+    // Nothing excluded skips getMusicFolders entirely: today's exact requests
+    // for everyone who never touched the setting (non-Navidrome servers too).
+    override suspend fun scope(session: SubsonicSession): LibraryScope {
+        val excluded = settings.excludedLibraryIds.first()
+        if (excluded.isEmpty()) return LibraryScope.resolve(emptyList(), emptySet())
+        return LibraryScope.resolve(librariesFor(session), excluded)
     }
 
-    override suspend fun libraries(): List<MusicLibrary> = librariesFor(subsonicSession())
-
     override suspend fun artists(): List<Artist> =
-        scoped("artists") { client, scope ->
-            client.getArtists(scope.folderIds).flatMap { index ->
+        scoped("artists") { session, scope ->
+            session.client.getArtists(scope.folderIds).flatMap { index ->
                 index.artist.map { it.toDomain(sortGroup = index.name) }
             }
         }
 
     override suspend fun artist(id: String): ArtistDetail =
-        cached("artist/$id") { client ->
-            val dto = client.getArtist(id)
+        cached("artist/$id") { session ->
+            val dto = session.client.getArtist(id)
             ArtistDetail(
                 artist = Artist(
                     id = dto.id,
@@ -93,8 +90,8 @@ class SubsonicMusicRepository @Inject constructor(
         }
 
     override suspend fun albums(offset: Int, size: Int): List<Album> =
-        scoped("albums/$offset/$size") { client, scope ->
-            client.getAlbumList2(
+        scoped("albums/$offset/$size") { session, scope ->
+            session.client.getAlbumList2(
                 SubsonicClient.AlbumListType.ALPHABETICAL,
                 size,
                 offset,
@@ -103,32 +100,32 @@ class SubsonicMusicRepository @Inject constructor(
         }
 
     override suspend fun recentlyAdded(size: Int): List<Album> =
-        scoped("recent/$size") { client, scope ->
-            client.getAlbumList2(SubsonicClient.AlbumListType.NEWEST, size, musicFolderIds = scope.folderIds)
+        scoped("recent/$size") { session, scope ->
+            session.client.getAlbumList2(SubsonicClient.AlbumListType.NEWEST, size, musicFolderIds = scope.folderIds)
                 .map { it.toDomain() }
         }
 
     override suspend fun favoriteAlbums(size: Int): List<Album> =
-        scoped("favorites/$size") { client, scope ->
-            client.getAlbumList2(SubsonicClient.AlbumListType.STARRED, size, musicFolderIds = scope.folderIds)
+        scoped("favorites/$size") { session, scope ->
+            session.client.getAlbumList2(SubsonicClient.AlbumListType.STARRED, size, musicFolderIds = scope.folderIds)
                 .map { it.toDomain() }
         }
 
     override suspend fun favoriteTracks(): List<Track> =
-        scoped("favorite-tracks") { client, scope ->
-            client.getStarred2(scope.folderIds).song.map { it.toDomain(scope.singleLibraryId) }
+        scoped("favorite-tracks") { session, scope ->
+            session.client.getStarred2(scope.folderIds).song.map { it.toDomain(scope.singleLibraryId) }
         }
 
     override suspend fun favoriteArtists(): List<Artist> =
-        scoped("favorite-artists") { client, scope ->
-            client.getStarred2(scope.folderIds).artist.map { it.toDomain() }
+        scoped("favorite-artists") { session, scope ->
+            session.client.getStarred2(scope.folderIds).artist.map { it.toDomain() }
         }
 
     // The Subsonic API has no "newest songs" list — flatten the newest albums
     // instead: newest album first, album track order within.
     override suspend fun recentlyAddedTracks(size: Int): List<Track> =
-        scoped("recently-added-tracks/$size") { client, scope ->
-            val albums = client.getAlbumList2(
+        scoped("recently-added-tracks/$size") { session, scope ->
+            val albums = session.client.getAlbumList2(
                 SubsonicClient.AlbumListType.NEWEST,
                 size,
                 musicFolderIds = scope.folderIds,
@@ -142,7 +139,7 @@ class SubsonicMusicRepository @Inject constructor(
             needed.chunked(RECENT_TRACKS_FETCH_CONCURRENCY)
                 .flatMap { chunk ->
                     coroutineScope {
-                        chunk.map { album -> async { client.getAlbum(album.id).song } }.awaitAll()
+                        chunk.map { album -> async { session.client.getAlbum(album.id).song } }.awaitAll()
                     }.flatten()
                 }
                 .take(size)
@@ -152,46 +149,46 @@ class SubsonicMusicRepository @Inject constructor(
     // Deliberately uncached: the random-mix snapshot (RandomMixSession) owns
     // list stability, and a TTL here would defeat its regeneration.
     override suspend fun randomTracks(size: Int): List<Track> =
-        withScope { client, scope ->
-            client.getRandomSongs(size, musicFolderIds = scope.folderIds)
+        withScope { session, scope ->
+            session.client.getRandomSongs(size, musicFolderIds = scope.folderIds)
                 .map { it.toDomain(scope.singleLibraryId) }
         }
 
     override suspend fun recentlyPlayedAlbums(size: Int): List<Album> =
-        scoped("recently-played-albums/$size") { client, scope ->
-            client.getAlbumList2(SubsonicClient.AlbumListType.RECENT, size, musicFolderIds = scope.folderIds)
+        scoped("recently-played-albums/$size") { session, scope ->
+            session.client.getAlbumList2(SubsonicClient.AlbumListType.RECENT, size, musicFolderIds = scope.folderIds)
                 .map { it.toDomain() }
         }
 
     override suspend fun mostPlayedAlbums(size: Int): List<Album> =
-        scoped("most-played-albums/$size") { client, scope ->
-            client.getAlbumList2(SubsonicClient.AlbumListType.FREQUENT, size, musicFolderIds = scope.folderIds)
+        scoped("most-played-albums/$size") { session, scope ->
+            session.client.getAlbumList2(SubsonicClient.AlbumListType.FREQUENT, size, musicFolderIds = scope.folderIds)
                 .map { it.toDomain() }
         }
 
     // Unscoped: getGenres ignores musicFolderId, so counts include hidden
     // libraries (empty genre tiles are dropped downstream).
     override suspend fun genres(): List<Genre> =
-        cached("genres") { client ->
-            client.getGenres().map { Genre(it.value, it.songCount) }
+        cached("genres") { session ->
+            session.client.getGenres().map { Genre(it.value, it.songCount) }
         }
 
     override suspend fun albumsByGenre(genre: String, size: Int): List<Album> =
-        scoped("albums-by-genre/$genre/$size") { client, scope ->
-            client.getAlbumList2ByGenre(genre, size, musicFolderIds = scope.folderIds)
+        scoped("albums-by-genre/$genre/$size") { session, scope ->
+            session.client.getAlbumList2ByGenre(genre, size, musicFolderIds = scope.folderIds)
                 .map { it.toDomain() }
         }
 
     override suspend fun albumsByYearRange(fromYear: Int, toYear: Int, size: Int): List<Album> =
-        scoped("albums-by-year/$fromYear-$toYear/$size") { client, scope ->
-            client.getAlbumList2ByYear(fromYear, toYear, size, musicFolderIds = scope.folderIds)
+        scoped("albums-by-year/$fromYear-$toYear/$size") { session, scope ->
+            session.client.getAlbumList2ByYear(fromYear, toYear, size, musicFolderIds = scope.folderIds)
                 .map { it.toDomain() }
         }
 
     // Uncached like randomTracks: CatalogMixesSession owns list stability.
     override suspend fun randomTracksByGenre(genre: String, size: Int): List<Track> =
-        withScope { client, scope ->
-            client.getRandomSongs(size, genre = genre, musicFolderIds = scope.folderIds)
+        withScope { session, scope ->
+            session.client.getRandomSongs(size, genre = genre, musicFolderIds = scope.folderIds)
                 .map { it.toDomain(scope.singleLibraryId) }
         }
 
@@ -200,8 +197,8 @@ class SubsonicMusicRepository @Inject constructor(
         toYear: Int,
         size: Int,
     ): List<Track> =
-        withScope { client, scope ->
-            client.getRandomSongs(
+        withScope { session, scope ->
+            session.client.getRandomSongs(
                 size,
                 fromYear = fromYear,
                 toYear = toYear,
@@ -220,9 +217,9 @@ class SubsonicMusicRepository @Inject constructor(
     // has headroom to still fill the request. getArtistInfo2 ignores
     // musicFolderId, so hidden libraries are filtered out here.
     override suspend fun similarArtists(artistId: String, count: Int): List<Artist> =
-        scoped("similar-artists/$artistId") { client, scope ->
+        scoped("similar-artists/$artistId") { session, scope ->
             emptyWhenMissing {
-                client.getArtistInfo2(artistId, SIMILAR_ARTISTS_FETCH).similarArtist
+                session.client.getArtistInfo2(artistId, SIMILAR_ARTISTS_FETCH).similarArtist
             }
                 // Similar artists not in the library come back with a synthetic
                 // id and no albums — useless as mix sources, drop them.
@@ -234,15 +231,15 @@ class SubsonicMusicRepository @Inject constructor(
     // Uncached like randomTracks: getSimilarSongs2 has a random component and
     // SimilarMixesSession owns list stability. Post-filtered like similarArtists.
     override suspend fun similarTracks(artistId: String, count: Int): List<Track> =
-        withScope { client, scope ->
-            emptyWhenMissing { client.getSimilarSongs2(artistId, count) }
+        withScope { session, scope ->
+            emptyWhenMissing { session.client.getSimilarSongs2(artistId, count) }
                 .let { songs -> if (scope.isAll) songs else songs.inScope(scope) { it.artistId } }
                 .map { it.toDomain(scope.singleLibraryId) }
         }
 
     override suspend fun topTracks(artistName: String, count: Int): List<Track> =
-        cached("top-songs/$artistName/$count") { client ->
-            emptyWhenMissing { client.getTopSongs(artistName, count) }
+        cached("top-songs/$artistName/$count") { session ->
+            emptyWhenMissing { session.client.getTopSongs(artistName, count) }
                 .map { it.toDomain() }
         }
 
@@ -252,27 +249,27 @@ class SubsonicMusicRepository @Inject constructor(
     // Deliberately unscoped: a playlist track from a hidden library still
     // needs the right heart.
     override suspend fun isFavoriteTrack(trackId: String): Boolean =
-        trackId in cached("favorite-track-ids") { client ->
-            client.getStarred2().song.mapTo(HashSet()) { it.id }
+        trackId in cached("favorite-track-ids") { session ->
+            session.client.getStarred2().song.mapTo(HashSet()) { it.id }
         }
 
     override suspend fun setTrackFavorite(trackId: String, favorite: Boolean) =
-        withSession { client ->
-            if (favorite) client.star(trackId) else client.unstar(trackId)
+        withSession { session ->
+            if (favorite) session.client.star(trackId) else session.client.unstar(trackId)
             cache.clear()
         }
 
     override suspend fun setAlbumFavorite(albumId: String, favorite: Boolean) =
-        withSession { client ->
-            if (favorite) client.starAlbum(albumId) else client.unstarAlbum(albumId)
+        withSession { session ->
+            if (favorite) session.client.starAlbum(albumId) else session.client.unstarAlbum(albumId)
             // Albums carry their starred state (see AlbumID3.starred), so every
             // cached album list is stale the moment a star changes.
             cache.clear()
         }
 
     override suspend fun album(id: String): AlbumDetail =
-        cached("album/$id") { client ->
-            val dto = client.getAlbum(id)
+        cached("album/$id") { session ->
+            val dto = session.client.getAlbum(id)
             AlbumDetail(
                 album = Album(
                     id = dto.id,
@@ -290,16 +287,16 @@ class SubsonicMusicRepository @Inject constructor(
         }
 
     override suspend fun playlists(): List<Playlist> =
-        cached("playlists") { client ->
+        cached("playlists") { session ->
             // `changed` is ISO-8601, so lexicographic order is chronological.
-            client.getPlaylists()
+            session.client.getPlaylists()
                 .sortedByDescending { it.changed.orEmpty() }
                 .map { it.toDomain() }
         }
 
     override suspend fun playlist(id: String): PlaylistDetail =
-        cached("playlist/$id") { client ->
-            val dto = client.getPlaylist(id)
+        cached("playlist/$id") { session ->
+            val dto = session.client.getPlaylist(id)
             PlaylistDetail(
                 playlist = Playlist(
                     id = dto.id,
@@ -313,15 +310,15 @@ class SubsonicMusicRepository @Inject constructor(
         }
 
     override suspend fun track(id: String): Track =
-        cached("track/$id") { client ->
-            client.getSong(id).toDomain()
+        cached("track/$id") { session ->
+            session.client.getSong(id).toDomain()
         }
 
     // Unscoped: stations belong to the server, not a library. Servers
     // predating the endpoint answer NotFound, which reads as "no stations".
     override suspend fun radioStations(): List<RadioStation> =
-        cached("radio-stations") { client ->
-            emptyWhenMissing { client.getInternetRadioStations() }.map {
+        cached("radio-stations") { session ->
+            emptyWhenMissing { session.client.getInternetRadioStations() }.map {
                 RadioStation(
                     id = it.id,
                     name = it.name,
@@ -335,8 +332,8 @@ class SubsonicMusicRepository @Inject constructor(
     // Cached so the host's onSearch → onGetSearchResult (paged) sequence hits
     // the server once per query, not once per page.
     override suspend fun search(query: String): SearchResults =
-        scoped("search/$query") { client, scope ->
-            val result = client.search3(
+        scoped("search/$query") { session, scope ->
+            val result = session.client.search3(
                 query,
                 count = SEARCH_COUNT_PER_TYPE,
                 musicFolderIds = scope.folderIds,
@@ -358,8 +355,8 @@ class SubsonicMusicRepository @Inject constructor(
         val albumTitle = song.albumTitle ?: return null
         for (candidate in candidates) {
             if (artistId !in artistIdsIn(listOf(candidate))) continue
-            val confirmed = cached("album-library/$albumId/$candidate") { client ->
-                client.search3(
+            val confirmed = cached("album-library/$albumId/$candidate") { session ->
+                session.client.search3(
                     query = albumTitle,
                     artistCount = 0,
                     albumCount = LIBRARY_PROBE_ALBUM_COUNT,
@@ -377,15 +374,9 @@ class SubsonicMusicRepository @Inject constructor(
         submission: Boolean,
         expectedSession: ProviderSession?,
     ) =
-        withSession(expectedSession) { client -> client.scrobble(trackId, submission) }
-
-    override fun invalidateCache() = cache.clear()
+        withSession(expectedSession) { session -> session.client.scrobble(trackId, submission) }
 
     private companion object {
-        // Per result type (artists/albums/songs); generous enough that paged
-        // search hosts have something to page through.
-        const val SEARCH_COUNT_PER_TYPE = 50
-
         /** Similar-artists batch fetched per seed; callers take what they need. */
         const val SIMILAR_ARTISTS_FETCH = 50
 
@@ -395,83 +386,6 @@ class SubsonicMusicRepository @Inject constructor(
         /** Albums fetched per library when confirming a track's library by album title. */
         const val LIBRARY_PROBE_ALBUM_COUNT = 100
     }
-
-    private fun subsonicSession(): SubsonicSession =
-        sessionManager.connectedOrNull()?.session as? SubsonicSession
-            ?: throw MusicException.AuthFailed("Not signed in")
-
-    private suspend fun <T : Any> cached(
-        key: String,
-        loader: suspend (SubsonicClient) -> T,
-    ): T {
-        val session = subsonicSession()
-        val scopedKey = "${session.cacheFingerprint}/$key"
-        // The loader uses the SAME session snapshot the key was computed from:
-        // a re-read could store one account's data under another's fingerprint
-        // if an account switch lands between the two reads.
-        return cache.getOrLoad(scopedKey) {
-            translatingErrors(session) {
-                loader(session.client)
-            }
-        }
-    }
-
-    private suspend fun <T> withSession(
-        expectedSession: ProviderSession? = null,
-        block: suspend (SubsonicClient) -> T,
-    ): T {
-        val session = subsonicSession()
-        if (expectedSession != null && session !== expectedSession) {
-            throw MusicException.AuthFailed("Playback account changed")
-        }
-        return translatingErrors(session) {
-            block(session.client)
-        }
-    }
-
-    /** Like [cached], with the library scope folded into the key — no explicit invalidation needed. */
-    private suspend fun <T : Any> scoped(
-        key: String,
-        loader: suspend (SubsonicClient, LibraryScope) -> T,
-    ): T {
-        val session = subsonicSession()
-        val scope = scope(session)
-        return cache.getOrLoad("${session.cacheFingerprint}/${scope.key}/$key") {
-            translatingErrors(session) {
-                loader(session.client, scope)
-            }
-        }
-    }
-
-    /** Like [withSession], resolving the library scope for the uncached random/similar paths. */
-    private suspend fun <T> withScope(
-        expectedSession: ProviderSession? = null,
-        block: suspend (SubsonicClient, LibraryScope) -> T,
-    ): T {
-        val session = subsonicSession()
-        if (expectedSession != null && session !== expectedSession) {
-            throw MusicException.AuthFailed("Playback account changed")
-        }
-        val scope = scope(session)
-        return translatingErrors(session) {
-            block(session.client, scope)
-        }
-    }
-
-    // Nothing excluded skips getMusicFolders entirely: today's exact requests
-    // for everyone who never touched the setting (non-Navidrome servers too).
-    private suspend fun scope(session: SubsonicSession): LibraryScope {
-        val excluded = settings.excludedLibraryIds.first()
-        if (excluded.isEmpty()) return LibraryScope.resolve(emptyList(), emptySet())
-        return LibraryScope.resolve(librariesFor(session), excluded)
-    }
-
-    private suspend fun librariesFor(session: SubsonicSession): List<MusicLibrary> =
-        cache.getOrLoad("${session.cacheFingerprint}/libraries") {
-            translatingErrors(session) {
-                session.client.getMusicFolders().map { MusicLibrary(it.id.toString(), it.name) }
-            }
-        }
 
     /** Empty means "all", which omits musicFolderId (see [SubsonicClient.getArtists]). */
     private val LibraryScope.folderIds: List<String>
@@ -483,26 +397,14 @@ class SubsonicMusicRepository @Inject constructor(
 
     /** Artist ids in the given libraries, cached — the scope's set for `!isAll`, or one candidate. */
     private suspend fun artistIdsIn(folderIds: List<String>): Set<String> =
-        cached("artist-ids/${folderIds.sorted().joinToString("+")}") { client ->
-            client.getArtists(folderIds).flatMap { it.artist }.mapTo(HashSet()) { it.id }
+        cached("artist-ids/${folderIds.sorted().joinToString("+")}") { session ->
+            session.client.getArtists(folderIds).flatMap { it.artist }.mapTo(HashSet()) { it.id }
         }
 
     private suspend fun <T> List<T>.inScope(scope: LibraryScope, artistId: (T) -> String?): List<T> {
         val ids = artistIdsIn(scope.selectedIds)
         return filter { artistId(it) in ids }
     }
-
-    /**
-     * The [MusicException] boundary: nothing above core-data sees a
-     * [SubsonicException]. Auth rejections also flip the session state.
-     */
-    private suspend fun <T> translatingErrors(session: SubsonicSession, block: suspend () -> T): T =
-        try {
-            block()
-        } catch (e: SubsonicException) {
-            if (e is SubsonicException.AuthFailed) sessionManager.onAuthRejected(session)
-            throw e.toMusicException()
-        }
 
     /**
      * Last.fm-backed endpoints report "no data for this artist" as either an
@@ -528,8 +430,8 @@ class SubsonicMusicRepository @Inject constructor(
         type: SubsonicClient.AlbumListType,
         size: Int,
     ): List<Artist> =
-        scoped(key) { client, scope ->
-            client.getAlbumList2(type, size, musicFolderIds = scope.folderIds)
+        scoped(key) { session, scope ->
+            session.client.getAlbumList2(type, size, musicFolderIds = scope.folderIds)
                 .mapNotNull { album ->
                     val artistId = album.artistId ?: return@mapNotNull null
                     val artistName = album.artist ?: return@mapNotNull null

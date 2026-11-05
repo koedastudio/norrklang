@@ -89,7 +89,7 @@ class JellyfinClientTest {
         ).items(
             userId = "u1",
             parentId = "lib1",
-            includeItemTypes = "MusicAlbum",
+            includeItemTypes = JellyfinClient.ItemType.ALBUM,
             sortBy = "DateCreated",
             sortOrder = "Descending",
             filters = listOf("IsFavorite"),

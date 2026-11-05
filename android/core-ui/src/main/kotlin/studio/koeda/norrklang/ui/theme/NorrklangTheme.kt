@@ -11,7 +11,7 @@ import androidx.compose.ui.graphics.Color
  * Near-black surfaces, one "aurora" accent, high contrast for car screens.
  * Always dark, in day and night mode alike — standard for automotive media
  * apps, where a bright surface would glare at the driver. The window-level
- * themes in both app modules match this.
+ * theme in core-ui/src/main/res/values/themes.xml matches this.
  */
 
 private val AuroraTeal = Color(0xFF4FD8C4)
