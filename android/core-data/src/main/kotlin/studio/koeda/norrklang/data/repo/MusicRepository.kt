@@ -65,6 +65,9 @@ interface MusicRepository {
     /** [size] random tracks; a fresh selection on every call (never cached). */
     suspend fun randomTracks(size: Int = 50): List<Track>
 
+    /** [size] random albums; a fresh selection on every call (never cached). */
+    suspend fun randomAlbums(size: Int = 20): List<Album>
+
     /** Albums most recently played on this account, most recent first. */
     suspend fun recentlyPlayedAlbums(size: Int = 50): List<Album>
 
@@ -88,21 +91,21 @@ interface MusicRepository {
      */
     suspend fun trackLibraryId(trackId: String, candidates: Set<String>): String? = null
 
-    /** Albums tagged with [genre] (exact name as reported by [genres]). */
-    suspend fun albumsByGenre(genre: String, size: Int = 20): List<Album>
+    /** Albums tagged with [genre] (exact name as reported by [genres]), title order, paged like [albums]. */
+    suspend fun albumsByGenre(genre: String, offset: Int, size: Int): List<Album>
 
-    /** Albums whose year falls in `[fromYear, toYear]` (inclusive). */
-    suspend fun albumsByYearRange(fromYear: Int, toYear: Int, size: Int = 20): List<Album>
+    /** Albums whose year falls in `[fromYear, toYear]` (inclusive), title order, paged like [albums]. */
+    suspend fun albumsByYearRange(fromYear: Int, toYear: Int, offset: Int, size: Int): List<Album>
 
     /**
      * [size] random tracks tagged with [genre]; a fresh selection on every
-     * call (never cached — CatalogMixesSession owns list stability).
+     * call (never cached — CatalogMixes owns list stability).
      */
     suspend fun randomTracksByGenre(genre: String, size: Int = 50): List<Track>
 
     /**
      * [size] random tracks from `[fromYear, toYear]`; a fresh selection on
-     * every call (never cached — CatalogMixesSession owns list stability).
+     * every call (never cached — CatalogMixes owns list stability).
      */
     suspend fun randomTracksByYearRange(fromYear: Int, toYear: Int, size: Int = 50): List<Track>
 

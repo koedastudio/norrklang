@@ -13,10 +13,11 @@ import studio.koeda.norrklang.data.repo.MusicException
 /**
  * Autoplay: when at most [TRIGGER_REMAINING] items follow the current one in
  * play order, appends a [QueueRadio] continuation so music keeps playing —
- * random tracks when the queue is the random mix, similar tracks (seeded by
- * the newest queue tracks' artist) everywhere else. Appended items carry
- * [MediaId.HomeRandomMix] or [MediaId.SongRadio] so resumption regenerates a
- * matching queue.
+ * the queue's origin decides which: random tracks after the random mix, the
+ * next random album after a random album, similar tracks (seeded by the
+ * newest queue tracks' artist) everywhere else. Appended items carry
+ * [MediaId.HomeRandomMix], [MediaId.HomeRandomAlbums] or [MediaId.SongRadio]
+ * so resumption regenerates a matching queue.
  *
  * An empty continuation marks the queue exhausted until a new queue is set,
  * so a server without similarity data costs one request per queue. Errors
@@ -31,6 +32,9 @@ internal class QueueRadioListener(
     // unit tests cannot construct.
     private val seedOf: (MediaItem) -> String? = { item ->
         item.mediaMetadata.extras?.getString(MediaItemFactory.EXTRA_ARTIST_ID)
+    },
+    private val albumOf: (MediaItem) -> String? = { item ->
+        item.mediaMetadata.extras?.getString(MediaItemFactory.EXTRA_ALBUM_ID)
     },
     private val buildItem: (Track, MediaId.Container) -> MediaItem =
         MediaItemFactory::playableTrack,
@@ -63,6 +67,9 @@ internal class QueueRadioListener(
                     is Mode.Random ->
                         radio.randomContinuation(queueTrackIds())
                             .map { buildItem(it, MediaId.HomeRandomMix) }
+                    is Mode.RandomAlbums ->
+                        radio.randomAlbumContinuation(queueAlbumIds())
+                            .map { buildItem(it, MediaId.HomeRandomAlbums) }
                     is Mode.Similar ->
                         radio.similarContinuation(mode.seedArtistId, queueTrackIds())
                             .map { buildItem(it, MediaId.SongRadio(mode.seedArtistId)) }
@@ -115,6 +122,7 @@ internal class QueueRadioListener(
 
     private sealed interface Mode {
         data object Random : Mode
+        data object RandomAlbums : Mode
         data class Similar(val seedArtistId: String) : Mode
     }
 
@@ -126,6 +134,7 @@ internal class QueueRadioListener(
         val last = player.getMediaItemAt(player.mediaItemCount - 1)
         val container = (MediaId.parse(last.mediaId) as? MediaId.Track)?.container
         if (container == MediaId.HomeRandomMix) return Mode.Random
+        if (container == MediaId.HomeRandomAlbums) return Mode.RandomAlbums
         // Seed from the frontier: the newest appended (or last browsed) tracks.
         for (i in player.mediaItemCount - 1 downTo maxOf(0, player.mediaItemCount - SEED_SCAN)) {
             seedOf(player.getMediaItemAt(i))?.let { return Mode.Similar(it) }
@@ -138,6 +147,13 @@ internal class QueueRadioListener(
             for (i in 0 until player.mediaItemCount) {
                 val mediaId = player.getMediaItemAt(i).mediaId
                 add((MediaId.parse(mediaId) as? MediaId.Track)?.id ?: mediaId)
+            }
+        }
+
+    private fun queueAlbumIds(): Set<String> =
+        buildSet {
+            for (i in 0 until player.mediaItemCount) {
+                albumOf(player.getMediaItemAt(i))?.let(::add)
             }
         }
 

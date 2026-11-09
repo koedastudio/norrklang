@@ -156,6 +156,18 @@ class JellyfinMusicRepositoryTest {
     }
 
     @Test
+    fun `randomAlbums draws albums in random order from every selected library`() = runTest {
+        routes["ParentId=lib1&IncludeItemTypes=MusicAlbum"] = items(album("70", "A"))
+        routes["ParentId=lib2&IncludeItemTypes=MusicAlbum"] = items(album("71", "B"))
+        val repo = env(backgroundScope).signedIn(listOf("lib1", "lib2"))
+
+        assertEquals(setOf("70", "71"), repo.randomAlbums(10).map { it.id }.toSet())
+        val draws = requests.filter { "IncludeItemTypes=MusicAlbum" in it }
+        assertEquals(2, draws.size)
+        assertTrue(draws.all { "SortBy=Random" in it && "Limit=10" in it })
+    }
+
+    @Test
     fun `favorites round-trip through the favorite items endpoint`() = runTest {
         routes["Filters=IsFavorite"] = items(track("100", "Loved"))
         val repo = env(backgroundScope).signedIn()
@@ -230,7 +242,7 @@ class JellyfinMusicRepositoryTest {
         )
         val repo = env(backgroundScope).signedIn()
 
-        val albums = repo.albumsByGenre("jazz", 20)
+        val albums = repo.albumsByGenre("jazz", 0, 20)
 
         assertEquals("Kind of Blue", albums.single().title)
         assertEquals(2500, albums.single().durationSec)
@@ -243,7 +255,7 @@ class JellyfinMusicRepositoryTest {
     fun `year ranges are spelled out as a Years list`() = runTest {
         val repo = env(backgroundScope).signedIn()
 
-        repo.albumsByYearRange(1950, 1959, 10)
+        repo.albumsByYearRange(1950, 1959, 0, 10)
         val albums = requests.last { "IncludeItemTypes=MusicAlbum" in it }
         assertTrue("Years=1950%2C1951" in albums)
         assertTrue("1959" in albums)
@@ -541,7 +553,7 @@ class JellyfinMusicRepositoryTest {
         val genres = repo.genres().associate { it.name to it.songCount }
         assertEquals(mapOf("Jazz" to 12, "Rock" to 1), genres)
 
-        repo.albumsByGenre("rock", 5)
+        repo.albumsByGenre("rock", 0, 5)
         val byGenre = requests.filter { "IncludeItemTypes=MusicAlbum" in it && "GenreIds=g50" in it }
         assertEquals(1, byGenre.size)
         assertTrue("ParentId=lib2" in byGenre.single())

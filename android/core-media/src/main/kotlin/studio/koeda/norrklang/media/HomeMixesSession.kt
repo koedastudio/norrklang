@@ -1,5 +1,6 @@
 package studio.koeda.norrklang.media
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -7,12 +8,11 @@ import kotlinx.coroutines.withContext
 import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.repo.MusicException
 import studio.koeda.norrklang.data.repo.MusicRepository
-import studio.koeda.norrklang.data.runSuspendCatching
 
 /**
  * Shared shell for the generated home-tab mix sections: a tile snapshot of
- * type [S] plus per-tile track lists keyed by [K], serving browse,
- * tap-to-play and resumption from one state.
+ * type [S] plus the per-tile track lists ([MixQueues]) keyed by [K], serving
+ * browse, tap-to-play and resumption from one state.
  *
  * Stability contract (what keeps the sections from confusing the driver):
  * the snapshot is generated once per signed-in session (keyed by the
@@ -30,20 +30,12 @@ internal abstract class HomeMixesSession<K : Any, S : Any>(
     /** Guards the snapshot state; critical sections stay free of network I/O. */
     private val stateMutex = Mutex()
 
-    /**
-     * Serializes on-demand track builds, so concurrent pagings of a fresh mix
-     * share one result instead of each adopting a different random list —
-     * without blocking snapshot reads on the browse path meanwhile.
-     */
-    private val buildMutex = Mutex()
+    private val queues = MixQueues<K>(repository) { buildTracksFor(it) }
 
     private var snapshotFingerprint: String? = null
 
     /** null = never generated for this fingerprint; empty = generated, no data. */
     private var snapshot: S? = null
-
-    /** Tile track lists plus any resume/on-demand rebuilds, keyed by tile. */
-    private val tracksByMix = mutableMapOf<K, List<Track>>()
 
     /** Bumped by [clear] so an in-flight generation can't adopt a stale result. */
     private var epoch = 0
@@ -62,17 +54,21 @@ internal abstract class HomeMixesSession<K : Any, S : Any>(
                 epoch++
                 snapshotFingerprint = fingerprint
                 snapshot = null
-                tracksByMix.clear()
+                queues.clear()
             }
             epoch
         }
-        // The caller launches from the service's main-thread scope; list
-        // building and response parsing have no main-thread affinity.
-        // Any failure (broader than MusicException) yields false: refresh runs
-        // in a bare launch on the service scope, where anything escaping
-        // kills the process.
-        val generated = runSuspendCatching { withContext(Dispatchers.Default) { generate() } }
-            .getOrElse { return false }
+        val generated = try {
+            // The caller launches from the service's main-thread scope; list
+            // building and response parsing have no main-thread affinity.
+            withContext(Dispatchers.Default) { generate() }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Broader than MusicException: refresh runs in a bare launch on
+            // the service scope, where anything escaping kills the process.
+            return false
+        }
         return stateMutex.withLock {
             // Cleared (sign-out) or already regenerated while we were working —
             // discard rather than resurrect tracks with stale auth URLs.
@@ -81,8 +77,7 @@ internal abstract class HomeMixesSession<K : Any, S : Any>(
             val changed = !isEmpty(generated) || snapshot?.let { !isEmpty(it) } == true
             snapshotFingerprint = fingerprint
             snapshot = generated
-            tracksByMix.clear()
-            tracksByMix.putAll(sectionTracks(generated))
+            queues.replaceAll(sectionTracks(generated))
             changed
         }
     }
@@ -95,44 +90,20 @@ internal abstract class HomeMixesSession<K : Any, S : Any>(
      * once adopted. A mix this session doesn't know (e.g. a resumption id
      * from a previous drive) is built on demand.
      */
-    suspend fun queueTracks(key: K): List<Track> {
-        stateMutex.withLock { tracksByMix[key] }?.let { return it }
-        return buildMutex.withLock {
-            // May have been built while we waited for the build lock.
-            stateMutex.withLock { tracksByMix[key] }?.let { return it }
-            val startEpoch = stateMutex.withLock { epoch }
-            val built = runSuspendCatching { withContext(Dispatchers.Default) { buildTracksFor(key) } }
-                .getOrDefault(emptyList())
-            if (built.isNotEmpty()) {
-                stateMutex.withLock {
-                    // A clear (sign-out) while building must win — the
-                    // tracks embed authenticated stream URLs.
-                    if (epoch == startEpoch) tracksByMix[key] = built
-                }
-            }
-            built
-        }
-    }
+    suspend fun queueTracks(key: K): List<Track> = queues.queueTracks(key)
 
-    /**
-     * The resumption queue for a persisted `track/{id}|<mix>`:
-     * [savedTrackFirst] over the mix, adopted so browsing the tile
-     * afterwards shows this same queue.
-     */
-    suspend fun resumeQueue(key: K, savedTrackId: String): List<Track> {
-        val queue = savedTrackFirst(repository, savedTrackId, queueTracks(key))
-        if (queue.isNotEmpty()) {
-            stateMutex.withLock { tracksByMix[key] = queue }
-        }
-        return queue
-    }
+    /** The resumption queue for a persisted `track/{id}|<mix>`. */
+    suspend fun resumeQueue(key: K, savedTrackId: String): List<Track> =
+        queues.resumeQueue(key, savedTrackId)
 
     /** Drops everything (tracks embed authenticated stream URLs). */
-    suspend fun clear() = stateMutex.withLock {
-        epoch++
-        snapshotFingerprint = null
-        snapshot = null
-        tracksByMix.clear()
+    suspend fun clear() {
+        stateMutex.withLock {
+            epoch++
+            snapshotFingerprint = null
+            snapshot = null
+        }
+        queues.clear()
     }
 
     /**
@@ -147,7 +118,7 @@ internal abstract class HomeMixesSession<K : Any, S : Any>(
 
     /**
      * Track lists [snapshot] already carries, keyed by tile — adopted into
-     * the queue map on refresh. Sections that build lazily return empty.
+     * the queues on refresh. Sections that build lazily return empty.
      */
     protected abstract fun sectionTracks(snapshot: S): Map<K, List<Track>>
 

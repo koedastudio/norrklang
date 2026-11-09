@@ -13,7 +13,7 @@ internal class ContainerTracks(
     private val randomMix: RandomMixSession,
     private val similarMixes: SimilarMixesSession,
     private val bestOfMixes: BestOfMixesSession,
-    private val catalogMixes: CatalogMixesSession,
+    private val catalogMixes: CatalogMixes,
 ) {
 
     suspend fun tracks(container: MediaId.Container): List<Track> =
@@ -23,6 +23,7 @@ internal class ContainerTracks(
             MediaId.HomeFavoriteSongs -> repository.favoriteTracks()
             MediaId.HomeRecentlyAddedSongs -> repository.recentlyAddedTracks()
             MediaId.HomeRandomMix -> randomMix.queueTracks()
+            MediaId.HomeRandomAlbums -> randomAlbum()
             is MediaId.HomeSimilar -> similarMixes.queueTracks(container.artistId)
             is MediaId.HomeBestOf -> bestOfMixes.queueTracks(container.artistId)
             is MediaId.CatalogMix -> catalogMixes.queueTracks(container)
@@ -38,6 +39,8 @@ internal class ContainerTracks(
     suspend fun resume(container: MediaId.Container, savedTrackId: String): List<Track> =
         when (container) {
             MediaId.HomeRandomMix -> randomMix.resumeQueue(savedTrackId)
+            // The album the saved track belongs to, so the drive resumes mid-album.
+            MediaId.HomeRandomAlbums -> albumTracks(repository.track(savedTrackId).albumId)
             is MediaId.HomeSimilar ->
                 similarMixes.resumeQueue(container.artistId, savedTrackId)
             is MediaId.HomeBestOf ->
@@ -53,4 +56,10 @@ internal class ContainerTracks(
             MediaId.HomeRecentlyAddedSongs,
             -> tracks(container)
         }
+
+    private suspend fun randomAlbum(): List<Track> =
+        albumTracks(repository.randomAlbums(1).firstOrNull()?.id)
+
+    private suspend fun albumTracks(albumId: String?): List<Track> =
+        albumId?.let { repository.album(it).tracks }.orEmpty()
 }

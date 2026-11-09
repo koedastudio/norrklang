@@ -154,6 +154,12 @@ class SubsonicMusicRepository @Inject constructor(
                 .map { it.toDomain(scope.singleLibraryId) }
         }
 
+    override suspend fun randomAlbums(size: Int): List<Album> =
+        withScope { session, scope ->
+            session.client.getAlbumList2(SubsonicClient.AlbumListType.RANDOM, size, musicFolderIds = scope.folderIds)
+                .map { it.toDomain() }
+        }
+
     override suspend fun recentlyPlayedAlbums(size: Int): List<Album> =
         scoped("recently-played-albums/$size") { session, scope ->
             session.client.getAlbumList2(SubsonicClient.AlbumListType.RECENT, size, musicFolderIds = scope.folderIds)
@@ -173,19 +179,24 @@ class SubsonicMusicRepository @Inject constructor(
             session.client.getGenres().map { Genre(it.value, it.songCount) }
         }
 
-    override suspend fun albumsByGenre(genre: String, size: Int): List<Album> =
-        scoped("albums-by-genre/$genre/$size") { session, scope ->
-            session.client.getAlbumList2ByGenre(genre, size, musicFolderIds = scope.folderIds)
+    override suspend fun albumsByGenre(genre: String, offset: Int, size: Int): List<Album> =
+        scoped("albums-by-genre/$genre/$offset/$size") { session, scope ->
+            session.client.getAlbumList2ByGenre(genre, size, offset, musicFolderIds = scope.folderIds)
                 .map { it.toDomain() }
         }
 
-    override suspend fun albumsByYearRange(fromYear: Int, toYear: Int, size: Int): List<Album> =
-        scoped("albums-by-year/$fromYear-$toYear/$size") { session, scope ->
-            session.client.getAlbumList2ByYear(fromYear, toYear, size, musicFolderIds = scope.folderIds)
+    override suspend fun albumsByYearRange(
+        fromYear: Int,
+        toYear: Int,
+        offset: Int,
+        size: Int,
+    ): List<Album> =
+        scoped("albums-by-year/$fromYear-$toYear/$offset/$size") { session, scope ->
+            session.client.getAlbumList2ByYear(fromYear, toYear, size, offset, musicFolderIds = scope.folderIds)
                 .map { it.toDomain() }
         }
 
-    // Uncached like randomTracks: CatalogMixesSession owns list stability.
+    // Uncached like randomTracks: CatalogMixes owns list stability.
     override suspend fun randomTracksByGenre(genre: String, size: Int): List<Track> =
         withScope { session, scope ->
             session.client.getRandomSongs(size, genre = genre, musicFolderIds = scope.folderIds)

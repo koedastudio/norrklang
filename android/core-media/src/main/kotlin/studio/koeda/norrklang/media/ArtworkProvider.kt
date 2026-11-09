@@ -73,7 +73,6 @@ class ArtworkProvider : ContentProvider() {
         fun sessionManager(): SessionManager
         fun musicRepository(): MusicRepository
         fun randomMixSession(): RandomMixSession
-        fun catalogMixesSession(): CatalogMixesSession
         fun bestOfMixesSession(): BestOfMixesSession
         fun similarMixesSession(): SimilarMixesSession
     }
@@ -190,11 +189,12 @@ class ArtworkProvider : ContentProvider() {
 
     /**
      * The composed image for a dynamic mix tile (`home/<kind>/<key>`).
-     * The key is resolved against the owning session's current snapshot — an
+     * Artist mixes resolve the key against the owning session's snapshot — an
      * unknown key (no snapshot yet after a process restart, or a stale host
-     * URI) serves the cached image when one exists, like any render failure.
-     * The artist mixes declare one cover (the seed artist's image), so they
-     * render full-bleed under the badge rather than as a collage.
+     * URI) serves the cached image when one exists, like any render failure —
+     * and declare one cover (the seed artist's image), so they render
+     * full-bleed under the badge. Genre and decade Shuffle tiles collage the
+     * first covers of their album grid.
      */
     private fun homeMixFile(
         context: Context,
@@ -218,9 +218,15 @@ class ArtworkProvider : ContentProvider() {
                     dependencies.bestOfMixesSession().mixFor(key)?.let { listOfNotNull(it.artworkUrl) }
                 HomeMixKind.SIMILAR ->
                     dependencies.similarMixesSession().mixFor(key)?.let { listOfNotNull(it.artworkUrl) }
-                HomeMixKind.GENRE -> dependencies.catalogMixesSession().genreMix(key)?.artworkUrls
-                HomeMixKind.DECADE ->
-                    key.toIntOrNull()?.let { dependencies.catalogMixesSession().decadeMix(it) }?.artworkUrls
+                HomeMixKind.GENRE ->
+                    dependencies.musicRepository()
+                        .albumsByGenre(key, 0, HomeButtonArtwork.COLLAGE_TILES)
+                        .mapNotNull { it.artworkUrl }
+                HomeMixKind.DECADE -> key.toIntOrNull()?.let { year ->
+                    dependencies.musicRepository()
+                        .albumsByYearRange(year, year + 9, 0, HomeButtonArtwork.COLLAGE_TILES)
+                        .mapNotNull { it.artworkUrl }
+                }
             } ?: throw FileNotFoundException("Unknown mix: $kind/$key")
             coverFiles(session, accountDir, HomeButtonArtwork.coverIds(urls))
         }

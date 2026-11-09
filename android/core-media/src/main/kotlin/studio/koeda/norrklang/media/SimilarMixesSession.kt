@@ -11,8 +11,10 @@ import studio.koeda.norrklang.data.repo.MusicException
 
 /**
  * The "Similar to <artist>" mixes in the "Made for you" home section: up to
- * [MAX_MIXES] mixes seeded by the most-played and recently-played artists,
- * filled with library tracks by each seed and its Last.fm-similar artists.
+ * [HISTORY_MIXES] seeded by the most-played and recently-played artists plus
+ * up to [DISCOVERY_MIXES] seeded by random library artists the history never
+ * surfaces, each filled with library tracks by the seed and its
+ * Last.fm-similar artists.
  *
  * Recipe per mix: blend each queried artist's top songs with the server's
  * similar-songs selection, cap every artist (seed included) at
@@ -44,13 +46,15 @@ internal class SimilarMixesSession(
 
         val (frequent, recent) = candidatePools()
 
-        suspend fun acceptFrom(pool: List<Artist>, want: Int): Boolean {
+        suspend fun acceptFrom(pool: List<Artist>, want: Int, maxProbes: Int = Int.MAX_VALUE): Boolean {
             val before = accepted.size
+            var probes = 0
             for (candidate in pool) {
-                if (accepted.size - before >= want) break
+                if (accepted.size - before >= want || probes >= maxProbes) break
                 // Probed covers accepted seeds AND rejected ones, so the
                 // spillover pass never re-fetches a candidate.
                 if (!probed.add(candidate.id)) continue
+                probes++
                 val attempt = buildMix(candidate)
                 if (!attempt.serverHadTracks) {
                     if (deadProbes.recordDead(anythingAccepted = accepted.isNotEmpty())) {
@@ -65,12 +69,20 @@ internal class SimilarMixesSession(
         }
 
         if (!acceptFrom(frequent, FREQUENT_SHARE)) return emptyList()
-        if (!acceptFrom(recent, MAX_MIXES - accepted.size)) return emptyList()
+        if (!acceptFrom(recent, HISTORY_MIXES - accepted.size)) return emptyList()
         // Spillover: when the recent pool couldn't fill the remainder (few
         // qualifying artists), the frequent pool's leftovers top the section up.
-        acceptFrom(frequent + recent, MAX_MIXES - accepted.size)
+        acceptFrom(frequent + recent, HISTORY_MIXES - accepted.size)
+        // Discovery: a bounded walk, since random seeds often lack Last.fm data.
+        acceptFrom(discoveryPool(probed), DISCOVERY_MIXES, maxProbes = DISCOVERY_PROBES)
         return accepted.shuffled(random)
     }
+
+    /** Library artists with some depth, in random order, minus everything already probed. */
+    private suspend fun discoveryPool(exclude: Set<String>): List<Artist> =
+        repository.artists()
+            .filter { it.id !in exclude && it.albumCount >= MIN_DISCOVERY_ALBUMS }
+            .shuffled(random)
 
     /** Rebuild for queueTracks/resumeQueue; the base serves failures as empty. */
     override suspend fun buildTracksFor(key: String): List<Track> =
@@ -174,8 +186,17 @@ internal class SimilarMixesSession(
     }
 
     companion object {
-        /** 3 + 3 with [BestOfMixesSession.MAX_MIXES] keeps "Made for you" at six. */
-        const val MAX_MIXES = 3
+        const val HISTORY_MIXES = 3
+        const val DISCOVERY_MIXES = 3
+
+        /** With [BestOfMixesSession.MAX_MIXES] this keeps "Made for you" at nine. */
+        const val MAX_MIXES = HISTORY_MIXES + DISCOVERY_MIXES
+
+        /** Caps the discovery walk so a library without Last.fm data doesn't burn car-LTE requests. */
+        const val DISCOVERY_PROBES = 6
+
+        /** A one-album artist seeds a mix that is all similar artists and no seed. */
+        const val MIN_DISCOVERY_ALBUMS = 2
 
         /**
          * The most-played pool's guaranteed share; recently-played fills the

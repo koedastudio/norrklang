@@ -3,17 +3,21 @@ package studio.koeda.norrklang.media
 import android.content.Context
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import java.util.Calendar
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import studio.koeda.norrklang.data.artwork.ArtworkContract
 import studio.koeda.norrklang.data.model.Album
 import studio.koeda.norrklang.data.model.Artist
+import studio.koeda.norrklang.data.model.Genre
 import studio.koeda.norrklang.data.model.RadioStation
 import studio.koeda.norrklang.data.model.ReleaseType
 import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.repo.MusicException
 import studio.koeda.norrklang.data.repo.MusicRepository
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository.RadioPlayStats
+import studio.koeda.norrklang.media.MediaId.AlbumSource
 
 /**
  * Maps browse requests from the car UI onto the active provider's music
@@ -23,19 +27,20 @@ import studio.koeda.norrklang.data.settings.ServerSettingsRepository.RadioPlaySt
  * ```
  * root
  * ├── tab/home        → grid of square buttons in headed sections:
- * │                     "Quick play" (Favourites, Recently added, Random mix
- * │                     → track lists)
- * │                     "Made for you" (Best of <artist>, Similar to <artist>
- * │                     → track lists, present only when the server has
- * │                     similarity data)
+ * │                     "Quick play" (Favourites, New songs, Random songs
+ * │                     → track lists that also play on tap; Random albums
+ * │                     → plays one random album)
  * │                     "Radio" (the most listened stations → playable,
  * │                     present only once a station has been listened to)
- * │                     "Genre mixes" (biggest genres → track lists)
- * │                     "Decade mixes" (populated decades → track lists)
+ * │                     "Made for you" (Best of <artist>, Similar to <artist>
+ * │                     → track lists that also play on tap, present only
+ * │                     when the server has similarity data)
  * ├── tab/playlists   → playlist list → tracks
  * └── tab/library     → list in headed sections:
  *                       "Albums" (Recently added, Recently played,
- *                       Most played, Favourite albums → album grids;
+ *                       Favourite albums → album grids;
+ *                       Genres → genre list → Shuffle tile + album grid;
+ *                       Decades → decade list → Shuffle tile + album grid;
  *                       All albums → album grid → tracks)
  *                       "Artists" (Favourite artists → artist list;
  *                       All artists → artist list (A–Z headers)
@@ -59,7 +64,6 @@ internal class BrowseTree(
     private val randomMix: RandomMixSession,
     private val similarMixes: SimilarMixesSession,
     private val bestOfMixes: BestOfMixesSession,
-    private val catalogMixes: CatalogMixesSession,
     private val containers: ContainerTracks,
     /** Version segment for tile artwork URIs; changes with the library selection. */
     private val tileVersion: suspend () -> String = { "" },
@@ -69,8 +73,6 @@ internal class BrowseTree(
 
     private val quickPlayGroup = context.getString(R.string.browse_group_quick_play)
     private val madeForYouGroup = context.getString(R.string.browse_group_made_for_you)
-    private val genreMixesGroup = context.getString(R.string.browse_group_genre_mixes)
-    private val decadeMixesGroup = context.getString(R.string.browse_group_decade_mixes)
     private val albumsGroup = context.getString(R.string.browse_group_albums)
     private val artistsGroup = context.getString(R.string.browse_group_artists)
     private val radioGroup = context.getString(R.string.browse_group_radio)
@@ -118,8 +120,10 @@ internal class BrowseTree(
                 albumItems(repository.favoriteAlbums(SERVER_PAGE_SIZE), page, pageSize)
             MediaId.HomeRecentlyPlayed ->
                 albumItems(repository.recentlyPlayedAlbums(SERVER_PAGE_SIZE), page, pageSize)
-            MediaId.HomeMostPlayed ->
-                albumItems(repository.mostPlayedAlbums(SERVER_PAGE_SIZE), page, pageSize)
+            MediaId.Genres -> genreRows()
+            MediaId.Decades -> decadeRows()
+            is MediaId.GenreAlbums -> albumGrid(AlbumSource.Genre(id.name), page, pageSize)
+            is MediaId.DecadeAlbums -> albumGrid(AlbumSource.Decade(id.startYear), page, pageSize)
             // Browsing the random mix may regenerate it (see RandomMixSession.browseTracks).
             MediaId.HomeRandomMix ->
                 trackItems(randomMix.browseTracks(), MediaId.HomeRandomMix, page, pageSize)
@@ -130,7 +134,7 @@ internal class BrowseTree(
                 Paging.slice(repository.favoriteArtists(), page, pageSize)
                     .map(MediaItemFactory::forArtist)
             MediaId.TabArtists -> artistListing(page, pageSize)
-            MediaId.TabAlbums -> albumListing(page, pageSize)
+            MediaId.TabAlbums -> albumGrid(AlbumSource.All, page, pageSize)
             MediaId.TabPlaylists ->
                 Paging.slice(repository.playlists(), page, pageSize).map(MediaItemFactory::forPlaylist)
             MediaId.TabRadio ->
@@ -141,7 +145,7 @@ internal class BrowseTree(
                     // header would — omit the redundant header.
                     .map { MediaItemFactory.forArtist(it, groupTitle = null) }
             is MediaId.AlbumBucket ->
-                Paging.slice(albumBucketMembers(id.key), page, pageSize)
+                Paging.slice(albumBucketMembers(id.source, id.key), page, pageSize)
                     .map(MediaItemFactory::forAlbum)
             is MediaId.Artist -> Paging.slice(artistView(id.id), page, pageSize)
             is MediaId.RadioStation, is MediaId.Track, null -> null
@@ -162,24 +166,39 @@ internal class BrowseTree(
         }
     }
 
-    /** The All albums listing; bucket policy as in [artistListing]. */
-    private suspend fun albumListing(page: Int, pageSize: Int): List<MediaItem> {
+    /** An album grid: a genre's or decade's Shuffle tile (first page only) ahead of its albums. */
+    private suspend fun albumGrid(source: AlbumSource, page: Int, pageSize: Int): List<MediaItem> {
+        val shuffle = source.mix?.takeIf { page == 0 }?.let { shuffleTile(it, tileVersion()) }
+        return listOfNotNull(shuffle) + albumListing(source, page, pageSize)
+    }
+
+    /** [source]'s albums; bucket policy as in [artistListing]. */
+    private suspend fun albumListing(source: AlbumSource, page: Int, pageSize: Int): List<MediaItem> {
         if (Paging.isPaged(pageSize)) {
             val offset = (page.toLong() * pageSize).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-            return Paging.window(offset, pageSize, SERVER_PAGE_SIZE, repository::albums)
+            return Paging.window(offset, pageSize, SERVER_PAGE_SIZE, albumsOf(source))
                 .map(MediaItemFactory::forAlbum)
         }
-        val albums = allAlbums()
+        val albums = allAlbums(source)
         return if (Buckets.needed(albums.size)) {
-            albumBucketItems(albums)
+            albumBucketItems(source, albums)
         } else {
             albums.map(MediaItemFactory::forAlbum)
         }
     }
 
-    /** The complete album list, walked in server pages (TTL-cached per page). */
-    private suspend fun allAlbums(): List<Album> =
-        Paging.window(offset = 0, size = null, chunkSize = SERVER_PAGE_SIZE, repository::albums)
+    /** The complete album list of [source], walked in server pages (TTL-cached per page). */
+    private suspend fun allAlbums(source: AlbumSource): List<Album> =
+        Paging.window(offset = 0, size = null, chunkSize = SERVER_PAGE_SIZE, albumsOf(source))
+
+    private fun albumsOf(source: AlbumSource): suspend (Int, Int) -> List<Album> =
+        when (source) {
+            AlbumSource.All -> repository::albums
+            is AlbumSource.Genre -> { offset, size -> repository.albumsByGenre(source.name, offset, size) }
+            is AlbumSource.Decade -> { offset, size ->
+                repository.albumsByYearRange(source.startYear, source.startYear + 9, offset, size)
+            }
+        }
 
     /**
      * The artist's letter group: the server-provided index bucket when it is
@@ -205,13 +224,18 @@ internal class BrowseTree(
     private suspend fun artistBucketMembers(key: String): List<Artist> =
         Buckets.select(repository.artists(), key, ::artistLetter, Artist::name)
 
-    private fun albumBucketItems(albums: List<Album>): List<MediaItem> =
+    private fun albumBucketItems(source: AlbumSource, albums: List<Album>): List<MediaItem> =
         Buckets.partition(albums, { Buckets.letterKey(it.title) }, Album::title)
-            .map { albumBucketItem(it.key, it.label, it.items) }
+            .map { albumBucketItem(source, it.key, it.label, it.items) }
 
-    private fun albumBucketItem(key: String, label: String, members: List<Album>): MediaItem =
+    private fun albumBucketItem(
+        source: AlbumSource,
+        key: String,
+        label: String,
+        members: List<Album>,
+    ): MediaItem =
         MediaItemFactory.browsable(
-            mediaId = MediaId.AlbumBucket(key),
+            mediaId = MediaId.AlbumBucket(source, key),
             title = label,
             artworkUrl = members.firstNotNullOfOrNull { it.artworkUrl },
             mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_ALBUMS,
@@ -220,8 +244,62 @@ internal class BrowseTree(
             childrenStyle = MediaItemFactory.asListItem(MediaItemFactory.gridChildrenExtras()),
         )
 
-    private suspend fun albumBucketMembers(key: String): List<Album> =
-        Buckets.select(allAlbums(), key, { Buckets.letterKey(it.title) }, Album::title)
+    private suspend fun albumBucketMembers(source: AlbumSource, key: String): List<Album> =
+        Buckets.select(allAlbums(source), key, { Buckets.letterKey(it.title) }, Album::title)
+
+    /** Genre rows A–Z; when too many for one unpaged reply, the biggest by song count. */
+    private suspend fun genreRows(): List<MediaItem> =
+        repository.genres()
+            .filter { it.songCount > 0 }
+            .sortedByDescending { it.songCount }
+            .take(Buckets.MAX_UNPAGED_CHILDREN)
+            .sortedBy { it.name }
+            .map(::genreRow)
+
+    private fun genreRow(genre: Genre): MediaItem = MediaItemFactory.browsable(
+        mediaId = MediaId.GenreAlbums(genre.name),
+        title = genre.name,
+        subtitle = context.resources.getQuantityString(
+            R.plurals.browse_song_count,
+            genre.songCount,
+            genre.songCount,
+        ),
+        mediaType = MediaMetadata.MEDIA_TYPE_GENRE,
+        childrenStyle = MediaItemFactory.gridChildrenExtras(),
+    )
+
+    /** Every decade since [FIRST_DECADE] holding at least one album, oldest first. */
+    private suspend fun decadeRows(): List<MediaItem> = coroutineScope {
+        (FIRST_DECADE..currentYear() step 10).map { start ->
+            async { start.takeIf { repository.albumsByYearRange(start, start + 9, 0, 1).isNotEmpty() } }
+        }.awaitAll().filterNotNull().map(::decadeRow)
+    }
+
+    private fun decadeRow(startYear: Int): MediaItem = MediaItemFactory.browsable(
+        mediaId = MediaId.DecadeAlbums(startYear),
+        title = decadeTitle(startYear),
+        mediaType = MediaMetadata.MEDIA_TYPE_YEAR,
+        childrenStyle = MediaItemFactory.gridChildrenExtras(),
+    )
+
+    private fun decadeTitle(startYear: Int): String = context.getString(R.string.browse_decade, startYear)
+
+    private fun currentYear(): Int = Calendar.getInstance().get(Calendar.YEAR)
+
+    /** The playable tile heading a genre or decade grid: the catalog's random mix for it. */
+    private fun shuffleTile(mix: MediaId.CatalogMix, version: String): MediaItem {
+        val (kind, key, name) = when (mix) {
+            is MediaId.GenreMix -> Triple(HomeMixKind.GENRE, mix.name, mix.name)
+            is MediaId.DecadeMix ->
+                Triple(HomeMixKind.DECADE, mix.startYear.toString(), decadeTitle(mix.startYear))
+        }
+        return MediaItemFactory.playable(
+            mediaId = mix,
+            title = context.getString(R.string.browse_shuffle, name),
+            artworkUrl = mixCollageUri(kind, key, version),
+            mediaType = MediaMetadata.MEDIA_TYPE_PLAYLIST,
+        )
+    }
 
     /** One host page of [tracks] as browse items carrying [container] as queue context. */
     private fun trackItems(
@@ -269,24 +347,26 @@ internal class BrowseTree(
             MediaId.Root -> rootItem
             MediaId.TabHome -> homeTab()
             MediaId.HomeRecentlyAdded, MediaId.HomeFavoriteAlbums, MediaId.HomeFavoriteArtists,
-            MediaId.HomeRecentlyPlayed, MediaId.HomeMostPlayed, MediaId.HomeFavoriteSongs,
-            MediaId.HomeRecentlyAddedSongs, MediaId.HomeRandomMix,
+            MediaId.HomeRecentlyPlayed, MediaId.HomeFavoriteSongs, MediaId.HomeRecentlyAddedSongs,
+            MediaId.HomeRandomMix, MediaId.HomeRandomAlbums, MediaId.Genres, MediaId.Decades,
             MediaId.TabArtists, MediaId.TabAlbums, MediaId.TabRadio,
             -> HomeTile.forMediaId(id)?.let { staticTile(it, tileVersion()) }
             is MediaId.HomeSimilar ->
                 similarMixes.mixFor(id.artistId)?.let { similarMixButton(it, tileVersion()) }
             is MediaId.HomeBestOf ->
                 bestOfMixes.mixFor(id.artistId)?.let { bestOfMixButton(it, tileVersion()) }
-            is MediaId.HomeGenre -> catalogMixes.genreMix(id.name)?.let { genreMixButton(it, tileVersion()) }
-            is MediaId.HomeDecade ->
-                catalogMixes.decadeMix(id.startYear)?.let { decadeMixButton(it, tileVersion()) }
+            is MediaId.GenreAlbums -> repository.genres().firstOrNull { it.name == id.name }?.let(::genreRow)
+            is MediaId.DecadeAlbums -> decadeRow(id.startYear)
+            is MediaId.CatalogMix -> shuffleTile(id, tileVersion())
             MediaId.TabLibrary -> libraryTab()
             MediaId.TabPlaylists -> playlistsTab()
             is MediaId.RadioStation -> stationItem(repository.radioStation(id.id))
             is MediaId.ArtistBucket ->
                 Buckets.labelFor(id.key)?.let { artistBucketItem(id.key, it, artistBucketMembers(id.key)) }
             is MediaId.AlbumBucket ->
-                Buckets.labelFor(id.key)?.let { albumBucketItem(id.key, it, albumBucketMembers(id.key)) }
+                Buckets.labelFor(id.key)?.let {
+                    albumBucketItem(id.source, id.key, it, albumBucketMembers(id.source, id.key))
+                }
             is MediaId.Artist -> MediaItemFactory.forArtist(repository.artist(id.id).artist)
             is MediaId.Album -> MediaItemFactory.forAlbum(repository.album(id.id).album)
             is MediaId.Playlist -> MediaItemFactory.forPlaylist(repository.playlist(id.id).playlist)
@@ -329,7 +409,7 @@ internal class BrowseTree(
      * The home tab's grid of square buttons in headed sections. Items sharing
      * a group title must be contiguous for hosts to render the headers.
      *
-     * The mix sections only peek their sessions' snapshots — generation runs
+     * "Made for you" only peeks its sessions' snapshots — generation runs
      * in the background at service start (NorrklangMediaLibraryService),
      * which notifies this tab when tiles are ready. No snapshot, or a library
      * without the needed data, just means no section.
@@ -337,16 +417,14 @@ internal class BrowseTree(
     private suspend fun homeButtons(): List<MediaItem> {
         val version = tileVersion()
         return staticTiles(HomeTile.Section.QUICK_PLAY, version) +
-            // The take()s pin the 3 + 3 tile budget at the display site too.
+            topStationButtons() +
+            // The take()s pin the 3 + 6 tile budget at the display site too.
             bestOfMixes.currentMixes()
                 .take(BestOfMixesSession.MAX_MIXES)
                 .map { bestOfMixButton(it, version) } +
             similarMixes.currentMixes()
                 .take(SimilarMixesSession.MAX_MIXES)
-                .map { similarMixButton(it, version) } +
-            topStationButtons() +
-            catalogMixes.currentGenreMixes().map { genreMixButton(it, version) } +
-            catalogMixes.currentDecadeMixes().map { decadeMixButton(it, version) }
+                .map { similarMixButton(it, version) }
     }
 
     /**
@@ -391,16 +469,23 @@ internal class BrowseTree(
         val title = context.getString(tile.titleRes)
         // Collage served by ArtworkProvider — see HomeButtonArtwork.
         val artwork = ArtworkContract.homeUri(context.packageName, tile.artworkKey, version)
-        return when (tile.section) {
-            HomeTile.Section.QUICK_PLAY ->
-                trackListTile(tile.mediaId, title, artwork, quickPlayGroup)
-            HomeTile.Section.ALBUMS -> albumGridTile(tile.mediaId, title, artwork)
-            HomeTile.Section.ARTISTS -> artistListTile(tile.mediaId, title, artwork)
-            HomeTile.Section.RADIO -> stationListTile(tile.mediaId, title, artwork)
+        return when (tile.shape) {
+            HomeTile.Shape.TRACK_LIST -> trackListTile(tile.mediaId, title, artwork, quickPlayGroup)
+            HomeTile.Shape.PLAYABLE ->
+                MediaItemFactory.playable(tile.mediaId, title, artwork, MediaMetadata.MEDIA_TYPE_ALBUM, quickPlayGroup)
+            HomeTile.Shape.ALBUM_GRID -> albumGridTile(tile.mediaId, title, artwork)
+            HomeTile.Shape.GENRE_LIST ->
+                listTile(tile.mediaId, title, artwork, MediaMetadata.MEDIA_TYPE_FOLDER_GENRES, albumsGroup)
+            HomeTile.Shape.DECADE_LIST ->
+                listTile(tile.mediaId, title, artwork, MediaMetadata.MEDIA_TYPE_FOLDER_YEARS, albumsGroup)
+            HomeTile.Shape.ARTIST_LIST ->
+                listTile(tile.mediaId, title, artwork, MediaMetadata.MEDIA_TYPE_FOLDER_ARTISTS, artistsGroup)
+            HomeTile.Shape.STATION_LIST ->
+                listTile(tile.mediaId, title, artwork, MediaMetadata.MEDIA_TYPE_FOLDER_RADIO_STATIONS, radioGroup)
         }
     }
 
-    /** A home tile opening a track list (the mixes and favourite songs). */
+    /** A home tile opening a track list (the mixes and favourite songs) that a tap also plays as a whole. */
     private fun trackListTile(
         mediaId: MediaId,
         title: String,
@@ -413,6 +498,7 @@ internal class BrowseTree(
         mediaType = MediaMetadata.MEDIA_TYPE_PLAYLIST,
         childrenStyle = MediaItemFactory.listChildrenExtras(),
         groupTitle = group,
+        playable = true,
     )
 
     /** A Library tile in the "Albums" section opening an album grid. */
@@ -426,26 +512,21 @@ internal class BrowseTree(
             groupTitle = albumsGroup,
         )
 
-    /** A Library tile in the "Artists" section opening the artist list. */
-    private fun artistListTile(mediaId: MediaId, title: String, artworkUrl: String): MediaItem =
+    /** A Library tile opening a list (artists, stations, genres, decades). */
+    private fun listTile(
+        mediaId: MediaId,
+        title: String,
+        artworkUrl: String,
+        mediaType: Int,
+        group: String,
+    ): MediaItem =
         MediaItemFactory.browsable(
             mediaId = mediaId,
             title = title,
             artworkUrl = artworkUrl,
-            mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_ARTISTS,
+            mediaType = mediaType,
             childrenStyle = MediaItemFactory.listChildrenExtras(),
-            groupTitle = artistsGroup,
-        )
-
-    /** The Library tile in the "Radio" section opening the station list. */
-    private fun stationListTile(mediaId: MediaId, title: String, artworkUrl: String): MediaItem =
-        MediaItemFactory.browsable(
-            mediaId = mediaId,
-            title = title,
-            artworkUrl = artworkUrl,
-            mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_RADIO_STATIONS,
-            childrenStyle = MediaItemFactory.listChildrenExtras(),
-            groupTitle = radioGroup,
+            groupTitle = group,
         )
 
     // Mix tile images served by ArtworkProvider — see HomeButtonArtwork.
@@ -461,20 +542,6 @@ internal class BrowseTree(
         context.getString(R.string.browse_home_best_of, mix.artist.name),
         mixCollageUri(HomeMixKind.BEST_OF, mix.artist.id, version),
         madeForYouGroup,
-    )
-
-    private fun genreMixButton(mix: CatalogMixesSession.GenreMix, version: String) = trackListTile(
-        MediaId.HomeGenre(mix.name),
-        mix.name,
-        mixCollageUri(HomeMixKind.GENRE, mix.name, version),
-        genreMixesGroup,
-    )
-
-    private fun decadeMixButton(mix: CatalogMixesSession.DecadeMix, version: String) = trackListTile(
-        MediaId.HomeDecade(mix.startYear),
-        context.getString(R.string.browse_home_decade_mix, mix.startYear),
-        mixCollageUri(HomeMixKind.DECADE, mix.startYear.toString(), version),
-        decadeMixesGroup,
     )
 
     private fun mixCollageUri(kind: HomeMixKind, key: String, version: String): String =
@@ -510,5 +577,8 @@ internal class BrowseTree(
 
         /** Stations on the home tab's "Radio" section. */
         const val HOME_RADIO_TILES = 3
+
+        /** Decades before this are folded away — car libraries rarely reach them. */
+        const val FIRST_DECADE = 1950
     }
 }

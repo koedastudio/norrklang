@@ -168,6 +168,19 @@ class PlexMusicRepositoryTest {
     }
 
     @Test
+    fun `randomAlbums draws from every selected section with a random sort`() = runTest {
+        twoSections()
+        routes["sections/5/all?type=9&sort=random"] = metadata(album("70", "A"))
+        routes["sections/6/all?type=9&sort=random"] = metadata(album("71", "B"))
+        val repo = env(backgroundScope).signedIn()
+
+        assertEquals(setOf("70", "71"), repo.randomAlbums(10).map { it.id }.toSet())
+        val draws = requests.filter { "type=9&sort=random" in it }
+        assertEquals(2, draws.size)
+        assertTrue(draws.all { containerSize(it) == 10 })
+    }
+
+    @Test
     fun `favorites round-trip through userRating 10`() = runTest {
         routes["userRating=10"] = """{"MediaContainer":{"Metadata":[${track("100", "Loved")}]}}"""
         val repo = env(backgroundScope).signedIn()
@@ -251,7 +264,7 @@ class PlexMusicRepositoryTest {
              "parentRatingKey":"7","year":1959,"leafCount":5,"duration":2500000}]}}"""
         val repo = env(backgroundScope).signedIn()
 
-        val albums = repo.albumsByGenre("jazz", 20)
+        val albums = repo.albumsByGenre("jazz", 0, 20)
 
         assertEquals("Kind of Blue", albums.single().title)
         assertEquals(2500, albums.single().durationSec)
@@ -265,7 +278,7 @@ class PlexMusicRepositoryTest {
     fun `albumsByYearRange uses strict plex operators widened by one`() = runTest {
         val repo = env(backgroundScope).signedIn()
 
-        repo.albumsByYearRange(1950, 1959, 10)
+        repo.albumsByYearRange(1950, 1959, 0, 10)
 
         val url = requests.last { "type=9" in it }
         assertTrue("year%3E%3E=1949" in url)
@@ -600,10 +613,10 @@ class PlexMusicRepositoryTest {
         twoSections()
         routes["/sections/5/genre"] = """{"MediaContainer":{"Directory":[{"key":"42","title":"Jazz"}]}}"""
         routes["/sections/6/genre"] = """{"MediaContainer":{"Directory":[{"key":"43","title":"Ambient"}]}}"""
-        routes["sections/5/all?type=9&genre=42"] = metadata(album("70", "Kind of Blue"))
+        routes["genre=42"] = metadata(album("70", "Kind of Blue"))
         val repo = env(backgroundScope).signedIn()
 
-        assertEquals(listOf("Kind of Blue"), repo.albumsByGenre("jazz", 20).map { it.title })
+        assertEquals(listOf("Kind of Blue"), repo.albumsByGenre("jazz", 0, 20).map { it.title })
         assertTrue(requests.none { "/sections/6/all" in it })
     }
 

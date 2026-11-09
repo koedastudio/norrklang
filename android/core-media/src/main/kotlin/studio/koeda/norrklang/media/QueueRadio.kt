@@ -41,10 +41,18 @@ internal class QueueRadio(
             .distinctBy { it.id }
             .take(APPEND_COUNT)
 
+    /** One whole random album in track order, skipping [excludeAlbumIds]; empty when none is left. */
+    suspend fun randomAlbumContinuation(excludeAlbumIds: Set<String>): List<Track> =
+        repository.randomAlbums(ALBUM_FETCH_COUNT)
+            .firstOrNull { it.id !in excludeAlbumIds }
+            ?.let { repository.album(it.id).tracks }
+            .orEmpty()
+
     companion object {
         /** Oversized fetch so the batch survives dedup against the queue. */
         const val FETCH_COUNT = 50
         const val APPEND_COUNT = 20
         const val PER_ARTIST_CAP = 5
+        const val ALBUM_FETCH_COUNT = 10
     }
 }

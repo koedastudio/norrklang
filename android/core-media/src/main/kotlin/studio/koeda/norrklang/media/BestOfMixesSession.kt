@@ -46,7 +46,7 @@ internal class BestOfMixesSession(
         repository.topTracks(repository.artist(key).artist.name, TOP_SONGS_COUNT)
 
     companion object {
-        /** 3 + 3 with [SimilarMixesSession.MAX_MIXES] keeps "Made for you" at six. */
+        /** 3 + 6 with [SimilarMixesSession.MAX_MIXES] keeps "Made for you" at nine. */
         const val MAX_MIXES = 3
 
         /** A "best of" shorter than this reads as a gap, not a highlight reel. */

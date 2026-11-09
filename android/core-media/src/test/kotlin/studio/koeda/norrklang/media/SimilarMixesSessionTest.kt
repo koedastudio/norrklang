@@ -21,6 +21,7 @@ class SimilarMixesSessionTest {
     private class FakeRepository : FakeMusicRepository() {
         val frequentPool = mutableListOf<Artist>()
         val recentPool = mutableListOf<Artist>()
+        val allArtists = mutableListOf<Artist>()
         val similarArtistsById = mutableMapOf<String, List<Artist>>()
         val similarTracksById = mutableMapOf<String, List<Track>>()
         val topTracksByName = mutableMapOf<String, List<Track>>()
@@ -42,6 +43,8 @@ class SimilarMixesSessionTest {
             poolFetches++
             return recentPool.toList()
         }
+
+        override suspend fun artists(): List<Artist> = allArtists.toList()
 
         override suspend fun similarArtists(artistId: String, count: Int): List<Artist> =
             similarArtistsById[artistId].orEmpty()
@@ -164,14 +167,45 @@ class SimilarMixesSessionTest {
     }
 
     @Test
-    fun `the section never exceeds MAX_MIXES however many candidates qualify`() = runTest {
-        // The similar mixes share "Made for you" with the best-of tiles
-        // (3 + 3); oversupply in both pools must not push past the cap.
+    fun `the history rows never exceed HISTORY_MIXES however many candidates qualify`() = runTest {
+        // Oversupply in both history pools must not eat the discovery row's budget.
         repository.frequentPool += (1..15).map { artist("f$it").also { a -> qualify(a) } }
         repository.recentPool += (1..15).map { artist("r$it").also { a -> qualify(a) } }
 
         assertTrue(mixes.refresh("fp"))
-        assertEquals(SimilarMixesSession.MAX_MIXES, mixes.currentMixes().size)
+        assertEquals(SimilarMixesSession.HISTORY_MIXES, mixes.currentMixes().size)
+    }
+
+    private fun discoverable(id: String, albums: Int = 3) =
+        Artist(id = id, name = "Artist $id", albumCount = albums, artworkUrl = null)
+
+    @Test
+    fun `the discovery row seeds from deep library artists the history never surfaced`() = runTest {
+        val f = (1..3).map { artist("f$it") }.onEach { qualify(it) }
+        repository.frequentPool += f
+        val deep = (1..5).map { discoverable("d$it") }.onEach { qualify(it) }
+        val thin = discoverable("thin", albums = 1).also { qualify(it) }
+        repository.allArtists += f + deep + thin
+
+        assertTrue(mixes.refresh("fp"))
+        val seeds = mixes.currentMixes().map { it.artist.id }
+        assertEquals(SimilarMixesSession.MAX_MIXES, seeds.size)
+        assertEquals(setOf("f1", "f2", "f3"), seeds.filter { it.startsWith("f") }.toSet())
+        assertEquals(SimilarMixesSession.DISCOVERY_MIXES, seeds.count { it.startsWith("d") })
+        assertFalse("thin" in seeds)
+    }
+
+    @Test
+    fun `the discovery walk is bounded when random seeds have no data`() = runTest {
+        repository.frequentPool += (1..3).map { artist("f$it") }.onEach { qualify(it) }
+        repository.allArtists += (1..20).map { discoverable("d$it") }
+
+        assertTrue(mixes.refresh("fp"))
+        assertEquals(SimilarMixesSession.HISTORY_MIXES, mixes.currentMixes().size)
+        assertEquals(
+            SimilarMixesSession.DISCOVERY_PROBES,
+            repository.probedArtists.count { it.startsWith("d") },
+        )
     }
 
     @Test
@@ -405,7 +439,7 @@ class SimilarMixesSessionTest {
         repository.frequentPool += listOf(artist("f1")) + live
 
         assertTrue(mixes.refresh("fp"))
-        assertEquals(SimilarMixesSession.MAX_MIXES, mixes.currentMixes().size)
+        assertEquals(SimilarMixesSession.HISTORY_MIXES, mixes.currentMixes().size)
     }
 
     @Test

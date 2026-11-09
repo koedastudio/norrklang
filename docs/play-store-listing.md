@@ -33,14 +33,16 @@ library, or to a Jellyfin server. It is not a streaming service and ships
 with no music of its own.
 
 In the car
-• Browse your library: artists, albums, playlists and favourites
+• Browse your library: artists, albums, playlists, favourites, and albums by
+genre or decade
 • Artist pages in sections — Albums, Compilations, Singles & EPs — with
 similar artists below
-• Home screen with Quick play, your favourite artists, recently added tracks
-and generated mixes — Best of, Similar to, genres and decades
+• Home screen with one-tap Quick play — favourites, new songs, random songs,
+a random album — the radio stations you play most, and mixes made for you:
+Best of and Similar to
 • Full playback: queue, shuffle, seek, cover art
-• Autoplay keeps the music going with similar songs when the queue runs out
-(can be turned off)
+• Autoplay keeps the music going when the queue runs out: similar songs, or
+more random songs or albums after a random tile (can be turned off)
 • Add albums and songs as favourites while listening
 • Internet radio: the stations set up on your Navidrome server, HLS streams
 included, with the ones you listen to most on Home, and next/previous to
@@ -89,6 +91,16 @@ Privacy policy: https://norrklang.app/privacy
 ```
 
 ## Release notes ("What's new", ≤ 500 characters)
+
+For the 1.6.0 release:
+
+```
+• Random albums: tap to play a random album start to end, then the next
+• Quick play tiles play on one tap; the list is still a tap away
+• Library: browse albums by genre and by decade, each with a Shuffle tile
+• A simpler Home: Quick play, your radio stations and Made for you, now
+with three mixes seeded from random artists in your library
+```
 
 For the 1.5.0 release:
 

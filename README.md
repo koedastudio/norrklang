@@ -82,12 +82,13 @@ phone/desktop clients in this monorepo.
 - Streaming quality: Original / 320 / 192 / 128 kbps, independently for Wi-Fi
   and cellular. New track loads use the current tier; retries and seeks retain
   the same encoding so byte offsets stay valid
-- Browse: Home with Quick play, Made for you (Best of / Similar to), Radio,
-  Genre and Decade mixes, favourite artists and recently added tracks;
-  Playlists; Library with all artists (artist pages in Albums / Compilations /
-  Singles & EPs sections, similar artists below), all albums, the recently/most
-  played, new and favourite album collections, and internet radio
-  (Navidrome/Subsonic, HLS streams included)
+- Browse: Home with one-tap Quick play (favourites, new songs, random songs,
+  random albums), the radio stations you play most and Made for you (Best of /
+  Similar to); Playlists; Library with all artists (artist pages in Albums /
+  Compilations / Singles & EPs sections, similar artists below), all albums,
+  the recently added, recently played and favourite album collections, albums
+  by genre and by decade (each with a Shuffle tile), favourite artists, and
+  internet radio (Navidrome/Subsonic, HLS streams included)
 - Libraries: choose which of the server's music libraries to show (Navidrome
   0.58+ libraries, Plex music sections, Jellyfin music libraries) — picked at
   sign-in when there are several, changed any time in Settings; playlists

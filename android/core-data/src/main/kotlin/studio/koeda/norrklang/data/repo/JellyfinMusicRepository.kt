@@ -108,29 +108,43 @@ class JellyfinMusicRepository @Inject constructor(
             )
         }
 
-    override suspend fun albums(offset: Int, size: Int): List<Album> {
-        val ids = scope(session()).selectedIds
-        if (ids.size == 1) {
-            return scoped("albums/$offset/$size") { session, scope ->
-                session.items(
-                    parentId = scope.selectedIds.single(),
-                    type = ItemType.ALBUM,
-                    sortBy = "SortName",
-                    startIndex = offset,
-                    limit = size,
-                ).items.mapNotNull { it.toAlbumOrNull() }
-            }
+    override suspend fun albums(offset: Int, size: Int): List<Album> =
+        pagedAlbums("albums", scope(session()).selectedIds, offset, size)
+
+    /**
+     * One library keeps the server-paged request; several materialise one
+     * merged sorted list and slice it, so paging and the unpaged host path
+     * agree on order.
+     */
+    private suspend fun pagedAlbums(
+        key: String,
+        libraries: List<String>,
+        offset: Int,
+        size: Int,
+        params: (String) -> List<Pair<String, String>> = { emptyList() },
+    ): List<Album> = when (libraries.size) {
+        0 -> emptyList()
+        1 -> scoped("$key/$offset/$size") { session, _ ->
+            val lib = libraries.single()
+            session.items(
+                parentId = lib,
+                type = ItemType.ALBUM,
+                sortBy = "SortName",
+                params = params(lib),
+                startIndex = offset,
+                limit = size,
+            ).items.mapNotNull { it.toAlbumOrNull() }
         }
-        // Several libraries: one merged sorted list, paged in memory.
-        return scoped("albums-all") { session, scope ->
+        else -> scoped("$key-all") { session, _ ->
             mergeSorted(
-                scope.perLibrary { lib ->
+                fanOut(libraries) { lib ->
                     session.items(
                         parentId = lib,
                         type = ItemType.ALBUM,
                         sortBy = "SortName",
+                        params = params(lib),
                     ).items
-                },
+                }.map { it.second },
                 BY_SORT_NAME,
             ).mapNotNull { it.toAlbumOrNull() }
         }.drop(offset).take(size)
@@ -219,6 +233,14 @@ class JellyfinMusicRepository @Inject constructor(
             }
         }
 
+    override suspend fun randomAlbums(size: Int): List<Album> =
+        withScope { session, scope ->
+            drawAcross(scope.selectedIds) { lib ->
+                session.items(parentId = lib, type = ItemType.ALBUM, sortBy = "Random", limit = size)
+                    .items.mapNotNull { it.toAlbumOrNull() }
+            }.take(size)
+        }
+
     override suspend fun recentlyPlayedAlbums(size: Int): List<Album> =
         playedAlbums("recently-played-albums/$size", "DatePlayed", size)
 
@@ -261,39 +283,24 @@ class JellyfinMusicRepository @Inject constructor(
                 .map { (name, entries) -> Genre(name, songCount = entries.sumOf { it.songCount }) }
         }
 
-    override suspend fun albumsByGenre(genre: String, size: Int): List<Album> =
-        scoped("albums-by-genre/$genre/$size") { session, _ ->
-            val ids = genreIds(genre)
-            if (ids.isEmpty()) return@scoped emptyList()
-            mergeSorted(
-                fanOut(ids.keys.toList()) { lib ->
-                    session.items(
-                        parentId = lib,
-                        type = ItemType.ALBUM,
-                        params = listOf("GenreIds" to ids.getValue(lib)),
-                        limit = size,
-                    ).items
-                }.map { it.second },
-                BY_SORT_NAME,
-            ).mapNotNull { it.toAlbumOrNull() }.take(size)
+    override suspend fun albumsByGenre(genre: String, offset: Int, size: Int): List<Album> {
+        val ids = genreIds(genre)
+        return pagedAlbums("albums-by-genre/$genre", ids.keys.toList(), offset, size) { lib ->
+            listOf("GenreIds" to ids.getValue(lib))
+        }
+    }
+
+    override suspend fun albumsByYearRange(
+        fromYear: Int,
+        toYear: Int,
+        offset: Int,
+        size: Int,
+    ): List<Album> =
+        pagedAlbums("albums-by-year/$fromYear-$toYear", scope(session()).selectedIds, offset, size) {
+            listOf("Years" to yearList(fromYear, toYear))
         }
 
-    override suspend fun albumsByYearRange(fromYear: Int, toYear: Int, size: Int): List<Album> =
-        scoped("albums-by-year/$fromYear-$toYear/$size") { session, scope ->
-            mergeSorted(
-                scope.perLibrary { lib ->
-                    session.items(
-                        parentId = lib,
-                        type = ItemType.ALBUM,
-                        params = listOf("Years" to yearList(fromYear, toYear)),
-                        limit = size,
-                    ).items
-                },
-                BY_SORT_NAME,
-            ).mapNotNull { it.toAlbumOrNull() }.take(size)
-        }
-
-    // Uncached like randomTracks: CatalogMixesSession owns list stability.
+    // Uncached like randomTracks: CatalogMixes owns list stability.
     // Track-level genre works here — Jellyfin aggregates album genres from
     // the track tags, so tracks carry them.
     override suspend fun randomTracksByGenre(genre: String, size: Int): List<Track> =

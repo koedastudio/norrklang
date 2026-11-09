@@ -100,26 +100,44 @@ class PlexMusicRepository @Inject constructor(
         return session.client.sectionItems(section, ItemType.ALBUM, filters = listOf("artist.id" to artistId))
     }
 
-    // One section keeps the server-paged request; several materialise one
-    // merged sorted list (same memory order as the unpaged host path) and slice.
     override suspend fun albums(offset: Int, size: Int): List<Album> =
-        if (scope(session()).selectedIds.size == 1) {
-            scoped("albums/$offset/$size") { session, scope ->
-                session.client.sectionItems(
-                    scope.selectedIds.single(),
-                    ItemType.ALBUM,
-                    sort = "titleSort:asc",
-                    start = offset,
-                    size = size,
-                ).mapNotNull { it.toAlbumOrNull() }
-            }
-        } else {
-            scoped("albums-all") { session, scope ->
-                scope.merged(BY_TITLE) { section ->
-                    session.client.sectionItems(section, ItemType.ALBUM, sort = "titleSort:asc")
-                }.mapNotNull { (_, dto) -> dto.toAlbumOrNull() }
-            }.drop(offset).take(size)
+        pagedAlbums("albums", scope(session()).selectedIds, offset, size)
+
+    /**
+     * One section keeps the server-paged request; several materialise one
+     * merged sorted list and slice it, so paging and the unpaged host path
+     * agree on order.
+     */
+    private suspend fun pagedAlbums(
+        key: String,
+        sections: List<String>,
+        offset: Int,
+        size: Int,
+        filters: (String) -> List<Pair<String, String>> = { emptyList() },
+    ): List<Album> = when (sections.size) {
+        0 -> emptyList()
+        1 -> scoped("$key/$offset/$size") { session, _ ->
+            val section = sections.single()
+            session.client.sectionItems(
+                section,
+                ItemType.ALBUM,
+                filters = filters(section),
+                sort = "titleSort:asc",
+                start = offset,
+                size = size,
+            ).mapNotNull { it.toAlbumOrNull() }
         }
+        else -> scoped("$key-all") { session, _ ->
+            mergeTagged(sections, BY_TITLE) { section ->
+                session.client.sectionItems(
+                    section,
+                    ItemType.ALBUM,
+                    filters = filters(section),
+                    sort = "titleSort:asc",
+                )
+            }.mapNotNull { (_, dto) -> dto.toAlbumOrNull() }
+        }.drop(offset).take(size)
+    }
 
     override suspend fun recentlyAdded(size: Int): List<Album> =
         scoped("recent/$size") { session, scope ->
@@ -175,6 +193,14 @@ class PlexMusicRepository @Inject constructor(
                 session.client.sectionItems(section, ItemType.TRACK, sort = "random", size = share)
                     .mapNotNull { it.toTrackOrNull(section) }
             }
+        }
+
+    override suspend fun randomAlbums(size: Int): List<Album> =
+        withScope { session, scope ->
+            drawAcross(scope.selectedIds) { section ->
+                session.client.sectionItems(section, ItemType.ALBUM, sort = "random", size = size)
+                    .mapNotNull { it.toAlbumOrNull() }
+            }.take(size)
         }
 
     override suspend fun recentlyPlayedAlbums(size: Int): List<Album> =
@@ -245,33 +271,24 @@ class PlexMusicRepository @Inject constructor(
             merged.values.toList()
         }
 
-    override suspend fun albumsByGenre(genre: String, size: Int): List<Album> =
-        scoped("albums-by-genre/$genre/$size") { session, _ ->
-            val ids = genreIds(genre)
-            if (ids.isEmpty()) return@scoped emptyList()
-            mergeTagged(ids.keys.toList(), BY_TITLE) { section ->
-                session.client.sectionItems(
-                    section,
-                    ItemType.ALBUM,
-                    filters = listOf("genre" to ids.getValue(section)),
-                    size = size,
-                )
-            }.mapNotNull { (_, dto) -> dto.toAlbumOrNull() }.take(size)
+    override suspend fun albumsByGenre(genre: String, offset: Int, size: Int): List<Album> {
+        val ids = genreIds(genre)
+        return pagedAlbums("albums-by-genre/$genre", ids.keys.toList(), offset, size) { section ->
+            listOf("genre" to ids.getValue(section))
+        }
+    }
+
+    override suspend fun albumsByYearRange(
+        fromYear: Int,
+        toYear: Int,
+        offset: Int,
+        size: Int,
+    ): List<Album> =
+        pagedAlbums("albums-by-year/$fromYear-$toYear", scope(session()).selectedIds, offset, size) {
+            yearRange("year", fromYear, toYear)
         }
 
-    override suspend fun albumsByYearRange(fromYear: Int, toYear: Int, size: Int): List<Album> =
-        scoped("albums-by-year/$fromYear-$toYear/$size") { session, scope ->
-            scope.merged(BY_TITLE) { section ->
-                session.client.sectionItems(
-                    section,
-                    ItemType.ALBUM,
-                    filters = yearRange("year", fromYear, toYear),
-                    size = size,
-                )
-            }.mapNotNull { (_, dto) -> dto.toAlbumOrNull() }.take(size)
-        }
-
-    // Uncached like randomTracks: CatalogMixesSession owns list stability.
+    // Uncached like randomTracks: CatalogMixes owns list stability.
     // Tracks rarely carry their own genre tags in Plex, so filter on the
     // album's genre instead.
     override suspend fun randomTracksByGenre(genre: String, size: Int): List<Track> =

@@ -147,7 +147,7 @@ internal class VoiceSearchResolver(
     private suspend fun genreQueue(name: String): Queue? {
         val key = voiceKey(name)
         val genre = repository.genres().firstOrNull { voiceKey(it.name) == key } ?: return null
-        return containerQueue(MediaId.HomeGenre(genre.name))
+        return containerQueue(MediaId.GenreMix(genre.name))
     }
 
     private suspend fun stationByName(name: String): Station? {

@@ -52,6 +52,7 @@ class RoutingMusicRepository @Inject constructor(
     override suspend fun recentlyAddedTracks(size: Int): List<Track> =
         active().recentlyAddedTracks(size)
     override suspend fun randomTracks(size: Int): List<Track> = active().randomTracks(size)
+    override suspend fun randomAlbums(size: Int): List<Album> = active().randomAlbums(size)
     override suspend fun recentlyPlayedAlbums(size: Int): List<Album> =
         active().recentlyPlayedAlbums(size)
     override suspend fun mostPlayedAlbums(size: Int): List<Album> =
@@ -60,10 +61,14 @@ class RoutingMusicRepository @Inject constructor(
     override suspend fun libraries(): List<MusicLibrary> = active().libraries()
     override suspend fun trackLibraryId(trackId: String, candidates: Set<String>): String? =
         active().trackLibraryId(trackId, candidates)
-    override suspend fun albumsByGenre(genre: String, size: Int): List<Album> =
-        active().albumsByGenre(genre, size)
-    override suspend fun albumsByYearRange(fromYear: Int, toYear: Int, size: Int): List<Album> =
-        active().albumsByYearRange(fromYear, toYear, size)
+    override suspend fun albumsByGenre(genre: String, offset: Int, size: Int): List<Album> =
+        active().albumsByGenre(genre, offset, size)
+    override suspend fun albumsByYearRange(
+        fromYear: Int,
+        toYear: Int,
+        offset: Int,
+        size: Int,
+    ): List<Album> = active().albumsByYearRange(fromYear, toYear, offset, size)
     override suspend fun randomTracksByGenre(genre: String, size: Int): List<Track> =
         active().randomTracksByGenre(genre, size)
     override suspend fun randomTracksByYearRange(

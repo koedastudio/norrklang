@@ -11,8 +11,7 @@ import studio.koeda.norrklang.data.di.ApplicationScope
 import studio.koeda.norrklang.data.repo.MusicRepository
 import studio.koeda.norrklang.data.session.SessionManager
 import studio.koeda.norrklang.media.BestOfMixesSession
-import studio.koeda.norrklang.media.CatalogMixesSession
-import studio.koeda.norrklang.media.HomeMixesSession
+import studio.koeda.norrklang.media.CatalogMixes
 import studio.koeda.norrklang.media.RandomMixSession
 import studio.koeda.norrklang.media.SimilarMixesSession
 
@@ -50,7 +49,7 @@ internal object MediaModule {
             // No artist should head both a "Best of" and a "Similar to" tile;
             // the service refreshes Best of first so these seeds are settled.
             excludedSeedIds = { bestOfMixes.currentMixes().map { it.artist.id }.toSet() },
-        ).clearingOnSignOut(sessionManager, scope)
+        ).clearingOnSignOut(sessionManager, scope) { clear() }
 
     @Provides
     @Singleton
@@ -59,16 +58,15 @@ internal object MediaModule {
         sessionManager: SessionManager,
         @ApplicationScope scope: CoroutineScope,
     ): BestOfMixesSession =
-        BestOfMixesSession(repository).clearingOnSignOut(sessionManager, scope)
+        BestOfMixesSession(repository).clearingOnSignOut(sessionManager, scope) { clear() }
 
     @Provides
     @Singleton
-    fun catalogMixesSession(
+    fun catalogMixes(
         repository: MusicRepository,
         sessionManager: SessionManager,
         @ApplicationScope scope: CoroutineScope,
-    ): CatalogMixesSession =
-        CatalogMixesSession(repository).clearingOnSignOut(sessionManager, scope)
+    ): CatalogMixes = CatalogMixes(repository).clearingOnSignOut(sessionManager, scope) { clear() }
 
     /**
      * Drops the session's tracks (they embed authenticated stream URLs) when
@@ -78,9 +76,10 @@ internal object MediaModule {
      * undefined order). Connected → Connected account switches are covered
      * by the session's fingerprint stamp.
      */
-    private fun <T : HomeMixesSession<*, *>> T.clearingOnSignOut(
+    private fun <T> T.clearingOnSignOut(
         sessionManager: SessionManager,
         scope: CoroutineScope,
+        clear: suspend T.() -> Unit,
     ): T = also { session ->
         scope.launch {
             sessionManager.state.collect { state ->

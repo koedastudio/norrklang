@@ -13,6 +13,8 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import studio.koeda.norrklang.data.model.Album
+import studio.koeda.norrklang.data.model.AlbumDetail
 import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.repo.MusicException
 import studio.koeda.norrklang.data.repo.MusicRepository
@@ -84,6 +86,7 @@ class QueueRadioListenerTest {
     private fun stubRepository(
         similar: List<Track> = emptyList(),
         random: List<Track> = emptyList(),
+        albums: List<Album> = emptyList(),
         callDelayMs: Long = 0,
         failure: MusicException? = null,
     ): MusicRepository = object : FakeMusicRepository() {
@@ -98,20 +101,36 @@ class QueueRadioListenerTest {
             failure?.let { throw it }
             return random
         }
+        override suspend fun randomAlbums(size: Int): List<Album> = albums.take(size)
+        override suspend fun album(id: String) =
+            AlbumDetail(albums.first { it.id == id }, List(3) { stubTrack("$id-$it") })
     }
 
-    /** Artist ids come from a map instead of Bundle extras (Android-free). */
+    private fun stubAlbum(id: String) = Album(
+        id = id,
+        title = "Album $id",
+        artistName = null,
+        artistId = null,
+        year = null,
+        trackCount = 3,
+        durationSec = 600,
+        artworkUrl = null,
+    )
+
+    /** Artist and album ids come from maps instead of Bundle extras (Android-free). */
     private fun TestScope.listener(
         player: QueuePlayer,
         repository: MusicRepository,
         enabled: Boolean = true,
         seeds: Map<String, String> = emptyMap(),
+        albums: Map<String, String> = emptyMap(),
     ) = QueueRadioListener(
         scope = backgroundScope,
         autoplayEnabled = { enabled },
         radio = QueueRadio(repository, Random(seed = 3)),
         player = player,
         seedOf = { item -> seeds[item.mediaId] },
+        albumOf = { item -> albums[item.mediaId] },
         buildItem = { track, container -> item(track.id, container) },
     )
 
@@ -219,6 +238,21 @@ class QueueRadioListenerTest {
         assertTrue(player.items.size > 3, "random mix was not extended")
         val appended = player.items.drop(3).map { MediaId.parse(it.mediaId) as MediaId.Track }
         assertTrue(appended.all { it.container == MediaId.HomeRandomMix })
+    }
+
+    @Test
+    fun `random album queues extend with the next album under the same container`() = runTest {
+        val player = QueuePlayer()
+        player.items += (1..3).map { item("al-1-$it", MediaId.HomeRandomAlbums) }
+        val repo = stubRepository(albums = listOf(stubAlbum("al-1"), stubAlbum("al-2")))
+        val listener = listener(player, repo, albums = player.items.associate { it.mediaId to "al-1" })
+
+        transitionToLast(player, listener)
+        runCurrent()
+
+        val appended = player.items.drop(3).map { MediaId.parse(it.mediaId) as MediaId.Track }
+        assertEquals(listOf("al-2-0", "al-2-1", "al-2-2"), appended.map { it.id })
+        assertTrue(appended.all { it.container == MediaId.HomeRandomAlbums })
     }
 
     @Test

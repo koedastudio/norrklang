@@ -84,9 +84,9 @@
   <string name="settings_track_subtitle_album_artist">Album · Artist</string>
   <string name="settings_track_subtitle_artist_hint">Where supported, tapping the line opens the artist</string>
   <string name="settings_track_subtitle_album_hint">Where supported, tapping the line opens the album</string>
-  <string name="settings_autoplay_similar">Autoplay similar music</string>
-  <string name="settings_autoplay_similar_on">When the queue ends, similar songs keep playing</string>
-  <string name="settings_autoplay_similar_off">Playback stops at the end of the queue</string>
+  <string name="settings_autoplay">Autoplay</string>
+  <string name="settings_autoplay_on">When the queue ends, more music keeps playing: similar songs, or more random songs or albums after a random tile</string>
+  <string name="settings_autoplay_off">Playback stops at the end of the queue</string>
   <string name="settings_radio_song_first">Song</string>
   <string name="settings_radio_song_first_hint">Station name on the line below</string>
   <string name="settings_radio_station_first">Station name</string>

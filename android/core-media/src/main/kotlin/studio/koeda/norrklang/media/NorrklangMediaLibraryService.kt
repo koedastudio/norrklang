@@ -29,7 +29,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.drop
@@ -62,7 +61,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
     @Inject internal lateinit var randomMix: RandomMixSession
     @Inject internal lateinit var similarMixes: SimilarMixesSession
     @Inject internal lateinit var bestOfMixes: BestOfMixesSession
-    @Inject internal lateinit var catalogMixes: CatalogMixesSession
+    @Inject internal lateinit var catalogMixes: CatalogMixes
 
     private var mediaSession: MediaLibrarySession? = null
     @Volatile private var playbackAccount: ProviderSession? = null
@@ -124,7 +123,6 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
             randomMix,
             similarMixes,
             bestOfMixes,
-            catalogMixes,
             containers,
             tileVersion = { LibraryScope.exclusionKey(settings.excludedLibraryIds.first()) },
             radioPlayStats = { settings.radioPlayStats.first() },
@@ -333,13 +331,8 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
                         player = player,
                         loadQueue = resumptionLoader::load,
                         refreshHome = {
-                            coroutineScope {
-                                launch {
-                                    refreshIntoHome(bestOfMixes)
-                                    refreshIntoHome(similarMixes)
-                                }
-                                launch { refreshIntoHome(catalogMixes) }
-                            }
+                            refreshIntoHome(bestOfMixes)
+                            refreshIntoHome(similarMixes)
                         },
                     )
                     val recovery = PlaybackRecoveryListener(
@@ -356,6 +349,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
                     launch {
                         settings.excludedLibraryIds.distinctUntilChanged().drop(1).collect {
                             randomMix.clear()
+                            catalogMixes.clear()
                             notifyLibraryScopeChanged(session)
                             initialization.retry()
                         }

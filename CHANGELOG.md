@@ -5,6 +5,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow semver (`norrklang.version` in `android/gradle.properties`
 is the single source of truth).
 
+## [Unreleased]
+
+### Added
+
+- Random albums on Home: plays a random album start to end, then the next
+  one (#24).
+- Genres and Decades under Library → Albums: each opens a Shuffle tile and
+  the album grid.
+- Quick play and Made for you tiles play on one tap; the list still opens.
+- Made for you grows to nine tiles: three more Similar to mixes seeded from
+  random artists in the library.
+- Autoplay continues a random-albums queue with the next random album.
+
+### Changed
+
+- Home is Quick play, Radio and Made for you. "Random mix" is now "Random
+  songs" and the "Recently added" songs tile "New songs".
+- The autoplay setting is "Autoplay", covering every continuation.
+
+### Removed
+
+- Genre and Decade mix sections on Home (now under Library).
+- Most played row in Library.
+
 ## [1.5.0] — 2026-11-04
 
 ### Added

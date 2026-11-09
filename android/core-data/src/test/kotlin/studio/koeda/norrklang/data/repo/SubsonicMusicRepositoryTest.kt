@@ -121,6 +121,19 @@ class SubsonicMusicRepositoryTest {
     }
 
     @Test
+    fun `randomAlbums asks for the random album list within the selected libraries`() = runTest {
+        foldersRoute()
+        route("getAlbumList2.view", "type=random", body = ok(""""albumList2":{"album":[{"id":"al-1","name":"Hunky Dory"}]}"""))
+        val env = env(backgroundScope).signedIn()
+        env.settings.setLibraryExcluded("2", true)
+
+        assertEquals(listOf("al-1"), env.repository.randomAlbums(5).map { it.id })
+        val url = lastRequest("getAlbumList2.view")
+        assertTrue("size=5" in url)
+        assertEquals(listOf("1", "3"), folderIds(url))
+    }
+
+    @Test
     fun `excluding a library sends the remaining ids on every scoped list`() = runTest {
         foldersRoute()
         val env = env(backgroundScope).signedIn()

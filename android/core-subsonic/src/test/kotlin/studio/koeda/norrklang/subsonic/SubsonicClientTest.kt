@@ -174,11 +174,12 @@ class SubsonicClientTest {
                  {"id":"al-1","name":"Scary Monsters","year":1980}
                ]}}}""",
         )
-        val albums = client.getAlbumList2ByYear(fromYear = 1980, toYear = 1989, size = 10)
+        val albums = client.getAlbumList2ByYear(fromYear = 1980, toYear = 1989, size = 10, offset = 30)
         assertTrue("type=byYear" in lastRequestUrl)
         assertTrue("fromYear=1980" in lastRequestUrl)
         assertTrue("toYear=1989" in lastRequestUrl)
         assertTrue("size=10" in lastRequestUrl)
+        assertTrue("offset=30" in lastRequestUrl)
         assertEquals(listOf("Scary Monsters"), albums.map { it.name })
     }
 
@@ -189,10 +190,11 @@ class SubsonicClientTest {
                  {"id":"al-1","name":"Aladdin Sane","genre":"Glam Rock"}
                ]}}}""",
         )
-        val albums = client.getAlbumList2ByGenre("Glam Rock", size = 10)
+        val albums = client.getAlbumList2ByGenre("Glam Rock", size = 10, offset = 20)
         assertTrue("type=byGenre" in lastRequestUrl)
         assertTrue("genre=Glam+Rock" in lastRequestUrl || "genre=Glam%20Rock" in lastRequestUrl)
         assertTrue("size=10" in lastRequestUrl)
+        assertTrue("offset=20" in lastRequestUrl)
         assertEquals(listOf("Aladdin Sane"), albums.map { it.name })
     }
 

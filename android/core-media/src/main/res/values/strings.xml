@@ -10,14 +10,20 @@
   <string name="browse_home_favorite_albums">Favourite albums</string>
   <string name="browse_library_favorite_artists">Favourite artists</string>
   <string name="browse_home_favorite_songs">Favourites</string>
-  <string name="browse_home_random_mix">Random mix</string>
-  <string name="browse_home_recently_added_songs">Recently added</string>
+  <string name="browse_home_random_songs">Random songs</string>
+  <string name="browse_home_random_albums">Random albums</string>
+  <string name="browse_home_new_songs">New songs</string>
   <string name="browse_home_recently_played">Recently played</string>
-  <string name="browse_home_most_played">Most played</string>
+  <string name="browse_library_genres">Genres</string>
+  <string name="browse_library_decades">Decades</string>
+  <!-- The playable tile heading a genre or decade album grid; %1$s is the genre name or "1980s". -->
+  <string name="browse_shuffle">Shuffle %1$s</string>
+  <plurals name="browse_song_count">
+    <item quantity="one">%d song</item>
+    <item quantity="other">%d songs</item>
+  </plurals>
   <string name="browse_group_quick_play">Quick play</string>
   <string name="browse_group_made_for_you">Made for you</string>
-  <string name="browse_group_genre_mixes">Genre mixes</string>
-  <string name="browse_group_decade_mixes">Decade mixes</string>
   <string name="browse_group_albums">Albums</string>
   <string name="browse_group_artists">Artists</string>
   <string name="browse_group_radio">Radio</string>
@@ -31,8 +37,8 @@
   <string name="browse_artist_singles_eps">Singles &amp; EPs</string>
   <string name="browse_artist_similar">Similar artists</string>
   <string name="browse_home_best_of">Best of %1$s</string>
-  <!-- Decade mix tile title, e.g. "1980s"; %1$d is the decade's first year. -->
-  <string name="browse_home_decade_mix">%1$ds</string>
+  <!-- Decade row and mix title, e.g. "1980s"; %1$d is the decade's first year. -->
+  <string name="browse_decade">%1$ds</string>
   <string name="search_section_artists">Artists</string>
   <string name="search_section_albums">Albums</string>
   <string name="search_section_tracks">Tracks</string>

@@ -5,6 +5,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
+import studio.koeda.norrklang.data.model.Album
+import studio.koeda.norrklang.data.model.AlbumDetail
 import studio.koeda.norrklang.data.model.Track
 
 class QueueRadioTest {
@@ -12,12 +14,27 @@ class QueueRadioTest {
     private fun radio(
         similar: List<Track> = emptyList(),
         random: List<Track> = emptyList(),
+        albums: List<Album> = emptyList(),
     ) = QueueRadio(
         object : FakeMusicRepository() {
             override suspend fun similarTracks(artistId: String, count: Int) = similar
             override suspend fun randomTracks(size: Int) = random
+            override suspend fun randomAlbums(size: Int) = albums.take(size)
+            override suspend fun album(id: String) =
+                AlbumDetail(albums.first { it.id == id }, List(3) { stubTrack("$id-$it") })
         },
         Random(seed = 7),
+    )
+
+    private fun stubAlbum(id: String) = Album(
+        id = id,
+        title = "Album $id",
+        artistName = null,
+        artistId = null,
+        year = null,
+        trackCount = 3,
+        durationSec = 600,
+        artworkUrl = null,
     )
 
     @Test
@@ -57,6 +74,19 @@ class QueueRadioTest {
     fun `empty server answers yield empty batches`() = runTest {
         assertEquals(emptyList(), radio().similarContinuation("ar-1", emptySet()))
         assertEquals(emptyList(), radio().randomContinuation(emptySet()))
+    }
+
+    @Test
+    fun `random album continuation is the first album not already queued, in track order`() = runTest {
+        val albums = listOf(stubAlbum("al-1"), stubAlbum("al-2"), stubAlbum("al-3"))
+        val batch = radio(albums = albums).randomAlbumContinuation(excludeAlbumIds = setOf("al-1"))
+        assertEquals(listOf("al-2-0", "al-2-1", "al-2-2"), batch.map { it.id })
+    }
+
+    @Test
+    fun `random album continuation is empty once every album is queued`() = runTest {
+        val albums = listOf(stubAlbum("al-1"))
+        assertEquals(emptyList(), radio(albums = albums).randomAlbumContinuation(setOf("al-1")))
     }
 
     @Test

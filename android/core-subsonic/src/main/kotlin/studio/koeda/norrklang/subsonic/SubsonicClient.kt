@@ -115,6 +115,7 @@ class SubsonicClient(
         fromYear: Int,
         toYear: Int,
         size: Int = 100,
+        offset: Int = 0,
         musicFolderIds: List<String> = emptyList(),
     ): List<AlbumID3> =
         albumList2(
@@ -123,6 +124,7 @@ class SubsonicClient(
                 "fromYear" to fromYear.toString(),
                 "toYear" to toYear.toString(),
                 "size" to size.toString(),
+                "offset" to offset.toString(),
             ),
             musicFolderIds,
         )
@@ -131,6 +133,7 @@ class SubsonicClient(
     suspend fun getAlbumList2ByGenre(
         genre: String,
         size: Int = 100,
+        offset: Int = 0,
         musicFolderIds: List<String> = emptyList(),
     ): List<AlbumID3> =
         albumList2(
@@ -138,6 +141,7 @@ class SubsonicClient(
                 "type" to "byGenre",
                 "genre" to genre,
                 "size" to size.toString(),
+                "offset" to offset.toString(),
             ),
             musicFolderIds,
         )

@@ -6,6 +6,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlinx.coroutines.test.runTest
+import studio.koeda.norrklang.data.model.Album
+import studio.koeda.norrklang.data.model.AlbumDetail
 import studio.koeda.norrklang.data.model.RadioStation
 import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.repo.MusicException
@@ -19,7 +21,7 @@ class ResumptionQueueLoaderTest {
         RandomMixSession(repository),
         SimilarMixesSession(repository),
         BestOfMixesSession(repository),
-        CatalogMixesSession(repository),
+        CatalogMixes(repository),
     )
 
     private fun loader(repository: MusicRepository) = ResumptionQueueLoader(
@@ -103,6 +105,29 @@ class ResumptionQueueLoaderTest {
             containers(repo).resume(MediaId.SongRadio("ar-seed"), savedTrackId = "tr-9")
         }.exceptionOrNull()
         assertEquals(MusicException.NetworkError::class, thrown!!::class)
+    }
+
+    @Test
+    fun `a random album resumes as the saved track's own album at the saved position`() = runTest {
+        val album = Album(
+            id = "al-7",
+            title = "Album",
+            artistName = null,
+            artistId = null,
+            year = null,
+            trackCount = 3,
+            durationSec = 600,
+            artworkUrl = null,
+        )
+        val tracks = listOf("tr-1", "tr-2", "tr-3").map { stubTrack(it).copy(albumId = "al-7") }
+        val repo = object : FakeMusicRepository() {
+            override suspend fun track(id: String) = tracks.first { it.id == id }
+            override suspend fun album(id: String) = AlbumDetail(album, tracks)
+        }
+        val queue = loader(repo).restore(ResumptionState(MediaId.Track("tr-2", MediaId.HomeRandomAlbums).encode(), 30_000))!!
+        assertEquals(listOf("tr-1", "tr-2", "tr-3").map { MediaId.Track(it, MediaId.HomeRandomAlbums).encode() }, queue.mediaItems.map { it.mediaId })
+        assertEquals(1, queue.startIndex)
+        assertEquals(30_000L, queue.startPositionMs)
     }
 
     @Test

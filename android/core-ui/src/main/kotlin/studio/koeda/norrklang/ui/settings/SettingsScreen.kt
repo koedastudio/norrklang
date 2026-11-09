@@ -262,14 +262,14 @@ private fun MainPage(
                     onClick = { navigate(SettingsPage.Quality) },
                 )
                 HorizontalDivider()
-                // Queue-end radio (see QueueRadioListener); both providers.
+                // Queue-end radio (see QueueRadioListener); all providers.
                 SettingsToggleRow(
-                    title = stringResource(R.string.settings_autoplay_similar),
+                    title = stringResource(R.string.settings_autoplay),
                     subtitle = stringResource(
                         if (autoplaySimilar) {
-                            R.string.settings_autoplay_similar_on
+                            R.string.settings_autoplay_on
                         } else {
-                            R.string.settings_autoplay_similar_off
+                            R.string.settings_autoplay_off
                         },
                     ),
                     checked = autoplaySimilar,

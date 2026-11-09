@@ -332,8 +332,7 @@ internal class LibrarySessionCallback(
         when (val id = MediaId.parse(item.mediaId)) {
             is MediaId.Track ->
                 listOf(buildTrack(repository.track(id.id), id.container))
-            is MediaId.Album, is MediaId.Playlist ->
-                containers.tracks(id).map { buildTrack(it, id) }
+            is MediaId.Container -> containers.tracks(id).map { buildTrack(it, id) }
             is MediaId.RadioStation ->
                 listOf(browseTree.playableStation(repository.radioStation(id.id)))
             else -> emptyList()

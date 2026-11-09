@@ -94,6 +94,8 @@ internal object MediaItemFactory {
         childrenStyle: Bundle? = null,
         groupTitle: String? = null,
         supportedCommands: List<String> = emptyList(),
+        /** Also playable: a tap plays the node's tracks (see LibrarySessionCallback.resolve). */
+        playable: Boolean = false,
     ): MediaItem = MediaItem.Builder()
         .setMediaId(mediaId.encode())
         .setMediaMetadata(
@@ -102,7 +104,7 @@ internal object MediaItemFactory {
                 .setSubtitle(subtitle)
                 .setArtworkUri(artworkUrl?.let(Uri::parse))
                 .setIsBrowsable(true)
-                .setIsPlayable(false)
+                .setIsPlayable(playable)
                 .setMediaType(mediaType)
                 .setSupportedCommands(supportedCommands)
                 .apply {
@@ -179,6 +181,38 @@ internal object MediaItemFactory {
      * quality resolution). [artistLine] sits under the title, which ICY
      * metadata replaces with the current song once the stream plays.
      */
+    /**
+     * A playable node that is not a track (a mix or random-album tile): no
+     * URI, the host hands the id to onSetMediaItems, which expands it.
+     */
+    fun playable(
+        mediaId: MediaId,
+        title: String,
+        artworkUrl: String?,
+        mediaType: Int,
+        groupTitle: String? = null,
+    ): MediaItem = MediaItem.Builder()
+        .setMediaId(mediaId.encode())
+        .setMediaMetadata(
+            MediaMetadata.Builder()
+                .setTitle(title)
+                .setArtworkUri(artworkUrl?.let(Uri::parse))
+                .setIsBrowsable(false)
+                .setIsPlayable(true)
+                .setMediaType(mediaType)
+                .apply {
+                    groupTitle?.let {
+                        setExtras(
+                            Bundle().apply {
+                                putString(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_GROUP_TITLE, it)
+                            },
+                        )
+                    }
+                }
+                .build(),
+        )
+        .build()
+
     fun forStation(
         station: RadioStation,
         artworkUrl: String?,

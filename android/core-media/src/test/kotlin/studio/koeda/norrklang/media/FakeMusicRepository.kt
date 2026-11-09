@@ -28,13 +28,19 @@ internal open class FakeMusicRepository : MusicRepository {
     override suspend fun favoriteTracks(): List<Track> = error("unused")
     override suspend fun recentlyAddedTracks(size: Int): List<Track> = error("unused")
     override suspend fun randomTracks(size: Int): List<Track> = error("unused")
+    override suspend fun randomAlbums(size: Int): List<Album> = error("unused")
     override suspend fun recentlyPlayedAlbums(size: Int): List<Album> = error("unused")
     override suspend fun mostPlayedAlbums(size: Int): List<Album> = error("unused")
     override suspend fun genres(): List<Genre> = error("unused")
     override suspend fun libraries(): List<MusicLibrary> = error("unused")
-    override suspend fun albumsByGenre(genre: String, size: Int): List<Album> = error("unused")
-    override suspend fun albumsByYearRange(fromYear: Int, toYear: Int, size: Int): List<Album> =
+    override suspend fun albumsByGenre(genre: String, offset: Int, size: Int): List<Album> =
         error("unused")
+    override suspend fun albumsByYearRange(
+        fromYear: Int,
+        toYear: Int,
+        offset: Int,
+        size: Int,
+    ): List<Album> = error("unused")
     override suspend fun randomTracksByGenre(genre: String, size: Int): List<Track> =
         error("unused")
     override suspend fun randomTracksByYearRange(

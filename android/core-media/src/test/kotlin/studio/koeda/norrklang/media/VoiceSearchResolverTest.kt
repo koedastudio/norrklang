@@ -161,11 +161,11 @@ class VoiceSearchResolverTest {
         val queue = resolver(
             repo,
             containerTracks = { container ->
-                if (container == MediaId.HomeGenre("Jazz")) jazz else emptyList()
+                if (container == MediaId.GenreMix("Jazz")) jazz else emptyList()
             },
         ).queue(Request(query = "some jazz", focus = Focus.Genre, genre = "jazz"))
         assertEquals(jazz, queue?.tracks)
-        assertEquals(MediaId.HomeGenre("Jazz"), queue?.container)
+        assertEquals(MediaId.GenreMix("Jazz"), queue?.container)
     }
 
     @Test
