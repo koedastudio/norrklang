@@ -78,7 +78,7 @@ class JdkApiOnDeviceTest {
         )
         val stream = urls.streamUrl("id &x", maxKbps = 192)
         assertTrue(stream, "MaxStreamingBitrate=192000" in stream)
-        assertTrue(stream, "api_key=tok+en%2B%26" in stream)
+        assertTrue(stream, "ApiKey=tok+en%2B%26" in stream)
     }
 
     @Test

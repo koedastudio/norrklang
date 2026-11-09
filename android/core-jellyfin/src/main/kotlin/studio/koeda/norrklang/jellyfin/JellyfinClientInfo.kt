@@ -6,7 +6,7 @@ package studio.koeda.norrklang.jellyfin
  * "device" in the server's dashboard, so it is minted once per install and
  * survives sign-outs (see the settings layer) — same rationale as the
  * X-Plex-Client-Identifier. Binary URLs handed to ExoPlayer/image loaders
- * ([JellyfinUrlBuilder]) are token-only via the api_key query parameter.
+ * ([JellyfinUrlBuilder]) are token-only via the ApiKey query parameter.
  */
 data class JellyfinClientInfo(
     val deviceId: String,

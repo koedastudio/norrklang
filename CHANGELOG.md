@@ -29,6 +29,11 @@ is the single source of truth).
 - Genre and Decade mix sections on Home (now under Library).
 - Most played row in Library.
 
+### Fixed
+
+- Jellyfin: capped-quality playback failed with 401 on Jellyfin 12, which
+  no longer accepts the legacy `api_key` parameter (#25).
+
 ## [1.5.0] — 2026-11-04
 
 ### Added

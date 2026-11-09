@@ -12,7 +12,7 @@ class JellyfinUrlBuilderTest {
     @Test
     fun `streamUrl requests the original file with the token in the query`() {
         assertEquals(
-            "https://jf.example.com/Audio/100/stream?static=true&api_key=srv-token",
+            "https://jf.example.com/Audio/100/stream?static=true&ApiKey=srv-token",
             urls.streamUrl("100"),
         )
     }
@@ -25,7 +25,7 @@ class JellyfinUrlBuilderTest {
         assertTrue("&DeviceId=device-1" in url)
         assertTrue("&MaxStreamingBitrate=192000" in url)
         assertTrue("&TranscodingContainer=mp3" in url)
-        assertTrue("&api_key=srv-token" in url)
+        assertTrue("&ApiKey=srv-token" in url)
     }
 
     @Test
@@ -34,12 +34,12 @@ class JellyfinUrlBuilderTest {
         assertTrue(url.startsWith("https://jf.example.com/Items/101/Images/Primary?"))
         assertTrue("fillWidth=512" in url)
         assertTrue("fillHeight=512" in url)
-        assertTrue("api_key=srv-token" in url)
+        assertTrue("ApiKey=srv-token" in url)
     }
 
     @Test
     fun `urls encode reserved characters`() {
         val urls = JellyfinUrlBuilder("https://jf.example.com", "to ken&x", "u", "d")
-        assertTrue("api_key=to+ken%26x" in urls.streamUrl("100"))
+        assertTrue("ApiKey=to+ken%26x" in urls.streamUrl("100"))
     }
 }
