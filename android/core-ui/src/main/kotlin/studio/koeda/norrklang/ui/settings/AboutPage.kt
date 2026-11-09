@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import studio.koeda.norrklang.ui.R
+import studio.koeda.norrklang.ui.components.QrLinkSection
 import studio.koeda.norrklang.ui.theme.LocalFormDimens
 
 /**

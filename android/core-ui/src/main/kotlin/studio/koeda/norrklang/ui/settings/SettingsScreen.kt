@@ -26,7 +26,7 @@ import studio.koeda.norrklang.ui.theme.LocalFormDimens
  */
 private enum class SettingsPage {
     Main, Libraries, Quality, NowPlaying, ScrobbleExceptions, ScrobbleArtists, ScrobblePlaylists, ScrobbleLibraries,
-    SavedSongs, Diagnostics, About,
+    SavedSongs, Diagnostics, About, PrivacyPolicy,
 }
 
 /**
@@ -175,6 +175,7 @@ fun SettingsScreen(
         }
 
         SettingsPage.About -> AboutPage(onBack = toMain, modifier = modifier)
+        SettingsPage.PrivacyPolicy -> PrivacyPolicyPage(onBack = toMain, modifier = modifier)
     }
 }
 
@@ -369,7 +370,7 @@ private fun MainPage(
 private fun InfoRows(navigate: (SettingsPage) -> Unit) {
     AboutRow(onClick = { navigate(SettingsPage.About) })
     HorizontalDivider()
-    PrivacyPolicyRow()
+    PrivacyPolicyRow(onClick = { navigate(SettingsPage.PrivacyPolicy) })
     HorizontalDivider()
     DiagnosticsRow(onClick = { navigate(SettingsPage.Diagnostics) })
     HorizontalDivider()

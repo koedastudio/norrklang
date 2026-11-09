@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import studio.koeda.norrklang.ui.R
+import studio.koeda.norrklang.ui.components.QrLinkSection
 import studio.koeda.norrklang.ui.theme.LocalFormDimens
 
 /**

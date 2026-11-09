@@ -33,7 +33,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -211,16 +210,16 @@ internal fun DiagnosticsRow(onClick: () -> Unit) {
 }
 
 /**
- * Play requires an in-app privacy-policy link. Opens in the device browser;
- * cars without one still show the URL text so the user can find it elsewhere.
+ * Play requires an in-app privacy-policy link. Navigates to [PrivacyPolicyPage]
+ * rather than opening the URL: cars have no browser, and the host's own
+ * "open on your phone" fallback is a full-screen QR.
  */
 @Composable
-internal fun PrivacyPolicyRow() {
-    val uriHandler = LocalUriHandler.current
+internal fun PrivacyPolicyRow(onClick: () -> Unit) {
     NavigationRow(
         title = stringResource(R.string.settings_privacy_policy),
         subtitle = PRIVACY_POLICY_URL,
-        onClick = { runCatching { uriHandler.openUri(PRIVACY_POLICY_URL) } },
+        onClick = onClick,
     )
 }
 

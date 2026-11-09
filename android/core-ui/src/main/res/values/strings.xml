@@ -16,7 +16,7 @@
   <string name="plex_link_title">Link your Plex account</string>
   <string name="plex_link_instruction">On your phone or computer, go to plex.tv/link and enter this code — or scan the QR code</string>
   <string name="plex_link_waiting">Waiting for you to link…</string>
-  <string name="plex_link_qr">QR code for plex.tv/link</string>
+  <string name="plex_link_qr">Open plex.tv/link on your phone</string>
   <string name="plex_pick_user_title">Who\'s listening?</string>
   <string name="plex_pick_user_subtitle">Choose a profile from your Plex Home</string>
   <string name="plex_user_admin_badge">Admin</string>
@@ -117,6 +117,8 @@
   <string name="settings_picker_error">Couldn\'t load from the server</string>
   <string name="settings_picker_retry">Try again</string>
   <string name="settings_privacy_policy">Privacy policy</string>
+  <string name="settings_privacy_qr_title">Read the privacy policy on your phone</string>
+  <string name="settings_privacy_qr_hint">Scan with your phone camera to open norrklang.app/privacy, which explains what the app stores and where it connects.</string>
   <string name="settings_about">About Norrklang</string>
   <string name="settings_about_hint">Website, source code and how to get in touch</string>
   <string name="settings_about_qr_title">Open norrklang.app on your phone</string>

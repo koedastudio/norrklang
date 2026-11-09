@@ -2,18 +2,70 @@ package studio.koeda.norrklang.ui.components
 
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
+import studio.koeda.norrklang.ui.theme.LocalFormDimens
+
+/**
+ * The one QR hand-off layout: code left, [title] and [hint] right, with an
+ * optional [note] under the hint. The URL lives in the QR only — cars have
+ * no browser to tap through to. The code is hidden if [url] won't encode.
+ */
+@Composable
+fun QrLinkSection(
+    url: String,
+    title: String,
+    hint: String,
+    modifier: Modifier = Modifier,
+    note: String? = null,
+) {
+    val dimens = LocalFormDimens.current
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = modifier) {
+        QrCode(
+            content = url,
+            contentDescription = title,
+            modifier = Modifier.size(dimens.controlMinHeight * 3),
+        )
+        Column(modifier = Modifier.padding(start = dimens.itemSpacing)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            Text(
+                text = hint,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (note != null) {
+                Text(
+                    text = note,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
 
 /**
  * A QR code for [content], black-on-white with a baked-in quiet zone so it
@@ -23,7 +75,7 @@ import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
  * Null on encode failure (content too long for a QR); callers hide the image.
  */
 @Composable
-fun QrCode(content: String, contentDescription: String?, modifier: Modifier = Modifier) {
+private fun QrCode(content: String, contentDescription: String?, modifier: Modifier = Modifier) {
     val bitmap = remember(content) { encode(content) } ?: return
     Image(
         painter = BitmapPainter(bitmap, filterQuality = FilterQuality.None),

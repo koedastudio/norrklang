@@ -30,7 +30,7 @@ import studio.koeda.norrklang.data.radio.SavedRadioSong
 import studio.koeda.norrklang.data.radio.SavedSongsExport
 import studio.koeda.norrklang.ui.R
 import studio.koeda.norrklang.ui.components.CenteredBox
-import studio.koeda.norrklang.ui.components.QrCode
+import studio.koeda.norrklang.ui.components.QrLinkSection
 import studio.koeda.norrklang.ui.theme.LocalFormDimens
 
 /**
@@ -82,7 +82,15 @@ private fun SongList(
         if (export != null) {
             item(key = "export") {
                 Spacer(Modifier.height(dimens.itemSpacing))
-                ExportQrSection(export, total = songs.size)
+                // Nothing is sent from the car: the list rides in the URL fragment
+                // that norrklang.app/songs reads; long lists are trimmed to fit.
+                QrLinkSection(
+                    url = export.url,
+                    title = stringResource(R.string.settings_saved_songs_export_title),
+                    hint = stringResource(R.string.settings_saved_songs_export_hint),
+                    note = stringResource(R.string.settings_saved_songs_export_partial, export.count)
+                        .takeIf { export.count < songs.size },
+                )
                 Spacer(Modifier.height(dimens.itemSpacing))
                 HorizontalDivider()
             }
@@ -140,43 +148,6 @@ private fun SongRow(song: SavedRadioSong, savedAt: String, onRemove: () -> Unit)
                 contentDescription = stringResource(R.string.settings_saved_songs_remove),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-        }
-    }
-}
-
-/**
- * The QR hand-off: the phone's camera opens norrklang.app/songs with the
- * list in the URL fragment (nothing is sent from the car; fragments never
- * reach the server). Long lists are trimmed to fit the code — say so.
- */
-@Composable
-private fun ExportQrSection(export: SavedSongsExport.Export, total: Int) {
-    val dimens = LocalFormDimens.current
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        QrCode(
-            content = export.url,
-            contentDescription = stringResource(R.string.settings_saved_songs_export_title),
-            modifier = Modifier.size(dimens.controlMinHeight * 3),
-        )
-        Column(modifier = Modifier.padding(start = dimens.itemSpacing)) {
-            Text(
-                text = stringResource(R.string.settings_saved_songs_export_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            Text(
-                text = stringResource(R.string.settings_saved_songs_export_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (export.count < total) {
-                Text(
-                    text = stringResource(R.string.settings_saved_songs_export_partial, export.count),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
     }
 }

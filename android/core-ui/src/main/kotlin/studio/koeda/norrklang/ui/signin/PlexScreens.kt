@@ -1,7 +1,5 @@
 package studio.koeda.norrklang.ui.signin
 
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -26,19 +23,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import studio.koeda.norrklang.plex.ConnectionProber
 import studio.koeda.norrklang.plex.model.PlexConnection
 import studio.koeda.norrklang.plex.model.PlexHomeUser
 import studio.koeda.norrklang.plex.model.PlexResource
 import studio.koeda.norrklang.ui.R
 import studio.koeda.norrklang.ui.components.LibraryChecklist
+import studio.koeda.norrklang.ui.components.QrLinkSection
 import studio.koeda.norrklang.ui.theme.LocalFormDimens
 
 /*
@@ -114,31 +109,17 @@ private fun LoadingBody(title: String) {
 private fun LinkBody(code: String, linkUrl: String) {
     val dimens = LocalFormDimens.current
     FormTitle(stringResource(R.string.plex_link_title))
-    FormSubtitle(stringResource(R.string.plex_link_instruction))
     Text(
         text = code.toCharArray().joinToString(" "),
         style = MaterialTheme.typography.displayLarge,
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.onBackground,
     )
-    // The QR rides on a white card: cameras need light-background contrast
-    // that the always-dark theme can't provide.
-    val qrSizeDp = 220.dp
-    val density = LocalDensity.current
-    val qr = remember(linkUrl, density) {
-        qrCodeBitmap(linkUrl, with(density) { qrSizeDp.roundToPx() })
-    }
-    Box(
-        modifier = Modifier
-            .background(Color.White, RoundedCornerShape(12.dp))
-            .padding(12.dp),
-    ) {
-        Image(
-            bitmap = qr,
-            contentDescription = stringResource(R.string.plex_link_qr),
-            modifier = Modifier.size(qrSizeDp),
-        )
-    }
+    QrLinkSection(
+        url = linkUrl,
+        title = stringResource(R.string.plex_link_qr),
+        hint = stringResource(R.string.plex_link_instruction),
+    )
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(dimens.itemSpacing / 2),
