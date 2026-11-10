@@ -34,6 +34,7 @@ class JellyfinSignInViewModel internal constructor(
     private val clientFactory: (String, String?, JellyfinClientInfo) -> JellyfinClient,
     private val cleartextPolicy: CleartextServerPolicy,
     private val pollIntervalMs: Long = SIGN_IN_POLL_INTERVAL_MS,
+    private val pollTimeoutMs: Long = SIGN_IN_POLL_TIMEOUT_MS,
 ) : ViewModel() {
 
     @Inject constructor(
@@ -197,7 +198,7 @@ class JellyfinSignInViewModel internal constructor(
         }
         step = Step.QuickConnect(request.code)
         state = SignInUiState.Idle
-        val secret = pollUntil(pollIntervalMs, isTransient = { it is JellyfinException }) {
+        val secret = pollUntil(pollIntervalMs, pollTimeoutMs, isTransient = { it is JellyfinException }) {
             try {
                 request.secret.takeIf { client.quickConnectState(it).authenticated }
             } catch (_: JellyfinException.NotFound) {

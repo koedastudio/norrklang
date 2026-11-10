@@ -312,6 +312,7 @@ private fun ErrorBody(kind: PlexSignInViewModel.ErrorKind, onRetry: () -> Unit) 
         text = stringResource(
             when (kind) {
                 PlexSignInViewModel.ErrorKind.LINK_FAILED -> R.string.plex_error_link_failed
+                PlexSignInViewModel.ErrorKind.LINK_EXPIRED -> R.string.signin_error_code_expired
                 PlexSignInViewModel.ErrorKind.SWITCH_FAILED -> R.string.plex_error_switch_failed
                 PlexSignInViewModel.ErrorKind.NO_SERVERS -> R.string.plex_error_no_servers
                 PlexSignInViewModel.ErrorKind.NO_MUSIC_LIBRARY ->

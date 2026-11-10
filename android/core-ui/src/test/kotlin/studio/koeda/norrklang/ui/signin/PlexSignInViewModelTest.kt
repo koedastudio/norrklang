@@ -168,7 +168,7 @@ class PlexSignInViewModelTest {
 
     private lateinit var settings: ServerSettingsRepository
 
-    private fun viewModel(): PlexSignInViewModel {
+    private fun viewModel(pollTimeoutMs: Long = SIGN_IN_POLL_TIMEOUT_MS): PlexSignInViewModel {
         settings = ServerSettingsRepository(
             PreferenceDataStoreFactory.create(scope = ioScope) {
                 File(tmp.root, "test.preferences_pb")
@@ -190,6 +190,7 @@ class PlexSignInViewModelTest {
             { info -> ConnectionProber(info, serverEngine()) },
             { uri, token, info -> PlexServerClient(uri, token, info, serverEngine()) },
             pollIntervalMs = 50,
+            pollTimeoutMs = pollTimeoutMs,
         )
     }
 
@@ -400,6 +401,24 @@ class PlexSignInViewModelTest {
         awaitState(vm) { vm.state is PlexSignInViewModel.UiState.Error }
 
         // Connectivity is back; retry mints a fresh pin and completes.
+        vm.retry()
+        awaitState(vm) {
+            (vm.state as? PlexSignInViewModel.UiState.PickConnection)?.probing == false
+        }
+        assertEquals(2, pinsCreated)
+    }
+
+    @Test
+    fun `an unclaimed pin times out as LINK_EXPIRED and retry mints a fresh one`() {
+        pollsUntilClaimed = Int.MAX_VALUE
+        val vm = viewModel(pollTimeoutMs = 300)
+
+        vm.start()
+        awaitState(vm) { vm.state is PlexSignInViewModel.UiState.Error }
+        val error = assertIs<PlexSignInViewModel.UiState.Error>(vm.state)
+        assertEquals(PlexSignInViewModel.ErrorKind.LINK_EXPIRED, error.kind)
+
+        pollsUntilClaimed = 0
         vm.retry()
         awaitState(vm) {
             (vm.state as? PlexSignInViewModel.UiState.PickConnection)?.probing == false

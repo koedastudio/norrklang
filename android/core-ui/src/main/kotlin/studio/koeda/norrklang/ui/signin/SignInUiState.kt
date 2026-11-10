@@ -11,8 +11,10 @@ sealed interface SignInUiState {
     data object Done : SignInUiState
 }
 
-/** Subsonic never emits [NO_MUSIC_LIBRARY]. */
-enum class SignInErrorKind { MISSING_FIELDS, CLEARTEXT, AUTH, NETWORK, NO_MUSIC_LIBRARY, GENERIC }
+/** Subsonic never emits [NO_MUSIC_LIBRARY]; [CODE_EXPIRED] is Jellyfin Quick Connect only. */
+enum class SignInErrorKind {
+    MISSING_FIELDS, CLEARTEXT, AUTH, NETWORK, NO_MUSIC_LIBRARY, CODE_EXPIRED, GENERIC,
+}
 
 /** A failed sign-in as the form shows it: the neutral or Jellyfin error, anything else generic. */
 internal fun Throwable.toSignInError(): SignInUiState.Error = when (this) {
@@ -20,5 +22,6 @@ internal fun Throwable.toSignInError(): SignInUiState.Error = when (this) {
         SignInUiState.Error(SignInErrorKind.AUTH, message)
     is MusicException.NetworkError, is JellyfinException.NetworkError ->
         SignInUiState.Error(SignInErrorKind.NETWORK, message)
+    is SignInPollTimeoutException -> SignInUiState.Error(SignInErrorKind.CODE_EXPIRED, null)
     else -> SignInUiState.Error(SignInErrorKind.GENERIC, message)
 }

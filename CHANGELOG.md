@@ -25,6 +25,8 @@ is the single source of truth).
 - Home is Quick play, Radio and Made for you. "Random mix" is now "Random
   songs" and the "Recently added" songs tile "New songs".
 - The autoplay setting is "Autoplay", covering every continuation.
+- Plex and Jellyfin code sign-in stops waiting after 30 minutes; Try again
+  shows a new code.
 - Privacy policy opens an in-app page with a QR code instead of the car's
   full-screen link dialog.
 - The Plex link page shows its QR code the same way as the Settings pages.

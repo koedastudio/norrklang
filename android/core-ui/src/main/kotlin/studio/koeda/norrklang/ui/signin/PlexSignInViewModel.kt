@@ -38,6 +38,7 @@ class PlexSignInViewModel internal constructor(
     private val proberFactory: (PlexClientInfo) -> ConnectionProber,
     private val serverClientFactory: (String, String, PlexClientInfo) -> PlexServerClient,
     private val pollIntervalMs: Long = SIGN_IN_POLL_INTERVAL_MS,
+    private val pollTimeoutMs: Long = SIGN_IN_POLL_TIMEOUT_MS,
 ) : ViewModel() {
 
     @Inject constructor(
@@ -84,7 +85,7 @@ class PlexSignInViewModel internal constructor(
     }
 
     enum class ErrorKind {
-        LINK_FAILED, SWITCH_FAILED, NO_SERVERS, NO_MUSIC_LIBRARY, VALIDATION_FAILED,
+        LINK_FAILED, LINK_EXPIRED, SWITCH_FAILED, NO_SERVERS, NO_MUSIC_LIBRARY, VALIDATION_FAILED,
     }
 
     var state by mutableStateOf<UiState>(UiState.Idle)
@@ -122,6 +123,8 @@ class PlexSignInViewModel internal constructor(
                     linkAccount()
                 }
                 if (!offerHomeUsers()) fetchServers()
+            } catch (_: SignInPollTimeoutException) {
+                state = UiState.Error(ErrorKind.LINK_EXPIRED)
             } catch (_: PlexException) {
                 state = UiState.Error(
                     if (linkedToken == null) ErrorKind.LINK_FAILED else ErrorKind.NO_SERVERS,
@@ -202,7 +205,7 @@ class PlexSignInViewModel internal constructor(
         val tv = tv()
         var pin = tv.createPin()
         state = UiState.WaitingForLink(pin.code, linkUrl(pin.code))
-        val token = pollUntil(pollIntervalMs, isTransient = { it is PlexException }) {
+        val token = pollUntil(pollIntervalMs, pollTimeoutMs, isTransient = { it is PlexException }) {
             try {
                 tv.checkPin(pin.id).authToken?.takeIf { it.isNotEmpty() }
             } catch (_: PlexException.NotFound) {

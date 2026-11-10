@@ -83,6 +83,7 @@ private fun errorText(error: SignInUiState.Error, missingFieldsText: String): St
     SignInErrorKind.NETWORK -> stringResource(R.string.signin_error_network)
     SignInErrorKind.NO_MUSIC_LIBRARY ->
         stringResource(R.string.signin_error_no_music_library)
+    SignInErrorKind.CODE_EXPIRED -> stringResource(R.string.signin_error_code_expired)
     SignInErrorKind.GENERIC ->
         stringResource(R.string.signin_error_generic, error.detail ?: "unknown error")
 }

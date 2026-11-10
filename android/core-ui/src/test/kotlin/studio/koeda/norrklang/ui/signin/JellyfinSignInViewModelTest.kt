@@ -144,7 +144,10 @@ class JellyfinSignInViewModelTest {
         val settings: ServerSettingsRepository,
     )
 
-    private fun env(allowCleartext: Boolean = true): TestEnv {
+    private fun env(
+        allowCleartext: Boolean = true,
+        pollTimeoutMs: Long = SIGN_IN_POLL_TIMEOUT_MS,
+    ): TestEnv {
         val settings = ServerSettingsRepository(
             PreferenceDataStoreFactory.create(scope = ioScope) {
                 File(tmp.root, "test.preferences_pb")
@@ -165,6 +168,7 @@ class JellyfinSignInViewModelTest {
             { baseUrl, token, info -> JellyfinClient(baseUrl, token, info, engine()) },
             CleartextServerPolicy(allowed = allowCleartext),
             pollIntervalMs = 50,
+            pollTimeoutMs = pollTimeoutMs,
         )
         return TestEnv(viewModel, sessionManager, settings)
     }
@@ -318,6 +322,27 @@ class JellyfinSignInViewModelTest {
         assertIs<Step.QuickConnect>(vm.step)
 
         dropRequests = false
+        approveAfterPolls = pollCount
+        vm.retry()
+        awaitState(vm) { it is UiState.Done }
+    }
+
+    @Test
+    fun `an unapproved code times out, stops polling and retry recovers`() {
+        quickConnectEnabled = true
+        approveAfterPolls = Int.MAX_VALUE
+        val vm = env(pollTimeoutMs = 300).viewModel
+
+        startWithServer(vm)
+        awaitSettled(vm)
+
+        assertEquals(ErrorKind.CODE_EXPIRED, assertIs<UiState.Error>(vm.state).kind)
+        assertIs<Step.QuickConnect>(vm.step)
+        Thread.sleep(150)
+        val polls = pollRequests()
+        Thread.sleep(250)
+        assertEquals(polls, pollRequests())
+
         approveAfterPolls = pollCount
         vm.retry()
         awaitState(vm) { it is UiState.Done }
