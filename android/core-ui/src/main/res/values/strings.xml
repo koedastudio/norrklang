@@ -130,6 +130,8 @@
   <string name="settings_privacy_policy">Privacy policy</string>
   <string name="settings_privacy_qr_title">Read the privacy policy on your phone</string>
   <string name="settings_privacy_qr_hint">Scan with your phone camera to open norrklang.app/privacy, which explains what the app stores and where it connects.</string>
+  <string name="settings_about_support">About and support</string>
+  <string name="settings_about_support_hint">Website, privacy policy and diagnostics</string>
   <string name="settings_about">About Norrklang</string>
   <string name="settings_about_hint">Website, source code and how to get in touch</string>
   <string name="settings_about_qr_title">Open norrklang.app on your phone</string>

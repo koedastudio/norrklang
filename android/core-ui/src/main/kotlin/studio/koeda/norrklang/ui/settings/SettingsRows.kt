@@ -36,6 +36,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import studio.koeda.norrklang.ui.R
@@ -189,36 +191,12 @@ internal fun SavedSongsRow(count: Int?, onClick: () -> Unit) {
     )
 }
 
-/** Navigation row into the website pointer (see AboutPage). */
+/** Navigation row into the info hub (see AboutSupportPage). */
 @Composable
-internal fun AboutRow(onClick: () -> Unit) {
+internal fun AboutSupportRow(onClick: () -> Unit) {
     NavigationRow(
-        title = stringResource(R.string.settings_about),
-        subtitle = stringResource(R.string.settings_about_hint),
-        onClick = onClick,
-    )
-}
-
-/** Navigation row into the on-device error log (see DiagnosticsPage). */
-@Composable
-internal fun DiagnosticsRow(onClick: () -> Unit) {
-    NavigationRow(
-        title = stringResource(R.string.settings_diagnostics),
-        subtitle = stringResource(R.string.settings_diagnostics_hint),
-        onClick = onClick,
-    )
-}
-
-/**
- * Play requires an in-app privacy-policy link. Navigates to [PrivacyPolicyPage]
- * rather than opening the URL: cars have no browser, and the host's own
- * "open on your phone" fallback is a full-screen QR.
- */
-@Composable
-internal fun PrivacyPolicyRow(onClick: () -> Unit) {
-    NavigationRow(
-        title = stringResource(R.string.settings_privacy_policy),
-        subtitle = PRIVACY_POLICY_URL,
+        title = stringResource(R.string.settings_about_support),
+        subtitle = stringResource(R.string.settings_about_support_hint),
         onClick = onClick,
     )
 }
@@ -233,7 +211,9 @@ internal fun OptionSection(title: String, options: @Composable () -> Unit) {
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(top = dimens.itemSpacing),
+            modifier = Modifier
+                .padding(top = dimens.itemSpacing)
+                .semantics { heading() },
         )
         options()
         Spacer(Modifier.height(dimens.itemSpacing / 2))

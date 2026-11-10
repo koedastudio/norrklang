@@ -21,12 +21,12 @@ import studio.koeda.norrklang.ui.settings.SettingsViewModel.PickerState
 import studio.koeda.norrklang.ui.theme.LocalFormDimens
 
 /**
- * Which page of the settings UI is showing. Sub-pages return to [Main],
- * except the three exclusion pickers, which return to [ScrobbleExceptions].
+ * Which page of the settings UI is showing. Sub-pages return to [Main], except
+ * the exclusion pickers ([ScrobbleExceptions]) and the info pages ([AboutSupport]).
  */
 private enum class SettingsPage {
     Main, Libraries, Quality, NowPlaying, ScrobbleExceptions, ScrobbleArtists, ScrobblePlaylists, ScrobbleLibraries,
-    SavedSongs, Diagnostics, About, PrivacyPolicy,
+    SavedSongs, AboutSupport, Diagnostics, About, PrivacyPolicy,
 }
 
 /**
@@ -49,6 +49,7 @@ fun SettingsScreen(
     val scrobble by viewModel.scrobbleSettings.collectAsStateWithLifecycle()
     val toMain = { page = SettingsPage.Main }
     val toExceptions = { page = SettingsPage.ScrobbleExceptions }
+    val toAboutSupport = { page = SettingsPage.AboutSupport }
 
     when (page) {
         SettingsPage.Main -> MainPage(
@@ -161,6 +162,14 @@ fun SettingsScreen(
             )
         }
 
+        SettingsPage.AboutSupport -> AboutSupportPage(
+            onAbout = { page = SettingsPage.About },
+            onPrivacyPolicy = { page = SettingsPage.PrivacyPolicy },
+            onDiagnostics = { page = SettingsPage.Diagnostics },
+            onBack = toMain,
+            modifier = modifier,
+        )
+
         SettingsPage.Diagnostics -> {
             LaunchedEffect(Unit) { viewModel.loadDiagnostics() }
             val diagnostics by viewModel.diagnostics.collectAsStateWithLifecycle()
@@ -169,13 +178,13 @@ fun SettingsScreen(
                 text = diagnostics,
                 reportUrl = reportUrl,
                 onClear = viewModel::clearDiagnostics,
-                onBack = toMain,
+                onBack = toAboutSupport,
                 modifier = modifier,
             )
         }
 
-        SettingsPage.About -> AboutPage(onBack = toMain, modifier = modifier)
-        SettingsPage.PrivacyPolicy -> PrivacyPolicyPage(onBack = toMain, modifier = modifier)
+        SettingsPage.About -> AboutPage(onBack = toAboutSupport, modifier = modifier)
+        SettingsPage.PrivacyPolicy -> PrivacyPolicyPage(onBack = toAboutSupport, modifier = modifier)
     }
 }
 
@@ -321,7 +330,8 @@ private fun MainPage(
                     onClick = { navigate(SettingsPage.NowPlaying) },
                 )
                 HorizontalDivider()
-                InfoRows(navigate)
+                AboutSupportRow(onClick = { navigate(SettingsPage.AboutSupport) })
+                HorizontalDivider()
                 Spacer(Modifier.height(dimens.itemSpacing * 2))
                 SettingsActionButton(
                     text = stringResource(R.string.settings_signout),
@@ -344,7 +354,8 @@ private fun MainPage(
                     )
                     HorizontalDivider()
                 }
-                InfoRows(navigate)
+                AboutSupportRow(onClick = { navigate(SettingsPage.AboutSupport) })
+                HorizontalDivider()
                 Spacer(Modifier.height(dimens.itemSpacing * 2))
                 onSignIn?.let {
                     SettingsActionButton(
@@ -360,18 +371,4 @@ private fun MainPage(
         Spacer(Modifier.height(dimens.itemSpacing))
         VersionFooter(modifier = Modifier.align(Alignment.CenterHorizontally))
     }
-}
-
-/**
- * About, privacy policy and diagnostics — reachable signed out too: a
- * failure that signed the user out is exactly what the log should explain.
- */
-@Composable
-private fun InfoRows(navigate: (SettingsPage) -> Unit) {
-    AboutRow(onClick = { navigate(SettingsPage.About) })
-    HorizontalDivider()
-    PrivacyPolicyRow(onClick = { navigate(SettingsPage.PrivacyPolicy) })
-    HorizontalDivider()
-    DiagnosticsRow(onClick = { navigate(SettingsPage.Diagnostics) })
-    HorizontalDivider()
 }

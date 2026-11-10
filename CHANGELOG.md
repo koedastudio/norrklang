@@ -32,6 +32,8 @@ is the single source of truth).
 - Privacy policy opens an in-app page with a QR code instead of the car's
   full-screen link dialog.
 - The Plex link page shows its QR code the same way as the Settings pages.
+- Settings is shorter: About, Privacy policy and Diagnostics move to a new
+  About and support page.
 
 ### Removed
 
