@@ -92,6 +92,22 @@ data class JellyfinAuthRequest(
     @SerialName("Pw") val pw: String,
 )
 
+/** Response of `/QuickConnect/Initiate` and `/QuickConnect/Connect`. */
+@Serializable
+data class JellyfinQuickConnectState(
+    @SerialName("Authenticated") val authenticated: Boolean = false,
+    /** Identifies the request on the poll and exchange calls; never shown. */
+    @SerialName("Secret") val secret: String = "",
+    /** The code the user enters in another Jellyfin client. */
+    @SerialName("Code") val code: String = "",
+)
+
+/** Body of `/Users/AuthenticateWithQuickConnect`. */
+@Serializable
+data class JellyfinQuickConnectSecret(
+    @SerialName("Secret") val secret: String,
+)
+
 /** Body of the three `/Sessions/Playing*` reporting endpoints. */
 @Serializable
 data class JellyfinPlaybackBody(

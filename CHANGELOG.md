@@ -9,6 +9,8 @@ is the single source of truth).
 
 ### Added
 
+- Jellyfin Quick Connect: approve a code in another Jellyfin app instead of
+  typing a password; the password form stays as fallback.
 - Random albums on Home: plays a random album start to end, then the next
   one (#24).
 - Genres and Decades under Library → Albums: each opens a Shuffle tile and

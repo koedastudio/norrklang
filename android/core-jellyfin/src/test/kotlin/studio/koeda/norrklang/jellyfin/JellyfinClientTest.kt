@@ -76,6 +76,78 @@ class JellyfinClientTest {
     }
 
     @Test
+    fun `quickConnectEnabled reads the flag without a token`() = runTest {
+        assertTrue(clientReturning("true", token = null).quickConnectEnabled())
+
+        assertTrue("/QuickConnect/Enabled" in lastRequestUrl)
+        assertTrue("Token" !in lastRequestHeaders["Authorization"].orEmpty())
+    }
+
+    @Test
+    fun `quickConnectEnabled treats a missing endpoint as off`() = runTest {
+        val client = clientReturning("", status = HttpStatusCode.NotFound, token = null)
+        assertEquals(false, client.quickConnectEnabled())
+    }
+
+    @Test
+    fun `initiateQuickConnect posts for a code without a token`() = runTest {
+        val state = clientReturning(
+            """{"Authenticated":false,"Secret":"s3cret","Code":"123456"}""",
+            token = null,
+        ).initiateQuickConnect()
+
+        assertEquals("s3cret", state.secret)
+        assertEquals("123456", state.code)
+        assertEquals(false, state.authenticated)
+        assertEquals(HttpMethod.Post, lastRequestMethod)
+        assertTrue("/QuickConnect/Initiate" in lastRequestUrl)
+        val auth = lastRequestHeaders["Authorization"].orEmpty()
+        assertTrue("""DeviceId="test-device-id"""" in auth)
+        assertTrue("Token" !in auth)
+    }
+
+    @Test
+    fun `initiateQuickConnect without a code maps to ServerError`() = runTest {
+        val client = clientReturning("""{"Authenticated":false}""", token = null)
+        assertFailsWith<JellyfinException.ServerError> { client.initiateQuickConnect() }
+    }
+
+    @Test
+    fun `quickConnectState polls by secret and maps an expired secret to NotFound`() = runTest {
+        val state = clientReturning(
+            """{"Authenticated":true,"Secret":"s3cret","Code":"123456"}""",
+            token = null,
+        ).quickConnectState("s3cret")
+
+        assertTrue(state.authenticated)
+        assertTrue("/QuickConnect/Connect?secret=s3cret" in lastRequestUrl)
+
+        val expired = clientReturning("", status = HttpStatusCode.NotFound, token = null)
+        assertFailsWith<JellyfinException.NotFound> { expired.quickConnectState("s3cret") }
+    }
+
+    @Test
+    fun `authenticateWithQuickConnect posts the secret and parses the token`() = runTest {
+        val result = clientReturning(
+            """{"User":{"Id":"u1","Name":"demo"},"AccessToken":"tok"}""",
+            token = null,
+        ).authenticateWithQuickConnect("s3cret")
+
+        assertEquals("tok", result.accessToken)
+        assertEquals("u1", result.user.id)
+        assertEquals(HttpMethod.Post, lastRequestMethod)
+        assertTrue("/Users/AuthenticateWithQuickConnect" in lastRequestUrl)
+        assertEquals("""{"Secret":"s3cret"}""", lastRequestBody)
+        assertTrue("Token" !in lastRequestHeaders["Authorization"].orEmpty())
+    }
+
+    @Test
+    fun `authenticateWithQuickConnect without a token in the response maps to ServerError`() = runTest {
+        val client = clientReturning("""{"User":{"Id":"u1"}}""", token = null)
+        assertFailsWith<JellyfinException.ServerError> { client.authenticateWithQuickConnect("s3cret") }
+    }
+
+    @Test
     fun `authenticated calls carry the token in the Authorization header`() = runTest {
         clientReturning("""{"Items":[]}""").items("u1")
 

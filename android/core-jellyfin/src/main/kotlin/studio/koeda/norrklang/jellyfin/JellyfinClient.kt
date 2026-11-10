@@ -19,6 +19,8 @@ import studio.koeda.norrklang.jellyfin.model.JellyfinItem
 import studio.koeda.norrklang.jellyfin.model.JellyfinItemsResult
 import studio.koeda.norrklang.jellyfin.model.JellyfinPlaybackBody
 import studio.koeda.norrklang.jellyfin.model.JellyfinPublicSystemInfo
+import studio.koeda.norrklang.jellyfin.model.JellyfinQuickConnectSecret
+import studio.koeda.norrklang.jellyfin.model.JellyfinQuickConnectState
 
 /**
  * Coroutine-based client for one Jellyfin server. Jellyfin has no external
@@ -26,10 +28,11 @@ import studio.koeda.norrklang.jellyfin.model.JellyfinPublicSystemInfo
  * everything after.
  *
  * [baseUrl] is the normalized server URL without a trailing slash. [token]
- * is null only for the pre-auth calls ([authenticate], [publicSystemInfo]);
- * every other call requires it. [engine] exists for tests (Ktor MockEngine);
- * production shares one OkHttp engine across instances. [close] releases the
- * client's own resources but never the shared engine.
+ * is null only for the pre-auth calls ([publicSystemInfo], [authenticate]
+ * and the Quick Connect trio); every other call requires it. [engine] exists
+ * for tests (Ktor MockEngine); production shares one OkHttp engine across
+ * instances. [close] releases the client's own resources but never the
+ * shared engine.
  */
 class JellyfinClient(
     private val baseUrl: String,
@@ -59,7 +62,68 @@ class JellyfinClient(
             }
         }
         checkStatus(response)
-        val result = parse<JellyfinAuthResult>(response)
+        return requireToken(parse(response))
+    }
+
+    /**
+     * Whether the server lets devices sign in with Quick Connect. Servers
+     * older than 10.7 have no such endpoint and answer 404: treated as off.
+     */
+    suspend fun quickConnectEnabled(): Boolean {
+        val response = JellyfinHttp.request(baseUrl) {
+            http.get("$baseUrl/QuickConnect/Enabled") { jellyfinHeaders(clientInfo) }
+        }
+        if (response.status.value == 404) return false
+        checkStatus(response)
+        return parse(response)
+    }
+
+    /**
+     * Starts a Quick Connect request for this device; the result's code is
+     * what the user approves elsewhere. The server answers 401 when Quick
+     * Connect is off, which surfaces as [JellyfinException.AuthFailed].
+     */
+    suspend fun initiateQuickConnect(): JellyfinQuickConnectState {
+        val response = JellyfinHttp.request(baseUrl) {
+            http.post("$baseUrl/QuickConnect/Initiate") { jellyfinHeaders(clientInfo) }
+        }
+        checkStatus(response)
+        val state = parse<JellyfinQuickConnectState>(response)
+        if (state.secret.isBlank() || state.code.isBlank()) {
+            throw JellyfinException.ServerError(
+                code = null,
+                message = "Quick Connect started but no code was returned",
+            )
+        }
+        return state
+    }
+
+    /** Current state of a request; an expired secret answers [JellyfinException.NotFound]. */
+    suspend fun quickConnectState(secret: String): JellyfinQuickConnectState {
+        val response = JellyfinHttp.request(baseUrl) {
+            http.get("$baseUrl/QuickConnect/Connect") {
+                jellyfinHeaders(clientInfo)
+                parameter("secret", secret)
+            }
+        }
+        checkStatus(response)
+        return parse(response)
+    }
+
+    /** Trades an approved request's secret for this device's own token. */
+    suspend fun authenticateWithQuickConnect(secret: String): JellyfinAuthResult {
+        val response = JellyfinHttp.request(baseUrl) {
+            http.post("$baseUrl/Users/AuthenticateWithQuickConnect") {
+                jellyfinHeaders(clientInfo)
+                contentType(ContentType.Application.Json)
+                setBody(JellyfinQuickConnectSecret(secret))
+            }
+        }
+        checkStatus(response)
+        return requireToken(parse(response))
+    }
+
+    private fun requireToken(result: JellyfinAuthResult): JellyfinAuthResult {
         if (result.accessToken.isNullOrBlank() || result.user.id.isBlank()) {
             throw JellyfinException.ServerError(
                 code = null,

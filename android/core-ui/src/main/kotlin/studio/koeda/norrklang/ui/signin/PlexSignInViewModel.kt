@@ -8,7 +8,6 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import studio.koeda.norrklang.data.model.MusicLibrary
 import studio.koeda.norrklang.data.session.SessionManager
@@ -38,7 +37,7 @@ class PlexSignInViewModel internal constructor(
     private val tvClientFactory: (PlexClientInfo) -> PlexTvClient,
     private val proberFactory: (PlexClientInfo) -> ConnectionProber,
     private val serverClientFactory: (String, String, PlexClientInfo) -> PlexServerClient,
-    private val pollIntervalMs: Long = PIN_POLL_INTERVAL_MS,
+    private val pollIntervalMs: Long = SIGN_IN_POLL_INTERVAL_MS,
 ) : ViewModel() {
 
     @Inject constructor(
@@ -203,38 +202,25 @@ class PlexSignInViewModel internal constructor(
         val tv = tv()
         var pin = tv.createPin()
         state = UiState.WaitingForLink(pin.code, linkUrl(pin.code))
-        var pollFailures = 0
-        while (true) {
-            delay(pollIntervalMs)
-            val checked = try {
-                tv.checkPin(pin.id)
+        val token = pollUntil(pollIntervalMs, isTransient = { it is PlexException }) {
+            try {
+                tv.checkPin(pin.id).authToken?.takeIf { it.isNotEmpty() }
             } catch (_: PlexException.NotFound) {
                 // Expired pin — mint a fresh one and keep waiting.
                 pin = tv.createPin()
                 state = UiState.WaitingForLink(pin.code, linkUrl(pin.code))
-                continue
-            } catch (e: PlexException) {
-                // A dropped poll (flaky in-car connectivity) must not abort
-                // a link the user is mid-way through on their phone; only a
-                // sustained outage surfaces as LINK_FAILED.
-                if (++pollFailures >= MAX_POLL_FAILURES) throw e
-                continue
-            }
-            pollFailures = 0
-            val token = checked.authToken
-            if (!token.isNullOrEmpty()) {
-                linkedToken = token
-                accountToken = token
-                linkedUsername = try {
-                    tv.user(token).username
-                } catch (_: PlexException) {
-                    // Display-only; a failed lookup must not fail the link.
-                    ""
-                }
-                username = linkedUsername
-                return
+                null
             }
         }
+        linkedToken = token
+        accountToken = token
+        linkedUsername = try {
+            tv.user(token).username
+        } catch (_: PlexException) {
+            // Display-only; a failed lookup must not fail the link.
+            ""
+        }
+        username = linkedUsername
     }
 
     private suspend fun fetchServers() {
@@ -367,11 +353,4 @@ class PlexSignInViewModel internal constructor(
         cachedProber ?: proberFactory(info()).also { cachedProber = it }
 
     private fun linkUrl(code: String) = "https://plex.tv/link/?pin=$code"
-
-    private companion object {
-        const val PIN_POLL_INTERVAL_MS = 2_000L
-
-        /** Consecutive failed polls tolerated before the link flow gives up. */
-        const val MAX_POLL_FAILURES = 5
-    }
 }

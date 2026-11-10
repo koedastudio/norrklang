@@ -8,10 +8,11 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import java.io.File
 import java.io.IOException
+import java.util.Collections
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -32,6 +33,7 @@ import studio.koeda.norrklang.data.settings.CredentialCipher
 import studio.koeda.norrklang.data.settings.ServerSettingsRepository
 import studio.koeda.norrklang.jellyfin.JellyfinClient
 import studio.koeda.norrklang.subsonic.SubsonicClient
+import studio.koeda.norrklang.ui.signin.JellyfinSignInViewModel.Step
 import studio.koeda.norrklang.ui.signin.SignInErrorKind as ErrorKind
 import studio.koeda.norrklang.ui.signin.SignInUiState as UiState
 
@@ -42,8 +44,8 @@ private class PassthroughJellyfinCipher : CredentialCipher {
 }
 
 /**
- * Drives the form against a MockEngine in real time, like the Plex sibling —
- * [awaitState] sleep-polls with a generous deadline.
+ * Drives the pages against a MockEngine in real time, like the Plex sibling —
+ * [awaitState] and [awaitStep] sleep-poll with a generous deadline.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class JellyfinSignInViewModelTest {
@@ -70,8 +72,22 @@ class JellyfinSignInViewModelTest {
     private var withMusicView = true
     private var withSecondMusicView = false
     private var dropRequests = false
+    private var quickConnectEnabled = false
 
-    private val requests = mutableListOf<String>()
+    /** `/QuickConnect/Connect` answers unapproved this many times before approving. */
+    @Volatile
+    private var approveAfterPolls = 2
+
+    /** The first secret answers 404 on its first poll, like an expired request. */
+    private var expireFirstSecret = false
+
+    @Volatile
+    private var initiateCount = 0
+
+    @Volatile
+    private var pollCount = 0
+
+    private val requests: MutableList<String> = Collections.synchronizedList(mutableListOf())
 
     private fun engine() = MockEngine { request ->
         val url = request.url.toString()
@@ -84,6 +100,25 @@ class JellyfinSignInViewModelTest {
             "/Users/AuthenticateByName" in url ->
                 if (rejectAuth) respond("", HttpStatusCode.Unauthorized)
                 else ok("""{"User":{"Id":"u1","Name":"demo"},"AccessToken":"tok"}""")
+
+            "/QuickConnect/Enabled" in url -> ok(quickConnectEnabled.toString())
+
+            "/QuickConnect/Initiate" in url -> {
+                val n = ++initiateCount
+                ok("""{"Authenticated":false,"Secret":"s$n","Code":"${if (n == 1) "123456" else "654321"}"}""")
+            }
+
+            "/QuickConnect/Connect" in url -> {
+                val n = ++pollCount
+                if (expireFirstSecret && "secret=s1" in url) {
+                    respond("", HttpStatusCode.NotFound)
+                } else {
+                    ok("""{"Authenticated":${n > approveAfterPolls},"Secret":"s1","Code":"123456"}""")
+                }
+            }
+
+            "/Users/AuthenticateWithQuickConnect" in url ->
+                ok("""{"User":{"Id":"u1","Name":"demo"},"AccessToken":"qc-tok"}""")
 
             "/Users/u1/Views" in url ->
                 if (withSecondMusicView) {
@@ -129,36 +164,42 @@ class JellyfinSignInViewModelTest {
             settings,
             { baseUrl, token, info -> JellyfinClient(baseUrl, token, info, engine()) },
             CleartextServerPolicy(allowed = allowCleartext),
+            pollIntervalMs = 50,
         )
         return TestEnv(viewModel, sessionManager, settings)
     }
 
-    private fun awaitPick(vm: JellyfinSignInViewModel) {
+    private fun awaitState(vm: JellyfinSignInViewModel, predicate: (UiState) -> Boolean) {
         val deadline = System.currentTimeMillis() + 10_000
-        while (vm.libraryPick == null && System.currentTimeMillis() < deadline) Thread.sleep(20)
-        assertTrue(vm.libraryPick != null, "Timed out waiting for the picker; state is ${vm.state}")
+        while (!predicate(vm.state) && System.currentTimeMillis() < deadline) Thread.sleep(20)
+        assertTrue(predicate(vm.state), "Timed out waiting; step is ${vm.step}, state is ${vm.state}")
     }
 
-    private fun awaitSettled(vm: JellyfinSignInViewModel) {
+    /** Waits until the busy state resolves to an error or Done. */
+    private fun awaitSettled(vm: JellyfinSignInViewModel) =
+        awaitState(vm) { it is UiState.Error || it is UiState.Done }
+
+    private inline fun <reified T : Step> awaitStep(vm: JellyfinSignInViewModel): T {
         val deadline = System.currentTimeMillis() + 10_000
-        while (
-            (vm.state is UiState.Connecting || vm.state is UiState.Idle) &&
-            System.currentTimeMillis() < deadline
-        ) {
-            Thread.sleep(20)
-        }
-        assertTrue(vm.state !is UiState.Connecting, "Timed out waiting; state is ${vm.state}")
+        while (vm.step !is T && System.currentTimeMillis() < deadline) Thread.sleep(20)
+        return assertIs<T>(vm.step, "Timed out waiting for ${T::class.simpleName}; state is ${vm.state}")
     }
+
+    private fun startWithServer(vm: JellyfinSignInViewModel) {
+        vm.onServerUrlChange("jf.example.com")
+        vm.continueWithServer()
+    }
+
+    private fun pollRequests() = requests.count { "/QuickConnect/Connect" in it }
 
     @Test
-    fun `missing server or username is rejected before any network call`() {
+    fun `a blank server address is rejected before any network call`() {
         val vm = env().viewModel
 
-        vm.onUsernameChange("demo")
-        vm.connect()
+        vm.continueWithServer()
 
-        val error = assertIs<UiState.Error>(vm.state)
-        assertEquals(ErrorKind.MISSING_FIELDS, error.kind)
+        assertEquals(ErrorKind.MISSING_FIELDS, assertIs<UiState.Error>(vm.state).kind)
+        assertEquals(Step.Server, vm.step)
         assertEquals(emptyList(), requests)
     }
 
@@ -167,23 +208,57 @@ class JellyfinSignInViewModelTest {
         val vm = env(allowCleartext = false).viewModel
 
         vm.onServerUrlChange("http://jellyfin.local")
-        vm.onUsernameChange("demo")
-        vm.connect()
+        vm.continueWithServer()
 
-        val error = assertIs<UiState.Error>(vm.state)
-        assertEquals(ErrorKind.CLEARTEXT, error.kind)
+        assertEquals(ErrorKind.CLEARTEXT, assertIs<UiState.Error>(vm.state).kind)
         assertEquals(emptyList(), requests)
     }
 
     @Test
-    fun `happy path signs in, connects the session and clears the password`() {
+    fun `an unreachable server errors on the server page`() {
+        dropRequests = true
+        val vm = env().viewModel
+
+        startWithServer(vm)
+        awaitSettled(vm)
+
+        assertEquals(ErrorKind.NETWORK, assertIs<UiState.Error>(vm.state).kind)
+        assertEquals(Step.Server, vm.step)
+    }
+
+    @Test
+    fun `quick connect shows the code, then signs in once approved`() {
+        quickConnectEnabled = true
         val env = env()
         val vm = env.viewModel
 
-        vm.onServerUrlChange("jf.example.com")
+        startWithServer(vm)
+        val qc = awaitStep<Step.QuickConnect>(vm)
+        assertEquals("123456", qc.code)
+        awaitState(vm) { it is UiState.Done }
+
+        val state = assertIs<SessionManager.SessionState.Connected>(env.sessionManager.state.value)
+        assertEquals("Vault", state.session.serverLabel)
+        assertEquals("demo", state.session.accountLabel)
+        assertTrue(requests.any { "/Users/AuthenticateWithQuickConnect" in it })
+        assertFalse(requests.any { "/Users/AuthenticateByName" in it })
+    }
+
+    @Test
+    fun `a server without quick connect goes straight to the password form`() {
+        val env = env()
+        val vm = env.viewModel
+
+        startWithServer(vm)
+        awaitStep<Step.Credentials>(vm)
+
+        assertIs<UiState.Idle>(vm.state)
+        assertEquals("Vault", vm.serverName)
+        assertFalse(requests.any { "/QuickConnect/Initiate" in it })
+
         vm.onUsernameChange("demo")
         vm.onPasswordChange("hunter2")
-        vm.connect()
+        vm.connectWithCredentials()
         awaitSettled(vm)
 
         assertIs<UiState.Done>(vm.state)
@@ -194,12 +269,106 @@ class JellyfinSignInViewModelTest {
     }
 
     @Test
-    fun `blank password is allowed - jellyfin supports password-less users`() {
+    fun `use password stops polling and shows the password form`() {
+        quickConnectEnabled = true
+        approveAfterPolls = Int.MAX_VALUE
         val vm = env().viewModel
 
-        vm.onServerUrlChange("jf.example.com")
+        startWithServer(vm)
+        awaitStep<Step.QuickConnect>(vm)
+        vm.usePassword()
+
+        assertEquals(Step.Credentials, vm.step)
+        assertIs<UiState.Idle>(vm.state)
+        Thread.sleep(150)
+        val polls = pollRequests()
+        Thread.sleep(250)
+        assertEquals(polls, pollRequests())
+    }
+
+    @Test
+    fun `an expired request is replaced by a fresh code`() {
+        quickConnectEnabled = true
+        expireFirstSecret = true
+        val vm = env().viewModel
+
+        startWithServer(vm)
+        val deadline = System.currentTimeMillis() + 10_000
+        while ((vm.step as? Step.QuickConnect)?.code != "654321" && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20)
+        }
+        assertEquals(Step.QuickConnect("654321"), vm.step)
+        awaitState(vm) { it is UiState.Done }
+
+        assertEquals(2, initiateCount)
+    }
+
+    @Test
+    fun `a sustained poll outage surfaces as a network error and retry recovers`() {
+        quickConnectEnabled = true
+        approveAfterPolls = Int.MAX_VALUE
+        val vm = env().viewModel
+
+        startWithServer(vm)
+        awaitStep<Step.QuickConnect>(vm)
+        dropRequests = true
+        awaitSettled(vm)
+
+        assertEquals(ErrorKind.NETWORK, assertIs<UiState.Error>(vm.state).kind)
+        assertIs<Step.QuickConnect>(vm.step)
+
+        dropRequests = false
+        approveAfterPolls = pollCount
+        vm.retry()
+        awaitState(vm) { it is UiState.Done }
+    }
+
+    @Test
+    fun `cancel stops polling and returns to the server page`() {
+        quickConnectEnabled = true
+        approveAfterPolls = Int.MAX_VALUE
+        val vm = env().viewModel
+
+        startWithServer(vm)
+        awaitStep<Step.QuickConnect>(vm)
+        vm.cancel()
+
+        assertEquals(Step.Server, vm.step)
+        assertIs<UiState.Idle>(vm.state)
+        assertEquals("jf.example.com", vm.serverUrl)
+        Thread.sleep(150)
+        val polls = pollRequests()
+        Thread.sleep(250)
+        assertEquals(polls, pollRequests())
+    }
+
+    @Test
+    fun `rejected credentials surface as an auth error`() {
+        rejectAuth = true
+        val vm = env().viewModel
+
+        startWithServer(vm)
+        awaitStep<Step.Credentials>(vm)
         vm.onUsernameChange("demo")
-        vm.connect()
+        vm.onPasswordChange("wrong")
+        vm.connectWithCredentials()
+        awaitSettled(vm)
+
+        assertEquals(ErrorKind.AUTH, assertIs<UiState.Error>(vm.state).kind)
+        assertEquals(Step.Credentials, vm.step)
+    }
+
+    @Test
+    fun `a blank username is rejected but a blank password is allowed`() {
+        val vm = env().viewModel
+
+        startWithServer(vm)
+        awaitStep<Step.Credentials>(vm)
+        vm.connectWithCredentials()
+        assertEquals(ErrorKind.MISSING_FIELDS, assertIs<UiState.Error>(vm.state).kind)
+
+        vm.onUsernameChange("demo")
+        vm.connectWithCredentials()
         awaitSettled(vm)
 
         assertIs<UiState.Done>(vm.state)
@@ -208,85 +377,57 @@ class JellyfinSignInViewModelTest {
 
     @Test
     fun `several music libraries show the picker and the choice is persisted`() {
+        quickConnectEnabled = true
         withSecondMusicView = true
         val env = env()
         val vm = env.viewModel
 
-        vm.onServerUrlChange("jf.example.com")
-        vm.onUsernameChange("demo")
-        vm.connect()
-        awaitPick(vm)
+        startWithServer(vm)
+        val pick = awaitStep<Step.Libraries>(vm)
 
         assertIs<UiState.Idle>(vm.state)
-        assertEquals(setOf("lib1", "lib2"), vm.libraryPick?.selected)
+        assertEquals(setOf("lib1", "lib2"), pick.selected)
         vm.toggleLibrary("lib1", false)
         // The last selected library cannot be deselected.
         vm.toggleLibrary("lib2", false)
-        assertEquals(setOf("lib2"), vm.libraryPick?.selected)
+        assertEquals(setOf("lib2"), assertIs<Step.Libraries>(vm.step).selected)
 
         vm.confirmLibraries()
         awaitSettled(vm)
 
         assertIs<UiState.Done>(vm.state)
-        assertNull(vm.libraryPick)
         assertEquals(setOf("lib1"), runBlocking { env.settings.excludedLibraryIds.first() })
         assertIs<SessionManager.SessionState.Connected>(env.sessionManager.state.value)
     }
 
     @Test
-    fun `cancelling the picker returns to the form`() {
+    fun `cancelling the picker returns to the server page`() {
         withSecondMusicView = true
         val vm = env().viewModel
 
-        vm.onServerUrlChange("jf.example.com")
+        startWithServer(vm)
+        awaitStep<Step.Credentials>(vm)
         vm.onUsernameChange("demo")
-        vm.connect()
-        awaitPick(vm)
+        vm.connectWithCredentials()
+        awaitStep<Step.Libraries>(vm)
 
         vm.cancelLibraryPick()
 
-        assertNull(vm.libraryPick)
+        assertEquals(Step.Server, vm.step)
         assertIs<UiState.Idle>(vm.state)
         assertEquals("jf.example.com", vm.serverUrl)
     }
 
     @Test
-    fun `rejected credentials surface as an auth error`() {
-        rejectAuth = true
-        val vm = env().viewModel
-
-        vm.onServerUrlChange("jf.example.com")
-        vm.onUsernameChange("demo")
-        vm.onPasswordChange("wrong")
-        vm.connect()
-        awaitSettled(vm)
-
-        assertEquals(ErrorKind.AUTH, assertIs<UiState.Error>(vm.state).kind)
-    }
-
-    @Test
-    fun `a server without a music library surfaces the dedicated error`() {
+    fun `a server without a music library surfaces the dedicated error on the quick connect page`() {
+        quickConnectEnabled = true
         withMusicView = false
         val vm = env().viewModel
 
-        vm.onServerUrlChange("jf.example.com")
-        vm.onUsernameChange("demo")
-        vm.connect()
+        startWithServer(vm)
         awaitSettled(vm)
 
         assertEquals(ErrorKind.NO_MUSIC_LIBRARY, assertIs<UiState.Error>(vm.state).kind)
-    }
-
-    @Test
-    fun `an unreachable server surfaces as a network error`() {
-        dropRequests = true
-        val vm = env().viewModel
-
-        vm.onServerUrlChange("jf.example.com")
-        vm.onUsernameChange("demo")
-        vm.connect()
-        awaitSettled(vm)
-
-        assertEquals(ErrorKind.NETWORK, assertIs<UiState.Error>(vm.state).kind)
+        assertIs<Step.QuickConnect>(vm.step)
     }
 }

@@ -10,8 +10,14 @@
   <string name="signin_provider_plex">Plex</string>
   <string name="signin_provider_plex_desc">Link this device with a code from your Plex account</string>
   <string name="signin_provider_jellyfin">Jellyfin</string>
-  <string name="signin_provider_jellyfin_desc">Connect to your own server with a URL, username and password</string>
+  <string name="signin_provider_jellyfin_desc">Connect to your own server with Quick Connect or a password</string>
   <string name="signin_subtitle_jellyfin">Connect to your Jellyfin server</string>
+
+  <string name="jellyfin_quick_connect_title">Quick Connect</string>
+  <string name="jellyfin_quick_connect_instruction">Open Jellyfin on your phone or computer, open your profile menu, choose Quick Connect and enter this code</string>
+  <string name="jellyfin_quick_connect_waiting">Waiting for approval…</string>
+  <string name="jellyfin_use_password">Use password instead</string>
+  <string name="jellyfin_credentials_subtitle">Sign in to %1$s</string>
 
   <string name="plex_link_title">Link your Plex account</string>
   <string name="plex_link_instruction">On your phone or computer, go to plex.tv/link and enter this code — or scan the QR code</string>
@@ -45,7 +51,8 @@
   <string name="signin_pick_libraries_title">Choose libraries</string>
   <string name="signin_pick_libraries_subtitle">Pick the music libraries to show — you can change this later in Settings</string>
   <string name="signin_continue">Continue</string>
-  <string name="plex_retry">Try again</string>
+  <string name="signin_retry">Try again</string>
+  <string name="signin_connecting">Signing in…</string>
   <string name="signin_server_label">Server address</string>
   <string name="signin_server_placeholder">https://music.example.com</string>
   <string name="signin_username_label">Username</string>
@@ -55,6 +62,8 @@
   <string name="signin_error_network">Can\'t reach the server. Check the address and your connection.</string>
   <string name="signin_error_generic">Something went wrong: %1$s</string>
   <string name="signin_error_missing_fields">Fill in server, username and password</string>
+  <string name="signin_error_missing_server">Enter your server address</string>
+  <string name="signin_error_missing_username">Enter your username</string>
   <string name="signin_error_cleartext">Plain http:// isn\'t allowed for your server. Use an https:// address.</string>
   <string name="signin_error_no_music_library">This server has no music library</string>
 

@@ -9,9 +9,9 @@ import kotlinx.coroutines.launch
 import studio.koeda.norrklang.data.runSuspendCatching
 
 /**
- * The server/username/password form behind the Subsonic and Jellyfin
- * sign-ins: the fields, the pre-flight checks and the busy/error state.
- * The provider supplies [signIn].
+ * The server/username/password form behind the Subsonic sign-in: the
+ * fields, the pre-flight checks and the busy/error state. The provider
+ * supplies [signIn].
  */
 abstract class CredentialsSignInViewModel(
     private val cleartextPolicy: CleartextServerPolicy,

@@ -78,7 +78,8 @@ phone/desktop clients in this monorepo.
 - Sign in to a Navidrome/Subsonic server (token auth; the password is only
   stored, encrypted, for servers that cannot verify a token) or link a Plex
   account with a code or QR scan — no password typed in the car; or sign in
-  to Jellyfin with server address, username and password
+  to Jellyfin with Quick Connect (approve a code in another Jellyfin app) or
+  with username and password
 - Streaming quality: Original / 320 / 192 / 128 kbps, independently for Wi-Fi
   and cellular. New track loads use the current tier; retries and seeks retain
   the same encoding so byte offsets stay valid

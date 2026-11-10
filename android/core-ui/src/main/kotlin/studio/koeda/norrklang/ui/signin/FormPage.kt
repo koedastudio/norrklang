@@ -16,6 +16,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -112,5 +113,23 @@ internal fun FormButton(
                 fontWeight = FontWeight.Bold,
             )
         }
+    }
+}
+
+/** The form's full-width secondary action, same footprint as [FormButton]. */
+@Composable
+internal fun FormSecondaryButton(text: String, onClick: () -> Unit) {
+    val dimens = LocalFormDimens.current
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = dimens.controlMinHeight),
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+        )
     }
 }

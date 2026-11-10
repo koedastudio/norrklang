@@ -322,7 +322,7 @@ private fun ErrorBody(kind: PlexSignInViewModel.ErrorKind, onRetry: () -> Unit) 
         color = MaterialTheme.colorScheme.error,
         style = MaterialTheme.typography.bodyLarge,
     )
-    FormButton(text = stringResource(R.string.plex_retry), onClick = onRetry)
+    FormButton(text = stringResource(R.string.signin_retry), onClick = onRetry)
 }
 
 @Composable

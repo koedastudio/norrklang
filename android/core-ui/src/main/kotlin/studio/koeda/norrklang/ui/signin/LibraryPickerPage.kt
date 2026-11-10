@@ -21,6 +21,7 @@ internal fun LibraryPickerPage(
     continuing: Boolean,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    error: SignInUiState.Error? = null,
 ) {
     FormPage(modifier = modifier, onBack = onBack) {
         FormTitle(stringResource(R.string.signin_pick_libraries_title))
@@ -30,6 +31,9 @@ internal fun LibraryPickerPage(
             selectedIds = selectedIds,
             onToggle = onToggle,
         )
+        if (error != null) {
+            SignInErrorText(error, stringResource(R.string.signin_error_missing_fields))
+        }
         FormButton(
             text = stringResource(R.string.signin_continue),
             onClick = onContinue,

@@ -35,7 +35,7 @@ private enum class SignInPage { ProviderPicker, SubsonicForm, Plex, JellyfinForm
 
 /**
  * The full sign-in flow: provider picker → Navidrome/Subsonic form, the
- * Plex link flow, or the Jellyfin form. Shared by both apps; [onBack] (when
+ * Plex link flow, or the Jellyfin pages. Shared by both apps; [onBack] (when
  * non-null) renders the explicit back affordance the picker page needs on
  * AAOS, and sub-pages always offer back-to-picker.
  */
@@ -104,34 +104,35 @@ fun SignInFlow(
             },
         )
 
-        SignInPage.JellyfinForm -> {
-            val pick = jellyfinViewModel.libraryPick
-            if (pick != null) {
-                LibraryPickerPage(
-                    libraries = pick.libraries,
-                    selectedIds = pick.selected,
-                    onToggle = jellyfinViewModel::toggleLibrary,
-                    onContinue = jellyfinViewModel::confirmLibraries,
-                    continuing = jellyfinViewModel.state is SignInUiState.Connecting,
-                    onBack = jellyfinViewModel::cancelLibraryPick,
-                    modifier = modifier,
-                )
-            } else {
-                SignInScreen(
-                    serverUrl = jellyfinViewModel.serverUrl,
-                    username = jellyfinViewModel.username,
-                    password = jellyfinViewModel.password,
-                    state = jellyfinViewModel.state,
-                    onServerUrlChange = jellyfinViewModel::onServerUrlChange,
-                    onUsernameChange = jellyfinViewModel::onUsernameChange,
-                    onPasswordChange = jellyfinViewModel::onPasswordChange,
-                    onConnect = jellyfinViewModel::connect,
-                    modifier = modifier,
-                    onBack = { page = SignInPage.ProviderPicker },
-                    subtitle = stringResource(R.string.signin_subtitle_jellyfin),
-                )
-            }
-        }
+        SignInPage.JellyfinForm -> JellyfinSignInPage(
+            step = jellyfinViewModel.step,
+            state = jellyfinViewModel.state,
+            serverUrl = jellyfinViewModel.serverUrl,
+            username = jellyfinViewModel.username,
+            password = jellyfinViewModel.password,
+            serverName = jellyfinViewModel.serverName,
+            onServerUrlChange = jellyfinViewModel::onServerUrlChange,
+            onUsernameChange = jellyfinViewModel::onUsernameChange,
+            onPasswordChange = jellyfinViewModel::onPasswordChange,
+            onContinue = jellyfinViewModel::continueWithServer,
+            onUsePassword = jellyfinViewModel::usePassword,
+            onRetry = jellyfinViewModel::retry,
+            onConnect = jellyfinViewModel::connectWithCredentials,
+            onToggleLibrary = jellyfinViewModel::toggleLibrary,
+            onConfirmLibraries = jellyfinViewModel::confirmLibraries,
+            modifier = modifier,
+            onBack = {
+                when (jellyfinViewModel.step) {
+                    JellyfinSignInViewModel.Step.Server -> {
+                        jellyfinViewModel.cancel()
+                        page = SignInPage.ProviderPicker
+                    }
+                    is JellyfinSignInViewModel.Step.Libraries -> jellyfinViewModel.cancelLibraryPick()
+                    // Quick Connect or the password form: back to the server page.
+                    else -> jellyfinViewModel.cancel()
+                }
+            },
+        )
     }
 }
 
