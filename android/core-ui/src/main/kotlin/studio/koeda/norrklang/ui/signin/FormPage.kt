@@ -118,18 +118,23 @@ internal fun FormButton(
 
 /** The form's full-width secondary action, same footprint as [FormButton]. */
 @Composable
-internal fun FormSecondaryButton(text: String, onClick: () -> Unit) {
+internal fun FormSecondaryButton(text: String, onClick: () -> Unit, busy: Boolean = false) {
     val dimens = LocalFormDimens.current
     OutlinedButton(
         onClick = onClick,
+        enabled = !busy,
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = dimens.controlMinHeight),
     ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-        )
+        if (busy) {
+            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+        } else {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+        }
     }
 }

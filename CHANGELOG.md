@@ -9,6 +9,8 @@ is the single source of truth).
 
 ### Added
 
+- Try the demo on the sign-in page: one tap signs in to the public demo
+  server.
 - Jellyfin Quick Connect: approve a code in another Jellyfin app instead of
   typing a password; the password form stays as fallback.
 - Random albums on Home: plays a random album start to end, then the next

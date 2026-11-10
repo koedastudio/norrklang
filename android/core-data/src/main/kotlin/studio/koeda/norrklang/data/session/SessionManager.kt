@@ -110,6 +110,10 @@ class SessionManager(
         return result.translating { (it as? SubsonicException)?.toMusicException() }
     }
 
+    /** Signs in with ready-made [credentials], for accounts whose password this app never holds. */
+    suspend fun signIn(credentials: SubsonicCredentials): Result<Unit> =
+        connectSubsonic(credentials).translating { (it as? SubsonicException)?.toMusicException() }
+
     /** Pings, persists and activates [credentials]; the failure, if any, is the raw [SubsonicException]. */
     private suspend fun connectSubsonic(credentials: SubsonicCredentials): Result<Unit> =
         connect(subsonicSession(credentials)) { session ->

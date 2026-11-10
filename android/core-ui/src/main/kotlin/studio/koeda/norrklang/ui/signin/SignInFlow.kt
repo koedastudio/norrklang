@@ -51,6 +51,7 @@ fun SignInFlow(
     var page by rememberSaveable { mutableStateOf(SignInPage.ProviderPicker) }
 
     val signedIn = subsonicViewModel.state is SignInUiState.Done ||
+        subsonicViewModel.demoState is SignInUiState.Done ||
         jellyfinViewModel.state is SignInUiState.Done ||
         plexViewModel.state is PlexSignInViewModel.UiState.Done
     LaunchedEffect(signedIn) {
@@ -70,6 +71,8 @@ fun SignInFlow(
             onPickSubsonic = { page = SignInPage.SubsonicForm },
             onPickPlex = { page = SignInPage.Plex },
             onPickJellyfin = { page = SignInPage.JellyfinForm },
+            demoState = subsonicViewModel.demoState,
+            onTryDemo = subsonicViewModel::tryDemo,
             modifier = modifier,
             onBack = onBack,
         )
@@ -141,6 +144,8 @@ private fun ProviderPickerPage(
     onPickSubsonic: () -> Unit,
     onPickPlex: () -> Unit,
     onPickJellyfin: () -> Unit,
+    demoState: SignInUiState,
+    onTryDemo: () -> Unit,
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
 ) {
@@ -164,6 +169,14 @@ private fun ProviderPickerPage(
             title = stringResource(R.string.signin_provider_jellyfin),
             description = stringResource(R.string.signin_provider_jellyfin_desc),
             onClick = onPickJellyfin,
+        )
+        if (demoState is SignInUiState.Error) {
+            SignInErrorText(demoState, stringResource(R.string.signin_error_missing_fields))
+        }
+        FormSecondaryButton(
+            text = stringResource(R.string.signin_try_demo),
+            onClick = onTryDemo,
+            busy = demoState is SignInUiState.Connecting,
         )
     }
 }

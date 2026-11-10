@@ -11,6 +11,7 @@
   <string name="signin_provider_plex_desc">Link this device with a code from your Plex account</string>
   <string name="signin_provider_jellyfin">Jellyfin</string>
   <string name="signin_provider_jellyfin_desc">Connect to your own server with Quick Connect or a password</string>
+  <string name="signin_try_demo">Try the demo</string>
   <string name="signin_subtitle_jellyfin">Connect to your Jellyfin server</string>
 
   <string name="jellyfin_quick_connect_title">Quick Connect</string>
