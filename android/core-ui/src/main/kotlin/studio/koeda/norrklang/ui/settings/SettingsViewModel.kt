@@ -7,6 +7,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -16,6 +17,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import studio.koeda.norrklang.data.diagnostics.ConnectionTest
 import studio.koeda.norrklang.data.diagnostics.Diagnostics
 import studio.koeda.norrklang.data.diagnostics.ReportMetadata
 import studio.koeda.norrklang.data.diagnostics.ReportPayload
@@ -36,6 +38,7 @@ class SettingsViewModel @Inject constructor(
     private val settings: ServerSettingsRepository,
     private val repository: MusicRepository,
     private val savedRadioSongs: SavedRadioSongs,
+    private val connectionTest: ConnectionTest,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
@@ -242,6 +245,21 @@ class SettingsViewModel @Inject constructor(
         Diagnostics.clear()
         _diagnostics.value = ""
         _reportUrl.value = null
+    }
+
+    // --- Connection test (see ConnectionTest) ---
+
+    private val _connectionReport = MutableStateFlow(ConnectionTest.Report())
+    val connectionReport: StateFlow<ConnectionTest.Report> = _connectionReport.asStateFlow()
+
+    private var connectionTestJob: Job? = null
+
+    /** Starts a run, replacing one still in flight; call on entering the page. */
+    fun runConnectionTest() {
+        connectionTestJob?.cancel()
+        connectionTestJob = viewModelScope.launch {
+            connectionTest.run().collect { _connectionReport.value = it }
+        }
     }
 }
 

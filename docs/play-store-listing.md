@@ -81,7 +81,7 @@ Jellyfin
 Private by design
 No ads, no analytics, no crash reporting, no third-party services. The app
 talks only to your server (plus plex.tv to link a Plex account, and the radio
-stations you choose to play). Credentials
+stations you choose to play or test). Credentials
 are encrypted and stay on the device. Diagnostics stay on the device too and
 are shared only if you choose to submit a problem report.
 

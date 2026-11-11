@@ -201,20 +201,26 @@ internal fun AboutSupportRow(onClick: () -> Unit) {
     )
 }
 
+/** Section title on a sub-page, marked as a heading for screen readers. */
+@Composable
+internal fun SectionHeader(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier
+            .padding(top = LocalFormDimens.current.itemSpacing)
+            .semantics { heading() },
+    )
+}
+
 /** A titled group of mutually exclusive [OptionRow]s. */
 @Composable
 internal fun OptionSection(title: String, options: @Composable () -> Unit) {
     val dimens = LocalFormDimens.current
     Column(modifier = Modifier.selectableGroup()) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier
-                .padding(top = dimens.itemSpacing)
-                .semantics { heading() },
-        )
+        SectionHeader(title)
         options()
         Spacer(Modifier.height(dimens.itemSpacing / 2))
     }

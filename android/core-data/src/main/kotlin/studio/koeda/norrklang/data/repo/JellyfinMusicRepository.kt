@@ -79,6 +79,10 @@ class JellyfinMusicRepository @Inject constructor(
         session.client.musicLibraries(session.userId)
             .mapNotNull { view -> view.id?.let { MusicLibrary(it, view.name) } }
 
+    override suspend fun ping() {
+        withSession { it.client.publicSystemInfo() }
+    }
+
     override suspend fun artists(): List<Artist> =
         scoped("artists") { session, scope ->
             // Artists are server-wide entities: one spanning libraries comes

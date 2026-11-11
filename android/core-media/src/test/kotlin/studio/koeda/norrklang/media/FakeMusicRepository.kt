@@ -19,6 +19,7 @@ import studio.koeda.norrklang.data.session.ProviderSession
  * edit instead of breaking every fake.
  */
 internal open class FakeMusicRepository : MusicRepository {
+    override suspend fun ping(): Unit = error("unused")
     override suspend fun artists(): List<Artist> = error("unused")
     override suspend fun artist(id: String): ArtistDetail = error("unused")
     override suspend fun albums(offset: Int, size: Int): List<Album> = error("unused")

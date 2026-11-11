@@ -15,6 +15,7 @@ import studio.koeda.norrklang.ui.R
 internal fun AboutSupportPage(
     onAbout: () -> Unit,
     onPrivacyPolicy: () -> Unit,
+    onConnectionTest: (() -> Unit)?,
     onDiagnostics: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -37,6 +38,14 @@ internal fun AboutSupportPage(
             onClick = onPrivacyPolicy,
         )
         HorizontalDivider()
+        if (onConnectionTest != null) {
+            NavigationRow(
+                title = stringResource(R.string.settings_connection_test),
+                subtitle = stringResource(R.string.settings_connection_test_hint),
+                onClick = onConnectionTest,
+            )
+            HorizontalDivider()
+        }
         NavigationRow(
             title = stringResource(R.string.settings_diagnostics),
             subtitle = stringResource(R.string.settings_diagnostics_hint),

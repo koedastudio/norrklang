@@ -26,7 +26,7 @@ import studio.koeda.norrklang.ui.theme.LocalFormDimens
  */
 private enum class SettingsPage {
     Main, Libraries, Quality, NowPlaying, ScrobbleExceptions, ScrobbleArtists, ScrobblePlaylists, ScrobbleLibraries,
-    SavedSongs, AboutSupport, Diagnostics, About, PrivacyPolicy,
+    SavedSongs, AboutSupport, ConnectionTest, Diagnostics, About, PrivacyPolicy,
 }
 
 /**
@@ -162,13 +162,30 @@ fun SettingsScreen(
             )
         }
 
-        SettingsPage.AboutSupport -> AboutSupportPage(
-            onAbout = { page = SettingsPage.About },
-            onPrivacyPolicy = { page = SettingsPage.PrivacyPolicy },
-            onDiagnostics = { page = SettingsPage.Diagnostics },
-            onBack = toMain,
-            modifier = modifier,
-        )
+        SettingsPage.AboutSupport -> {
+            val session by viewModel.sessionState.collectAsStateWithLifecycle()
+            AboutSupportPage(
+                onAbout = { page = SettingsPage.About },
+                onPrivacyPolicy = { page = SettingsPage.PrivacyPolicy },
+                // Needs a server to test, so signed out has no row.
+                onConnectionTest = { page = SettingsPage.ConnectionTest }
+                    .takeIf { session is SessionManager.SessionState.Connected },
+                onDiagnostics = { page = SettingsPage.Diagnostics },
+                onBack = toMain,
+                modifier = modifier,
+            )
+        }
+
+        SettingsPage.ConnectionTest -> {
+            LaunchedEffect(Unit) { viewModel.runConnectionTest() }
+            val report by viewModel.connectionReport.collectAsStateWithLifecycle()
+            ConnectionTestPage(
+                report = report,
+                onRunAgain = viewModel::runConnectionTest,
+                onBack = toAboutSupport,
+                modifier = modifier,
+            )
+        }
 
         SettingsPage.Diagnostics -> {
             LaunchedEffect(Unit) { viewModel.loadDiagnostics() }

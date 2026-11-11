@@ -67,6 +67,11 @@ class PlexMusicRepository @Inject constructor(
     override suspend fun loadLibraries(session: PlexSession) =
         session.client.musicSections().map { MusicLibrary(it.key, it.title) }
 
+    // The section list is the lightest authenticated call the server client has.
+    override suspend fun ping() {
+        withSession { it.client.musicSections() }
+    }
+
     override suspend fun artists(): List<Artist> =
         scoped("artists") { session, scope ->
             scope.merged(BY_TITLE) { section ->

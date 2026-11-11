@@ -65,6 +65,8 @@ class SubsonicMusicRepository @Inject constructor(
         return LibraryScope.resolve(librariesFor(session), excluded)
     }
 
+    override suspend fun ping() = withSession { it.client.ping() }
+
     override suspend fun artists(): List<Artist> =
         scoped("artists") { session, scope ->
             session.client.getArtists(scope.folderIds).flatMap { index ->

@@ -9,6 +9,9 @@ is the single source of truth).
 
 ### Added
 
+- Connection test under Settings → About and support: server response time,
+  library counts and whether each radio station answers; the result is added
+  to Diagnostics.
 - Try the demo on the sign-in page: one tap signs in to the public demo
   server.
 - Jellyfin Quick Connect: approve a code in another Jellyfin app instead of

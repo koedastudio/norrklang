@@ -45,6 +45,9 @@ interface MusicRepository {
         expectedSession: ProviderSession? = null,
     ) {
     }
+
+    /** One light, uncached round trip to the server (see ConnectionTest). */
+    suspend fun ping()
     suspend fun artists(): List<Artist>
     suspend fun artist(id: String): ArtistDetail
     suspend fun albums(offset: Int = 0, size: Int = 100): List<Album>

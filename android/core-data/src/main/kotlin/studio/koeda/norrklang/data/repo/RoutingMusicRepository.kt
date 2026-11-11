@@ -41,6 +41,7 @@ class RoutingMusicRepository @Inject constructor(
     private fun active(): MusicRepository =
         activeOrNull() ?: throw MusicException.AuthFailed("Not signed in")
 
+    override suspend fun ping() = active().ping()
     override suspend fun artists(): List<Artist> = active().artists()
     override suspend fun artist(id: String): ArtistDetail = active().artist(id)
     override suspend fun albums(offset: Int, size: Int): List<Album> =
