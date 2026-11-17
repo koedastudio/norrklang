@@ -403,6 +403,11 @@ class SessionManagerTest {
         val repository = studio.koeda.norrklang.data.repo.SubsonicMusicRepository(
             manager,
             settings,
+            studio.koeda.norrklang.data.repo.SnapshotStore(
+                java.io.File(tmp.root, "browse"),
+                backgroundScope,
+                kotlin.coroutines.EmptyCoroutineContext,
+            ),
             "test",
             backgroundScope,
         )

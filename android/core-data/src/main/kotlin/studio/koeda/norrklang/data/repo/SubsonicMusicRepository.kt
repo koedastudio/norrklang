@@ -46,9 +46,10 @@ import studio.koeda.norrklang.subsonic.model.Playlist as PlaylistDto
 class SubsonicMusicRepository @Inject constructor(
     sessionManager: SessionManager,
     settings: ServerSettingsRepository,
+    store: SnapshotStore,
     @AppPackageName private val packageName: String,
     @ApplicationScope scope: CoroutineScope,
-) : ProviderMusicRepository<SubsonicSession>(sessionManager, settings, scope) {
+) : ProviderMusicRepository<SubsonicSession>(sessionManager, settings, store, scope) {
 
     override fun sessionOf(session: ProviderSession) = session as? SubsonicSession
 
@@ -68,7 +69,7 @@ class SubsonicMusicRepository @Inject constructor(
     override suspend fun ping() = withSession { it.client.ping() }
 
     override suspend fun artists(): List<Artist> =
-        scoped("artists") { session, scope ->
+        persistedScoped(BrowseList.ARTISTS, "artists", BrowseListSerializers.artists) { session, scope ->
             session.client.getArtists(scope.folderIds).flatMap { index ->
                 index.artist.map { it.toDomain(sortGroup = index.name) }
             }
@@ -102,31 +103,35 @@ class SubsonicMusicRepository @Inject constructor(
         }
 
     override suspend fun recentlyAdded(size: Int): List<Album> =
-        scoped("recent/$size") { session, scope ->
+        persistedScoped(BrowseList.RECENTLY_ADDED_ALBUMS, "recent/$size", BrowseListSerializers.albums) { session, scope ->
             session.client.getAlbumList2(SubsonicClient.AlbumListType.NEWEST, size, musicFolderIds = scope.folderIds)
                 .map { it.toDomain() }
         }
 
     override suspend fun favoriteAlbums(size: Int): List<Album> =
-        scoped("favorites/$size") { session, scope ->
+        persistedScoped(BrowseList.FAVORITE_ALBUMS, "favorites/$size", BrowseListSerializers.albums) { session, scope ->
             session.client.getAlbumList2(SubsonicClient.AlbumListType.STARRED, size, musicFolderIds = scope.folderIds)
                 .map { it.toDomain() }
         }
 
     override suspend fun favoriteTracks(): List<Track> =
-        scoped("favorite-tracks") { session, scope ->
+        persistedScoped(BrowseList.FAVORITE_TRACKS, "favorite-tracks", BrowseListSerializers.tracks) { session, scope ->
             session.client.getStarred2(scope.folderIds).song.map { it.toDomain(scope.singleLibraryId) }
         }
 
     override suspend fun favoriteArtists(): List<Artist> =
-        scoped("favorite-artists") { session, scope ->
+        persistedScoped(BrowseList.FAVORITE_ARTISTS, "favorite-artists", BrowseListSerializers.artists) { session, scope ->
             session.client.getStarred2(scope.folderIds).artist.map { it.toDomain() }
         }
 
     // The Subsonic API has no "newest songs" list — flatten the newest albums
     // instead: newest album first, album track order within.
     override suspend fun recentlyAddedTracks(size: Int): List<Track> =
-        scoped("recently-added-tracks/$size") { session, scope ->
+        persistedScoped(
+            BrowseList.RECENTLY_ADDED_TRACKS,
+            "recently-added-tracks/$size",
+            BrowseListSerializers.tracks,
+        ) { session, scope ->
             val albums = session.client.getAlbumList2(
                 SubsonicClient.AlbumListType.NEWEST,
                 size,
@@ -163,7 +168,11 @@ class SubsonicMusicRepository @Inject constructor(
         }
 
     override suspend fun recentlyPlayedAlbums(size: Int): List<Album> =
-        scoped("recently-played-albums/$size") { session, scope ->
+        persistedScoped(
+            BrowseList.RECENTLY_PLAYED_ALBUMS,
+            "recently-played-albums/$size",
+            BrowseListSerializers.albums,
+        ) { session, scope ->
             session.client.getAlbumList2(SubsonicClient.AlbumListType.RECENT, size, musicFolderIds = scope.folderIds)
                 .map { it.toDomain() }
         }
@@ -262,14 +271,14 @@ class SubsonicMusicRepository @Inject constructor(
     // Deliberately unscoped: a playlist track from a hidden library still
     // needs the right heart.
     override suspend fun isFavoriteTrack(trackId: String): Boolean =
-        trackId in cached("favorite-track-ids") { session ->
+        trackId in persisted(BrowseList.FAVORITE_TRACK_IDS, "favorite-track-ids", BrowseListSerializers.ids) { session ->
             session.client.getStarred2().song.mapTo(HashSet()) { it.id }
         }
 
     override suspend fun setTrackFavorite(trackId: String, favorite: Boolean) =
         withSession { session ->
             if (favorite) session.client.star(trackId) else session.client.unstar(trackId)
-            cache.clear()
+            trackFavoriteChanged()
         }
 
     override suspend fun setAlbumFavorite(albumId: String, favorite: Boolean) =
@@ -277,7 +286,7 @@ class SubsonicMusicRepository @Inject constructor(
             if (favorite) session.client.starAlbum(albumId) else session.client.unstarAlbum(albumId)
             // Albums carry their starred state (see AlbumID3.starred), so every
             // cached album list is stale the moment a star changes.
-            cache.clear()
+            albumFavoriteChanged()
         }
 
     override suspend fun album(id: String): AlbumDetail =
@@ -300,7 +309,7 @@ class SubsonicMusicRepository @Inject constructor(
         }
 
     override suspend fun playlists(): List<Playlist> =
-        cached("playlists") { session ->
+        persisted(BrowseList.PLAYLISTS, "playlists", BrowseListSerializers.playlists) { session ->
             // `changed` is ISO-8601, so lexicographic order is chronological.
             session.client.getPlaylists()
                 .sortedByDescending { it.changed.orEmpty() }
@@ -330,7 +339,7 @@ class SubsonicMusicRepository @Inject constructor(
     // Unscoped: stations belong to the server, not a library. Servers
     // predating the endpoint answer NotFound, which reads as "no stations".
     override suspend fun radioStations(): List<RadioStation> =
-        cached("radio-stations") { session ->
+        persisted(BrowseList.RADIO_STATIONS, "radio-stations", BrowseListSerializers.stations) { session ->
             emptyWhenMissing { session.client.getInternetRadioStations() }.map {
                 RadioStation(
                     id = it.id,

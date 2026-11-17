@@ -6,6 +6,7 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.headersOf
 import java.io.File
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -34,6 +35,9 @@ class RoutingMusicRepositoryTest {
 
     @get:Rule
     val tmp = TemporaryFolder()
+
+    private fun snapshots(scope: CoroutineScope) =
+        SnapshotStore(File(tmp.root, "browse"), scope, EmptyCoroutineContext)
 
     private class PassthroughCipher : CredentialCipher {
         override fun encrypt(plaintext: String) = "enc-test:$plaintext"
@@ -93,9 +97,9 @@ class RoutingMusicRepositoryTest {
         )
         val repository = RoutingMusicRepository(
             sessionManager,
-            SubsonicMusicRepository(sessionManager, settings, "studio.koeda.norrklang", scope),
-            PlexMusicRepository(sessionManager, settings, "studio.koeda.norrklang", scope),
-            JellyfinMusicRepository(sessionManager, settings, "studio.koeda.norrklang", scope),
+            SubsonicMusicRepository(sessionManager, settings, snapshots(scope), "studio.koeda.norrklang", scope),
+            PlexMusicRepository(sessionManager, settings, snapshots(scope), "studio.koeda.norrklang", scope),
+            JellyfinMusicRepository(sessionManager, settings, snapshots(scope), "studio.koeda.norrklang", scope),
         )
         return TestEnv(sessionManager, repository)
     }

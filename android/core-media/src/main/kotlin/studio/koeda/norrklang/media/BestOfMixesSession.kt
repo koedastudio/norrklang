@@ -18,7 +18,8 @@ import studio.koeda.norrklang.data.repo.MusicRepository
  */
 internal class BestOfMixesSession(
     repository: MusicRepository,
-) : ArtistMixesSession(repository) {
+    persistence: MixPersistence<List<Mix>>? = null,
+) : ArtistMixesSession(repository, persistence) {
 
     override suspend fun generate(): List<Mix> {
         val (frequent, recent) = candidatePools()

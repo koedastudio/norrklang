@@ -26,10 +26,8 @@ import javax.inject.Inject
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -147,6 +145,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
             stationQueue = stationQueue,
             voiceSearch = VoiceSearchResolver(repository, containers::tracks),
             signInIntent = signInPendingIntent(),
+            offlineGuard = OfflineGuard(isOnline = { monitor.isConnected.value }),
             buildTrack = ::playableTrack,
         )
 
@@ -183,7 +182,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
                 )
             }
 
-        observeSessionState(player, resumptionLoader, monitor)
+        observeSessionState(player, resumptionLoader, monitor, browseTree::browsedArtistBuckets)
     }
 
     /**
@@ -268,6 +267,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
         player: AuthGatePlayer,
         resumptionLoader: ResumptionQueueLoader,
         monitor: NetworkMonitor,
+        artistBuckets: () -> List<MediaId>,
     ) {
         serviceScope.launch {
             val session = mediaSession ?: return@launch
@@ -311,19 +311,15 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
                             session.notifyChanged(MediaId.TabHome)
                         },
                     )
-                    var homeNotify: Job? = null
-                    // The raw setting, not the resolved scope: no network, and it
-                    // changes exactly when the user changes the selection.
-                    suspend fun mixFingerprint(): String =
-                        account.cacheFingerprint + "/" +
-                            LibraryScope.exclusionKey(settings.excludedLibraryIds.first())
+                    val notifier = CoalescedNotifier(this, NOTIFY_COALESCE_MS) { node ->
+                        session.notifyChanged(node, if (node == MediaId.Root) 3 else Int.MAX_VALUE)
+                    }
+                    launch {
+                        repository.listChanges.collect { notifier.post(changedNodes(it, artistBuckets())) }
+                    }
                     suspend fun refreshIntoHome(mixes: HomeMixesSession<*, *>) {
-                        if (mixes.refresh(mixFingerprint())) {
-                            homeNotify?.cancel()
-                            homeNotify = launch {
-                                delay(HOME_NOTIFY_COALESCE_MS)
-                                session.notifyChanged(MediaId.TabHome)
-                            }
+                        if (mixes.refresh(mixFingerprint(account, settings))) {
+                            notifier.post(listOf(MediaId.TabHome))
                         }
                     }
                     val initialization = PlaybackInitialization(
@@ -350,14 +346,18 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
                         settings.excludedLibraryIds.distinctUntilChanged().drop(1).collect {
                             randomMix.clear()
                             catalogMixes.clear()
-                            notifyLibraryScopeChanged(session)
+                            notifier.post(libraryScopeNodes())
                             initialization.retry()
                         }
                     }
                     try {
                         initialization.retry()
                         monitor.isConnected.collect { connected ->
-                            if (connected) initialization.retry()
+                            if (connected) {
+                                initialization.retry()
+                                repository.refreshStale()
+                                recovery.networkReturned()
+                            }
                         }
                     } finally {
                         listeners.forEach(player::removeListener)
@@ -367,16 +367,6 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
                 },
             )
         }
-    }
-
-    /** Every scoped browse node: both tabs and every tile but Radio (stations belong to the server). */
-    private fun notifyLibraryScopeChanged(session: MediaLibrarySession) {
-        session.notifyChanged(MediaId.Root, 3)
-        session.notifyChanged(MediaId.TabHome)
-        session.notifyChanged(MediaId.TabLibrary)
-        HomeTile.entries
-            .filter { it.section != HomeTile.Section.RADIO }
-            .forEach { session.notifyChanged(it.mediaId) }
     }
 
     override fun onGetSession(controllerInfo: ControllerInfo): MediaLibrarySession? = mediaSession
@@ -415,7 +405,7 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
         )
 
     companion object {
-        private const val HOME_NOTIFY_COALESCE_MS = 500L
+        private const val NOTIFY_COALESCE_MS = 500L
 
         // 3 minutes ahead (audio is cheap) so short dead zones never reach
         // the user. Min == max keeps the socket trickling: an idle refill

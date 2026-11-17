@@ -9,11 +9,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import studio.koeda.norrklang.data.di.ApplicationScope
 import studio.koeda.norrklang.data.repo.MusicRepository
+import studio.koeda.norrklang.data.repo.SnapshotStore
 import studio.koeda.norrklang.data.session.SessionManager
+import studio.koeda.norrklang.data.settings.ServerSettingsRepository
 import studio.koeda.norrklang.media.BestOfMixesSession
 import studio.koeda.norrklang.media.CatalogMixes
 import studio.koeda.norrklang.media.RandomMixSession
 import studio.koeda.norrklang.media.SimilarMixesSession
+import studio.koeda.norrklang.media.storedArtistMixes
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -29,8 +32,8 @@ internal object MediaModule {
         sessionManager: SessionManager,
         @ApplicationScope scope: CoroutineScope,
     ): RandomMixSession = RandomMixSession(repository).also { mix ->
-        // The snapshot embeds authenticated stream URLs — never let it survive
-        // a sign-out or account switch (mirrors SubsonicMusicRepository.init).
+        // One account's tracks must not survive a sign-out or account switch
+        // (mirrors ProviderMusicRepository.init).
         scope.launch {
             sessionManager.state.collect { mix.clear() }
         }
@@ -42,6 +45,8 @@ internal object MediaModule {
         repository: MusicRepository,
         bestOfMixes: BestOfMixesSession,
         sessionManager: SessionManager,
+        settings: ServerSettingsRepository,
+        store: SnapshotStore,
         @ApplicationScope scope: CoroutineScope,
     ): SimilarMixesSession =
         SimilarMixesSession(
@@ -49,6 +54,7 @@ internal object MediaModule {
             // No artist should head both a "Best of" and a "Similar to" tile;
             // the service refreshes Best of first so these seeds are settled.
             excludedSeedIds = { bestOfMixes.currentMixes().map { it.artist.id }.toSet() },
+            persistence = storedArtistMixes(store, sessionManager, settings, "mixes-similar"),
         ).clearingOnSignOut(sessionManager, scope) { clear() }
 
     @Provides
@@ -56,9 +62,12 @@ internal object MediaModule {
     fun bestOfMixesSession(
         repository: MusicRepository,
         sessionManager: SessionManager,
+        settings: ServerSettingsRepository,
+        store: SnapshotStore,
         @ApplicationScope scope: CoroutineScope,
     ): BestOfMixesSession =
-        BestOfMixesSession(repository).clearingOnSignOut(sessionManager, scope) { clear() }
+        BestOfMixesSession(repository, storedArtistMixes(store, sessionManager, settings, "mixes-bestof"))
+            .clearingOnSignOut(sessionManager, scope) { clear() }
 
     @Provides
     @Singleton
@@ -69,8 +78,7 @@ internal object MediaModule {
     ): CatalogMixes = CatalogMixes(repository).clearingOnSignOut(sessionManager, scope) { clear() }
 
     /**
-     * Drops the session's tracks (they embed authenticated stream URLs) when
-     * the account is no longer connected. Non-Connected states only: the
+     * Drops the session's tracks when the account is no longer connected. Non-Connected states only: the
      * service's Connected branch generates on the same emission, and an
      * unconditional clear would race it (StateFlow collectors run in
      * undefined order). Connected → Connected account switches are covered

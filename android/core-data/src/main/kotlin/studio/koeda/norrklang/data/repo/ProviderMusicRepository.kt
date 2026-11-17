@@ -1,9 +1,11 @@
 package studio.koeda.norrklang.data.repo
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.serialization.KSerializer
 import studio.koeda.norrklang.data.model.LibraryScope
 import studio.koeda.norrklang.data.model.MusicLibrary
 import studio.koeda.norrklang.data.session.ProviderSession
@@ -14,7 +16,8 @@ import studio.koeda.norrklang.data.settings.ServerSettingsRepository
  * What every provider backend shares: the per-account TTL cache, the session
  * lookup, the library scope, and the [MusicException] boundary around each
  * call. Subclasses add the provider's endpoints on top of [cached]/[scoped]
- * (served from the cache) and [withSession]/[withScope] (always live).
+ * (served from the cache), [persisted]/[persistedScoped] (also kept on disk
+ * and answered stale-first) and [withSession]/[withScope] (always live).
  *
  * Every helper reads the session once and hands that same snapshot to its
  * loader: a re-read could store one account's data under another's
@@ -23,10 +26,14 @@ import studio.koeda.norrklang.data.settings.ServerSettingsRepository
 abstract class ProviderMusicRepository<S : ProviderSession>(
     private val sessionManager: SessionManager,
     protected val settings: ServerSettingsRepository,
+    store: SnapshotStore,
     scope: CoroutineScope,
 ) : MusicRepository {
 
-    protected val cache = TtlCache(ttlMillis = CACHE_TTL_MS)
+    private val cache = TtlCache(ttlMillis = CACHE_TTL_MS)
+    private val snapshots = SnapshotCache(cache, store, scope)
+
+    override val listChanges: Flow<BrowseList> get() = snapshots.changes
 
     init {
         // Explicit sign-out drops cached library data. Direct account switches
@@ -36,7 +43,10 @@ abstract class ProviderMusicRepository<S : ProviderSession>(
         // that account's first load.
         scope.launch {
             sessionManager.state.drop(1).collect { state ->
-                if (state is SessionManager.SessionState.SignedOut) cache.clear()
+                if (state is SessionManager.SessionState.SignedOut) {
+                    cache.clear()
+                    snapshots.clear()
+                }
             }
         }
     }
@@ -65,7 +75,12 @@ abstract class ProviderMusicRepository<S : ProviderSession>(
      * load, which is the first time the server's current ids are known.
      */
     protected suspend fun librariesFor(session: S): List<MusicLibrary> =
-        cache.getOrLoad("${session.cacheFingerprint}/libraries") {
+        snapshots.get(
+            session.cacheFingerprint,
+            BrowseList.LIBRARIES,
+            "libraries",
+            BrowseListSerializers.libraries,
+        ) {
             translatingErrors(session) { loadLibraries(session) }
                 .also { settings.migrateLegacyLibrarySelection(it.map { library -> library.id }) }
         }
@@ -83,6 +98,33 @@ abstract class ProviderMusicRepository<S : ProviderSession>(
         val session = session()
         val scope = scope(session)
         return cache.getOrLoad("${session.cacheFingerprint}/${scope.key}/$key") {
+            translatingErrors(session) { loader(session, scope) }
+        }
+    }
+
+    /** [cached], plus the last-known value on disk; see [SnapshotCache]. */
+    protected suspend fun <T : Any> persisted(
+        list: BrowseList,
+        key: String,
+        serializer: KSerializer<T>,
+        loader: suspend (S) -> T,
+    ): T {
+        val session = session()
+        return snapshots.get(session.cacheFingerprint, list, key, serializer) {
+            translatingErrors(session) { loader(session) }
+        }
+    }
+
+    /** [scoped], plus the last-known value on disk; see [SnapshotCache]. */
+    protected suspend fun <T : Any> persistedScoped(
+        list: BrowseList,
+        key: String,
+        serializer: KSerializer<T>,
+        loader: suspend (S, LibraryScope) -> T,
+    ): T {
+        val session = session()
+        val scope = scope(session)
+        return snapshots.get(session.cacheFingerprint, list, "${scope.key}/$key", serializer) {
             translatingErrors(session) { loader(session, scope) }
         }
     }
@@ -116,7 +158,28 @@ abstract class ProviderMusicRepository<S : ProviderSession>(
             throw translated
         }
 
-    override fun invalidateCache() = cache.clear()
+    /** After a track heart: everything reloads, and the favourite songs and heart must not come back stale. */
+    protected fun trackFavoriteChanged() =
+        forget(setOf(BrowseList.FAVORITE_TRACKS, BrowseList.FAVORITE_TRACK_IDS))
+
+    /** After an album heart; the album lists carry [studio.koeda.norrklang.data.model.Album.isFavorite]. */
+    protected fun albumFavoriteChanged() = forget(
+        setOf(
+            BrowseList.FAVORITE_ALBUMS,
+            BrowseList.RECENTLY_ADDED_ALBUMS,
+            BrowseList.RECENTLY_PLAYED_ALBUMS,
+        ),
+    )
+
+    private fun forget(lists: Set<BrowseList>) {
+        cache.clear()
+        snapshots.drop(sessionManager.connectedOrNull()?.session?.cacheFingerprint, lists)
+    }
+
+    override fun refreshStale() = snapshots.retryFailed()
+
+    /** Drops the disk copies too: the Connection Test must time real requests. */
+    override fun invalidateCache() = forget(BrowseList.entries.toSet())
 
     private companion object {
         const val CACHE_TTL_MS = 5 * 60 * 1000L

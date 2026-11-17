@@ -2,6 +2,8 @@ package studio.koeda.norrklang.data.repo
 
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.merge
 import studio.koeda.norrklang.data.model.Album
 import studio.koeda.norrklang.data.model.AlbumDetail
 import studio.koeda.norrklang.data.model.Artist
@@ -121,6 +123,13 @@ class RoutingMusicRepository @Inject constructor(
         expectedSession: ProviderSession?,
     ) {
         activeOrNull()?.reportPlayState(trackId, state, positionMs, durationMs, expectedSession)
+    }
+
+    override val listChanges: Flow<BrowseList> =
+        merge(subsonic.listChanges, plex.listChanges, jellyfin.listChanges)
+
+    override fun refreshStale() {
+        activeOrNull()?.refreshStale()
     }
 
     override fun invalidateCache() {

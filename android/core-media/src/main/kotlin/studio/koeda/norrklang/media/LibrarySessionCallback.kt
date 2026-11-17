@@ -53,6 +53,7 @@ internal class LibrarySessionCallback(
     private val stationQueue: StationQueue,
     private val voiceSearch: VoiceSearchResolver,
     private val signInIntent: PendingIntent,
+    private val offlineGuard: OfflineGuard = OfflineGuard(isOnline = { true }),
     private val buildTrack: (Track, MediaId.Container?) -> MediaItem = MediaItemFactory::playableTrack,
 ) : MediaLibrarySession.Callback {
 
@@ -244,7 +245,10 @@ internal class LibrarySessionCallback(
         controller: ControllerInfo,
         mediaItems: List<MediaItem>,
     ): ListenableFuture<List<MediaItem>> = resolved {
-        mediaItems.flatMap { resolve(it) }
+        val failsEmpty = emptyMayBeFailure(mediaItems)
+        connected(mediaSession, failedSilently = { failsEmpty && it.isEmpty() }) {
+            mediaItems.flatMap { resolve(it) }
+        }
     }
 
     override fun onSetMediaItems(
@@ -254,10 +258,24 @@ internal class LibrarySessionCallback(
         startIndex: Int,
         startPositionMs: Long,
     ): ListenableFuture<MediaItemsWithStartPosition> = resolved {
+        val failsEmpty = emptyMayBeFailure(mediaItems)
+        connected(mediaSession, failedSilently = { failsEmpty && it.mediaItems.isEmpty() }) {
+            queueFor(mediaItems, startIndex, startPositionMs)
+        }.also {
+            // A failed future leaves the current queue playing; an empty success would replace it with silence.
+            if (it.mediaItems.isEmpty()) throw IllegalArgumentException("Nothing to play")
+        }
+    }
+
+    private suspend fun queueFor(
+        mediaItems: List<MediaItem>,
+        startIndex: Int,
+        startPositionMs: Long,
+    ): MediaItemsWithStartPosition {
         // Assistant voice requests (legacy playFromSearch) arrive as one item
         // with no media id, carrying only requestMetadata.
         mediaItems.singleOrNull()?.takeIf(::isVoiceRequest)?.let { requested ->
-            return@resolved when (val resolved = resolveVoiceRequest(requested)) {
+            return when (val resolved = resolveVoiceRequest(requested)) {
                 is VoiceSearchResolver.Station -> stationQueue.startingAt(resolved.id)
                 is VoiceSearchResolver.Queue -> MediaItemsWithStartPosition(
                     resolved.tracks.map { buildTrack(it, resolved.container) },
@@ -270,7 +288,7 @@ internal class LibrarySessionCallback(
         // container context — rebuild the sibling queue around it. A tapped
         // station likewise plays amid the other stations.
         val single = mediaItems.singleOrNull()?.let { MediaId.parse(it.mediaId) }
-        if (single is MediaId.Track && single.container != null) {
+        return if (single is MediaId.Track && single.container != null) {
             val queue = containers.tracks(single.container)
             val index = queue.indexOfFirst { it.id == single.id }.coerceAtLeast(0)
             MediaItemsWithStartPosition(
@@ -326,6 +344,31 @@ internal class LibrarySessionCallback(
     }
 
     // --- helpers ---
+
+    /** Whether the request is for a mix whose empty answer can hide a failed load. */
+    private fun emptyMayBeFailure(requested: List<MediaItem>): Boolean = requested.any { item ->
+        val id = MediaId.parse(item.mediaId)
+        val container = (id as? MediaId.Track)?.container ?: id as? MediaId.Container
+        container != null && containers.emptyMayBeFailure(container)
+    }
+
+    /**
+     * Runs a play request through [offlineGuard]. Without a connection the
+     * driver gets a message and the request fails, which leaves the queue
+     * that is playing alone.
+     */
+    private suspend fun <T : Any> connected(
+        session: MediaSession,
+        failedSilently: (T) -> Boolean,
+        block: suspend () -> T,
+    ): T = try {
+        offlineGuard.run(failedSilently, block)
+    } catch (e: OfflineGuard.NoConnection) {
+        session.sendError(
+            SessionError(SessionError.ERROR_IO, context.getString(R.string.error_no_connection)),
+        )
+        throw e
+    }
 
     /** Resolves any requested item into playable track items (containers expand). */
     private suspend fun resolve(item: MediaItem): List<MediaItem> =

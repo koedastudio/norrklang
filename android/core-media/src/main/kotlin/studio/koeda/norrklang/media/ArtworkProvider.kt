@@ -295,7 +295,9 @@ class ArtworkProvider : ContentProvider() {
     /**
      * The composed tile image for [cacheKey], re-rendered once the cached
      * copy goes stale. Render failures fall back to a stale image when one
-     * exists — a slightly old collage beats a blank tile.
+     * exists — a slightly old collage beats a blank tile. Without a
+     * connection the stale image is served at once: the render could only
+     * time out, on a binder thread the host is waiting on.
      */
     private fun composedTileFile(
         context: Context,
@@ -307,7 +309,7 @@ class ArtworkProvider : ContentProvider() {
         val file = File(accountDir, hashedFileName(cacheKey))
         val stale = file.length() == 0L ||
             System.currentTimeMillis() - file.lastModified() > HOME_BUTTON_TTL_MS
-        if (stale) {
+        if (stale && (file.length() == 0L || NetworkMonitor.hasValidatedNetwork(context))) {
             try {
                 // openFile runs on a small shared binder-thread pool; cap the
                 // aggregate work so a slow server can't pin a thread for up to

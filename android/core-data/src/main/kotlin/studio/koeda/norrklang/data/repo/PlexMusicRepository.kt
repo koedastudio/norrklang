@@ -56,9 +56,10 @@ import studio.koeda.norrklang.plex.model.PlexMetadata
 class PlexMusicRepository @Inject constructor(
     sessionManager: SessionManager,
     settings: ServerSettingsRepository,
+    store: SnapshotStore,
     @AppPackageName private val packageName: String,
     @ApplicationScope scope: CoroutineScope,
-) : ProviderMusicRepository<PlexSession>(sessionManager, settings, scope) {
+) : ProviderMusicRepository<PlexSession>(sessionManager, settings, store, scope) {
 
     override fun sessionOf(session: ProviderSession) = session as? PlexSession
 
@@ -73,7 +74,7 @@ class PlexMusicRepository @Inject constructor(
     }
 
     override suspend fun artists(): List<Artist> =
-        scoped("artists") { session, scope ->
+        persistedScoped(BrowseList.ARTISTS, "artists", BrowseListSerializers.artists) { session, scope ->
             scope.merged(BY_TITLE) { section ->
                 session.client.sectionItems(section, ItemType.ARTIST, sort = "titleSort:asc")
             }.mapNotNull { (_, dto) -> dto.toArtistOrNull(sortGroup = dto.sortBucket()) }
@@ -145,35 +146,39 @@ class PlexMusicRepository @Inject constructor(
     }
 
     override suspend fun recentlyAdded(size: Int): List<Album> =
-        scoped("recent/$size") { session, scope ->
+        persistedScoped(BrowseList.RECENTLY_ADDED_ALBUMS, "recent/$size", BrowseListSerializers.albums) { session, scope ->
             scope.merged(BY_ADDED_DESC) { section ->
                 session.client.sectionItems(section, ItemType.ALBUM, sort = "addedAt:desc", size = size)
             }.mapNotNull { (_, dto) -> dto.toAlbumOrNull() }.take(size)
         }
 
     override suspend fun favoriteAlbums(size: Int): List<Album> =
-        scoped("favorites/$size") { session, scope ->
+        persistedScoped(BrowseList.FAVORITE_ALBUMS, "favorites/$size", BrowseListSerializers.albums) { session, scope ->
             scope.merged(BY_TITLE) { section ->
                 session.client.sectionItems(section, ItemType.ALBUM, filters = LOVED, size = size)
             }.mapNotNull { (_, dto) -> dto.toAlbumOrNull() }.take(size)
         }
 
     override suspend fun favoriteTracks(): List<Track> =
-        scoped("favorite-tracks") { session, scope ->
+        persistedScoped(BrowseList.FAVORITE_TRACKS, "favorite-tracks", BrowseListSerializers.tracks) { session, scope ->
             scope.merged(BY_TITLE) { section ->
                 session.client.sectionItems(section, ItemType.TRACK, filters = LOVED)
             }.mapNotNull { (section, dto) -> dto.toTrackOrNull(section) }
         }
 
     override suspend fun favoriteArtists(): List<Artist> =
-        scoped("favorite-artists") { session, scope ->
+        persistedScoped(BrowseList.FAVORITE_ARTISTS, "favorite-artists", BrowseListSerializers.artists) { session, scope ->
             scope.merged(BY_TITLE) { section ->
                 session.client.sectionItems(section, ItemType.ARTIST, filters = LOVED)
             }.mapNotNull { (_, dto) -> dto.toArtistOrNull() }
         }
 
     override suspend fun recentlyAddedTracks(size: Int): List<Track> =
-        scoped("recently-added-tracks/$size") { session, scope ->
+        persistedScoped(
+            BrowseList.RECENTLY_ADDED_TRACKS,
+            "recently-added-tracks/$size",
+            BrowseListSerializers.tracks,
+        ) { session, scope ->
             scope.merged(BY_ADDED_DESC) { section ->
                 session.client.sectionItems(section, ItemType.TRACK, sort = "addedAt:desc", size = size)
             }.mapNotNull { (section, dto) -> dto.toTrackOrNull(section) }.take(size)
@@ -209,7 +214,11 @@ class PlexMusicRepository @Inject constructor(
         }
 
     override suspend fun recentlyPlayedAlbums(size: Int): List<Album> =
-        scoped("recently-played-albums/$size") { session, scope ->
+        persistedScoped(
+            BrowseList.RECENTLY_PLAYED_ALBUMS,
+            "recently-played-albums/$size",
+            BrowseListSerializers.albums,
+        ) { session, scope ->
             scope.merged(BY_LAST_PLAYED_DESC) { section ->
                 session.client.sectionItems(
                     section,
@@ -440,7 +449,7 @@ class PlexMusicRepository @Inject constructor(
     // never lags a local change. Unscoped on purpose: the heart must be right
     // for a playlist track from a hidden section.
     override suspend fun isFavoriteTrack(trackId: String): Boolean =
-        trackId in cached("favorite-track-ids") { session ->
+        trackId in persisted(BrowseList.FAVORITE_TRACK_IDS, "favorite-track-ids", BrowseListSerializers.ids) { session ->
             fanOut(libraries().map { it.id }) { section ->
                 session.client.sectionItems(section, ItemType.TRACK, filters = LOVED)
             }.flatMap { it.second }.mapNotNullTo(HashSet()) { it.ratingKey }
@@ -449,7 +458,7 @@ class PlexMusicRepository @Inject constructor(
     override suspend fun setTrackFavorite(trackId: String, favorite: Boolean) =
         withSession { session ->
             session.client.rate(trackId, if (favorite) LOVED_RATING else CLEAR_RATING)
-            cache.clear()
+            trackFavoriteChanged()
         }
 
     override suspend fun setAlbumFavorite(albumId: String, favorite: Boolean) =
@@ -457,7 +466,7 @@ class PlexMusicRepository @Inject constructor(
             session.client.rate(albumId, if (favorite) LOVED_RATING else CLEAR_RATING)
             // Albums carry their loved state; every cached album list is
             // stale the moment a rating changes.
-            cache.clear()
+            albumFavoriteChanged()
         }
 
     override suspend fun album(id: String): AlbumDetail =
@@ -471,7 +480,7 @@ class PlexMusicRepository @Inject constructor(
         }
 
     override suspend fun playlists(): List<Playlist> =
-        cached("playlists") { session ->
+        persisted(BrowseList.PLAYLISTS, "playlists", BrowseListSerializers.playlists) { session ->
             session.client.playlists().mapNotNull { it.toPlaylistOrNull() }
         }
 

@@ -36,7 +36,8 @@ internal class SimilarMixesSession(
      * first so the set is settled by the time this one generates).
      */
     private val excludedSeedIds: suspend () -> Set<String> = { emptySet() },
-) : ArtistMixesSession(repository) {
+    persistence: MixPersistence<List<Mix>>? = null,
+) : ArtistMixesSession(repository, persistence) {
 
     override suspend fun generate(): List<Mix> {
         val accepted = mutableListOf<Mix>()

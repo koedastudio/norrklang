@@ -1,15 +1,23 @@
 package studio.koeda.norrklang.data.model
 
+import kotlinx.serialization.Serializable
+import studio.koeda.norrklang.data.artwork.CoverUriSerializer
+
 /*
  * Domain models used by the media layer and UIs. DTO→domain mapping happens in
  * MusicRepository, where artwork/stream URLs are resolved via SubsonicUrlBuilder
  * so consumers never touch auth details.
+ *
+ * The @Serializable types are written to disk by SnapshotStore: renaming a
+ * field or enum constant turns stored lists into misses (PersistedModelsTest).
  */
 
+@Serializable
 data class Artist(
     val id: String,
     val name: String,
     val albumCount: Int,
+    @Serializable(with = CoverUriSerializer::class)
     val artworkUrl: String?,
     /**
      * The server index bucket ("A"…"#") this artist was listed under; null
@@ -23,6 +31,7 @@ data class ArtistDetail(
     val albums: List<Album>,
 )
 
+@Serializable
 data class Album(
     val id: String,
     val title: String,
@@ -31,6 +40,7 @@ data class Album(
     val year: Int?,
     val trackCount: Int,
     val durationSec: Int,
+    @Serializable(with = CoverUriSerializer::class)
     val artworkUrl: String?,
     /** Whether the album is starred ("favorited") on the server. */
     val isFavorite: Boolean = false,
@@ -43,6 +53,7 @@ data class Album(
  * Servers without release-type data (Jellyfin, untagged libraries) report
  * [ALBUM] for everything. Declaration order is the artist view's section order.
  */
+@Serializable
 enum class ReleaseType {
     ALBUM,
     COMPILATION,
@@ -69,6 +80,7 @@ data class AlbumDetail(
     val tracks: List<Track>,
 )
 
+@Serializable
 data class Track(
     val id: String,
     val title: String,
@@ -79,6 +91,7 @@ data class Track(
     val trackNumber: Int?,
     val discNumber: Int?,
     val durationSec: Int?,
+    @Serializable(with = CoverUriSerializer::class)
     val artworkUrl: String?,
     val streamUrl: String,
     /** Owning library when known (see MusicRepository.trackLibraryId); null = unknown. */
@@ -86,6 +99,7 @@ data class Track(
 )
 
 /** A music library/section/folder as the server reports it; [id] is the server's opaque id. */
+@Serializable
 data class MusicLibrary(
     val id: String,
     val name: String,
@@ -97,11 +111,13 @@ data class Genre(
     val songCount: Int,
 )
 
+@Serializable
 data class Playlist(
     val id: String,
     val name: String,
     val trackCount: Int,
     val durationSec: Int,
+    @Serializable(with = CoverUriSerializer::class)
     val artworkUrl: String?,
 )
 
@@ -115,12 +131,14 @@ data class PlaylistDetail(
  * [streamUrl] is the station's own public stream — not a server endpoint, so
  * it carries no auth and is handed to the player as-is.
  */
+@Serializable
 data class RadioStation(
     val id: String,
     val name: String,
     val streamUrl: String,
     val homePageUrl: String? = null,
     /** The server's own station image, when it has one (Navidrome upload); null otherwise. */
+    @Serializable(with = CoverUriSerializer::class)
     val artworkUrl: String? = null,
 )
 

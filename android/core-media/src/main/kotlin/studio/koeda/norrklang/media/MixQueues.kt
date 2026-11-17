@@ -65,7 +65,7 @@ internal class MixQueues<K : Any>(
         tracksByMix.putAll(tracks)
     }
 
-    /** Drops everything (tracks embed authenticated stream URLs). */
+    /** Drops everything, for sign-out and account switches. */
     suspend fun clear() = replaceAll(emptyMap())
 
     private suspend fun current(key: K): List<Track>? = stateMutex.withLock { tracksByMix[key] }

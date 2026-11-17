@@ -2,6 +2,8 @@ package studio.koeda.norrklang.media
 
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.serialization.Serializable
+import studio.koeda.norrklang.data.artwork.CoverUriSerializer
 import studio.koeda.norrklang.data.model.Artist
 import studio.koeda.norrklang.data.model.Track
 import studio.koeda.norrklang.data.repo.MusicRepository
@@ -17,10 +19,14 @@ import studio.koeda.norrklang.data.repo.MusicException
  */
 internal abstract class ArtistMixesSession(
     repository: MusicRepository,
-) : HomeMixesSession<String, List<ArtistMixesSession.Mix>>(repository) {
+    persistence: MixPersistence<List<Mix>>? = null,
+) : HomeMixesSession<String, List<ArtistMixesSession.Mix>>(repository, persistence) {
 
+    /** Stored between drives (see [StoredMixes]); renaming a field drops stored mixes. */
+    @Serializable
     data class Mix(
         val artist: Artist,
+        @Serializable(with = CoverUriSerializer::class)
         val artworkUrl: String?,
         val tracks: List<Track>,
     )

@@ -5,7 +5,9 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class RadioErrorsTest {
 
@@ -44,5 +46,15 @@ class RadioErrorsTest {
         assertEquals(RadioErrors.Kind.UNAVAILABLE, RadioErrors.kindOf(error(PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND)))
         assertEquals(RadioErrors.Kind.UNSUPPORTED, RadioErrors.kindOf(error(PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED)))
         assertEquals(RadioErrors.Kind.UNSUPPORTED, RadioErrors.kindOf(error(PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED)))
+    }
+
+    @Test
+    fun `only an unreachable server counts as a connection failure`() {
+        fun error(code: Int) = PlaybackException(null, null, code)
+
+        assertTrue(RadioErrors.isConnectionFailure(error(PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED)))
+        assertTrue(RadioErrors.isConnectionFailure(error(PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT)))
+        assertFalse(RadioErrors.isConnectionFailure(error(PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS)))
+        assertFalse(RadioErrors.isConnectionFailure(error(PlaybackException.ERROR_CODE_DECODING_FAILED)))
     }
 }

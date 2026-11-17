@@ -21,10 +21,15 @@ import studio.koeda.norrklang.data.repo.MusicRepository
  * lists the snapshot doesn't already carry are built on first use and then
  * kept under the same contract.
  *
+ * With a [persistence], the previous drive's snapshot stands in until this
+ * drive's generation lands, so the section is there before the server
+ * answers; that one replacement is the only swap a drive sees.
+ *
  * Kept free of Android imports so it stays JVM-unit-testable.
  */
 internal abstract class HomeMixesSession<K : Any, S : Any>(
     protected val repository: MusicRepository,
+    private val persistence: MixPersistence<S>? = null,
 ) {
 
     /** Guards the snapshot state; critical sections stay free of network I/O. */
@@ -36,6 +41,12 @@ internal abstract class HomeMixesSession<K : Any, S : Any>(
 
     /** null = never generated for this fingerprint; empty = generated, no data. */
     private var snapshot: S? = null
+
+    /** True while [snapshot] is the previous drive's, restored from disk and due a refresh. */
+    private var provisional = false
+
+    /** The fingerprint whose stored snapshot was already looked for. */
+    private var restoreTriedFor: String? = null
 
     /** Bumped by [clear] so an in-flight generation can't adopt a stale result. */
     private var epoch = 0
@@ -49,11 +60,12 @@ internal abstract class HomeMixesSession<K : Any, S : Any>(
      */
     suspend fun refresh(fingerprint: String): Boolean {
         val startEpoch = stateMutex.withLock {
-            if (snapshotFingerprint == fingerprint && snapshot != null) return false
+            if (snapshotFingerprint == fingerprint && snapshot != null && !provisional) return false
             if (snapshotFingerprint != fingerprint) {
                 epoch++
                 snapshotFingerprint = fingerprint
                 snapshot = null
+                provisional = false
                 queues.clear()
             }
             epoch
@@ -71,37 +83,80 @@ internal abstract class HomeMixesSession<K : Any, S : Any>(
         }
         return stateMutex.withLock {
             // Cleared (sign-out) or already regenerated while we were working —
-            // discard rather than resurrect tracks with stale auth URLs.
+            // discard rather than resurrect another account's tracks.
             if (epoch != startEpoch) return false
-            if (snapshotFingerprint == fingerprint && snapshot != null) return false
-            val changed = !isEmpty(generated) || snapshot?.let { !isEmpty(it) } == true
+            if (snapshotFingerprint == fingerprint && snapshot != null && !provisional) return false
+            val previous = snapshot
+            val changed = if (provisional) {
+                generated != previous
+            } else {
+                !isEmpty(generated) || previous?.let { !isEmpty(it) } == true
+            }
             snapshotFingerprint = fingerprint
             snapshot = generated
+            provisional = false
             queues.replaceAll(sectionTracks(generated))
+            if (changed) persistence?.save(fingerprint, generated)
             changed
         }
     }
 
     /** The snapshot as the home grid should show it; never generates. */
-    protected suspend fun currentSnapshot(): S? = stateMutex.withLock { snapshot }
+    protected suspend fun currentSnapshot(): S? {
+        restore()
+        return stateMutex.withLock { snapshot }
+    }
+
+    /** Adopts the stored snapshot for the current account, once, unless this drive already has one. */
+    private suspend fun restore() {
+        val persistence = persistence ?: return
+        val fingerprint = persistence.currentFingerprint() ?: return
+        val startEpoch = stateMutex.withLock {
+            if (restoreTriedFor == fingerprint) return
+            if (snapshotFingerprint == fingerprint && snapshot != null) return
+            epoch
+        }
+        val stored = persistence.load(fingerprint)
+        stateMutex.withLock {
+            // Signed out or re-scoped during the read: this is the old account's snapshot.
+            if (epoch != startEpoch) return
+            if (restoreTriedFor == fingerprint) return
+            restoreTriedFor = fingerprint
+            if (stored == null || isEmpty(stored)) return
+            if (snapshotFingerprint == fingerprint && snapshot != null) return
+            // A generation running for another account must not land on top.
+            if (snapshotFingerprint != fingerprint) epoch++
+            snapshotFingerprint = fingerprint
+            snapshot = stored
+            provisional = true
+            queues.replaceAll(sectionTracks(stored))
+        }
+    }
 
     /**
      * The tracks of one mix — queue and browse list, always the same list
      * once adopted. A mix this session doesn't know (e.g. a resumption id
      * from a previous drive) is built on demand.
      */
-    suspend fun queueTracks(key: K): List<Track> = queues.queueTracks(key)
+    suspend fun queueTracks(key: K): List<Track> {
+        restore()
+        return queues.queueTracks(key)
+    }
 
     /** The resumption queue for a persisted `track/{id}|<mix>`. */
-    suspend fun resumeQueue(key: K, savedTrackId: String): List<Track> =
-        queues.resumeQueue(key, savedTrackId)
+    suspend fun resumeQueue(key: K, savedTrackId: String): List<Track> {
+        restore()
+        return queues.resumeQueue(key, savedTrackId)
+    }
 
-    /** Drops everything (tracks embed authenticated stream URLs). */
+    /** Drops everything held in memory. */
     suspend fun clear() {
         stateMutex.withLock {
             epoch++
             snapshotFingerprint = null
             snapshot = null
+            provisional = false
+            restoreTriedFor = null
         }
         queues.clear()
     }

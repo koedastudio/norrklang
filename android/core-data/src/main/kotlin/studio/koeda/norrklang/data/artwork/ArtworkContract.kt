@@ -1,5 +1,7 @@
 package studio.koeda.norrklang.data.artwork
 
+import java.net.URLDecoder
+
 /**
  * Contract for the in-app artwork ContentProvider.
  *
@@ -30,6 +32,14 @@ object ArtworkContract {
     fun coverUri(packageName: String, coverArtId: String): String {
         KnownCoverIds.register(coverArtId)
         return "content://$packageName$AUTHORITY_SUFFIX/$PATH_COVER/${encode(coverArtId)}"
+    }
+
+    /** Registers the id behind a [coverUri] restored from disk; other URIs are ignored. */
+    fun registerCoverUri(uri: String) {
+        val marker = "$AUTHORITY_SUFFIX/$PATH_COVER/"
+        val at = uri.indexOf(marker)
+        if (!uri.startsWith("content://") || at < 0) return
+        KnownCoverIds.register(decode(uri.substring(at + marker.length)))
     }
 
     /** Query parameter carrying the tile version (see [homeUri]). */
@@ -74,6 +84,13 @@ object ArtworkContract {
             val c = byte.toInt().toChar()
             if (c.isAllowed()) append(c) else append('%').append("%02X".format(byte))
         }
+    }
+
+    /** Inverse of [encode], which never emits a raw '+'; a malformed segment is kept as it is. */
+    private fun decode(segment: String): String = try {
+        URLDecoder.decode(segment, "UTF-8")
+    } catch (_: IllegalArgumentException) {
+        segment
     }
 
     private fun Char.isAllowed(): Boolean =

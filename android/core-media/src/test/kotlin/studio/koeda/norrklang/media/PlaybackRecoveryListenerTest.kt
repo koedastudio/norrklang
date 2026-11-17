@@ -46,4 +46,39 @@ class PlaybackRecoveryListenerTest {
         assertEquals(0, failed.prepares)
         assertEquals(0, healthy.prepares)
     }
+
+    private val connectionFailed =
+        PlaybackException(null, null, PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED)
+
+    @Test
+    fun `a returning network retries even after the backoff attempts ran out`() = runTest {
+        val player = ErrorPlayer(connectionFailed)
+        val listener = PlaybackRecoveryListener(ContextWrapper(null), this, player)
+        repeat(8) {
+            listener.onPlayerError(connectionFailed)
+            testScheduler.advanceUntilIdle()
+        }
+        val exhausted = player.prepares
+
+        listener.onPlayerError(connectionFailed)
+        testScheduler.advanceUntilIdle()
+        assertEquals(exhausted, player.prepares)
+
+        listener.networkReturned()
+        assertEquals(exhausted + 1, player.prepares)
+
+        // The backoff starts over.
+        listener.onPlayerError(connectionFailed)
+        testScheduler.advanceUntilIdle()
+        assertEquals(exhausted + 2, player.prepares)
+    }
+
+    @Test
+    fun `a returning network leaves a healthy player alone`() = runTest {
+        val player = ErrorPlayer(null)
+
+        PlaybackRecoveryListener(ContextWrapper(null), this, player).networkReturned()
+
+        assertEquals(0, player.prepares)
+    }
 }

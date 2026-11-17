@@ -7,11 +7,14 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.Url
 import io.ktor.http.headersOf
 import java.io.File
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
@@ -31,6 +34,9 @@ class SubsonicMusicRepositoryTest {
 
     @get:Rule
     val tmp = TemporaryFolder()
+
+    private fun snapshots(scope: CoroutineScope) =
+        SnapshotStore(File(tmp.root, "browse"), scope, EmptyCoroutineContext)
 
     private class PassthroughCipher : CredentialCipher {
         override fun encrypt(plaintext: String) = "enc-test:$plaintext"
@@ -81,7 +87,7 @@ class SubsonicMusicRepositoryTest {
         return TestEnv(
             sessionManager,
             settings,
-            SubsonicMusicRepository(sessionManager, settings, "studio.koeda.norrklang", scope),
+            SubsonicMusicRepository(sessionManager, settings, snapshots(scope), "studio.koeda.norrklang", scope),
         )
     }
 
@@ -309,5 +315,84 @@ class SubsonicMusicRepositoryTest {
             ),
             albums.associate { it.title to it.releaseType },
         )
+    }
+
+    private fun stationsRoute(name: String) {
+        routes.removeAll { "getInternetRadioStations.view" in it.first }
+        route(
+            "getInternetRadioStations.view",
+            body = ok(
+                """"internetRadioStations":{"internetRadioStation":[
+                    {"id":"s-1","name":"$name","streamUrl":"https://radio.example.com/p3"}]}""",
+            ),
+        )
+    }
+
+    private fun TestEnv.restarted(scope: CoroutineScope) =
+        SubsonicMusicRepository(sessionManager, settings, snapshots(scope), "studio.koeda.norrklang", scope)
+
+    @Test
+    fun `after a restart stations come from disk, then one refresh announces the change`() = runTest {
+        stationsRoute("P3")
+        val env = env(backgroundScope).signedIn()
+        env.repository.radioStations()
+        testScheduler.runCurrent()
+        val restarted = env.restarted(backgroundScope)
+        val change = async { restarted.listChanges.first() }
+        testScheduler.runCurrent()
+        stationsRoute("P4")
+        requests.clear()
+
+        assertEquals(listOf("P3"), restarted.radioStations().map { it.name })
+        assertEquals(emptyList(), requests)
+
+        assertEquals(BrowseList.RADIO_STATIONS, change.await())
+        assertEquals(1, requests.count { "getInternetRadioStations" in it })
+        assertEquals(listOf("P4"), restarted.radioStations().map { it.name })
+    }
+
+    @Test
+    fun `a track heart makes the favourite songs load live`() = runTest {
+        route("getStarred2.view", body = ok(""""starred2":{"song":[${song("s1")}]}"""))
+        val env = env(backgroundScope).signedIn()
+        env.repository.favoriteTracks()
+        testScheduler.runCurrent()
+
+        env.repository.setTrackFavorite("s2", true)
+        requests.clear()
+        env.repository.favoriteTracks()
+
+        assertEquals(1, requests.count { "getStarred2" in it })
+    }
+
+    @Test
+    fun `sign-out deletes the stored lists`() = runTest {
+        val env = env(backgroundScope).signedIn()
+        env.repository.playlists()
+        testScheduler.runCurrent()
+        assertTrue(File(tmp.root, "browse").walk().any { it.extension == "json" })
+
+        env.sessionManager.signOut()
+        testScheduler.runCurrent()
+
+        assertTrue(File(tmp.root, "browse").walk().none { it.extension == "json" })
+    }
+
+    @Test
+    fun `after a restart the heart is answered from disk, and a heart change is read live`() = runTest {
+        route("getStarred2.view", body = ok(""""starred2":{"song":[${song("s1")}]}"""))
+        val env = env(backgroundScope).signedIn()
+        assertTrue(env.repository.isFavoriteTrack("s1"))
+        testScheduler.runCurrent()
+        val restarted = env.restarted(backgroundScope)
+        requests.clear()
+
+        assertTrue(restarted.isFavoriteTrack("s1"))
+        assertEquals(emptyList(), requests)
+
+        restarted.setTrackFavorite("s1", false)
+        requests.clear()
+        restarted.isFavoriteTrack("s1")
+        assertEquals(1, requests.count { "getStarred2" in it })
     }
 }

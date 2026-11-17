@@ -79,7 +79,7 @@ internal class RandomMixSession(
         }
     }
 
-    /** Drops the snapshot (tracks embed authenticated stream URLs). */
+    /** Drops the snapshot, for sign-out and account switches. */
     suspend fun clear() = mutex.withLock {
         snapshot = emptyList()
         lastServedAt = 0L

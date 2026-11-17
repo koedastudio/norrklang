@@ -31,6 +31,14 @@ internal class ContainerTracks(
         }
 
     /**
+     * Whether an empty [tracks] answer can be a failed load: the generated
+     * mixes serve failures as empty (MixQueues), every other container throws.
+     */
+    fun emptyMayBeFailure(container: MediaId.Container): Boolean =
+        container is MediaId.HomeSimilar || container is MediaId.HomeBestOf ||
+            container is MediaId.CatalogMix
+
+    /**
      * The queue to resume at [savedTrackId]: mix containers resume as the
      * saved track + a fresh mix (resumeQueue adopts it, keeping later
      * browsing consistent). Exhaustive on purpose: a new Container type must

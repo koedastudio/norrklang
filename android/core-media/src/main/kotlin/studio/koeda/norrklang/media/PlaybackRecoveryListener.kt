@@ -83,6 +83,18 @@ internal class PlaybackRecoveryListener(
         if (playbackState == Player.STATE_READY) attempts = 0
     }
 
+    /**
+     * Retries at once with a fresh backoff. [networkCallback] only hears of a
+     * new default network; one that stays attached and regains internet (the
+     * garage door opening) is reported here by the service.
+     */
+    fun networkReturned() {
+        if (player.playerError?.isRecoverable() != true) return
+        retryJob?.cancel()
+        attempts = 0
+        retryNow()
+    }
+
     /** Must be called when the service shuts down. */
     fun release() {
         retryJob?.cancel()

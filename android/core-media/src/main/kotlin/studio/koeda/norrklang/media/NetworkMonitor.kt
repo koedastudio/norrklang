@@ -47,18 +47,26 @@ internal class NetworkMonitor(context: Context) : AutoCloseable {
         runCatching { connectivityManager?.unregisterNetworkCallback(callback) }
     }
 
-    private fun currentDefaultIsConnected(): Boolean {
-        val manager = connectivityManager ?: return false
-        return runCatching {
-            manager.getNetworkCapabilities(manager.activeNetwork)
-                ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
-        }.getOrDefault(false)
-    }
+    private fun currentDefaultIsConnected(): Boolean = isValidated(connectivityManager)
 
     private fun currentDefaultIsCellular(): Boolean {
         val manager = connectivityManager ?: return false
         val capabilities =
             runCatching { manager.getNetworkCapabilities(manager.activeNetwork) }.getOrNull()
         return capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true
+    }
+
+    companion object {
+        /** A one-off check for callers outside the service, which owns the monitor (ArtworkProvider). */
+        fun hasValidatedNetwork(context: Context): Boolean =
+            isValidated(context.getSystemService(ConnectivityManager::class.java))
+
+        private fun isValidated(manager: ConnectivityManager?): Boolean {
+            manager ?: return false
+            return runCatching {
+                manager.getNetworkCapabilities(manager.activeNetwork)
+                    ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+            }.getOrDefault(false)
+        }
     }
 }

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import java.util.Calendar
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -70,6 +71,16 @@ internal class BrowseTree(
     /** Local radio listening history, most listened first (see RadioPlayCounter). */
     private val radioPlayStats: suspend () -> List<RadioPlayStats> = { emptyList() },
 ) {
+
+    /** Letter folders a host has opened; children() runs off the main thread. */
+    private val browsedArtistBuckets = ConcurrentHashMap.newKeySet<String>()
+
+    /**
+     * The artist letter folders opened so far, to refresh when the artist
+     * list reloads: a folder's id is its rule, so it outlives the list it
+     * was cut from and the current partition cannot name them all.
+     */
+    fun browsedArtistBuckets(): List<MediaId> = browsedArtistBuckets.map(MediaId::ArtistBucket)
 
     private val quickPlayGroup = context.getString(R.string.browse_group_quick_play)
     private val madeForYouGroup = context.getString(R.string.browse_group_made_for_you)
@@ -139,11 +150,13 @@ internal class BrowseTree(
                 Paging.slice(repository.playlists(), page, pageSize).map(MediaItemFactory::forPlaylist)
             MediaId.TabRadio ->
                 Paging.slice(repository.radioStations(), page, pageSize).map { stationItem(it) }
-            is MediaId.ArtistBucket ->
+            is MediaId.ArtistBucket -> {
+                browsedArtistBuckets += id.key
                 Paging.slice(artistBucketMembers(id.key), page, pageSize)
                     // The folder's letter already says what a per-item A–Z
                     // header would — omit the redundant header.
                     .map { MediaItemFactory.forArtist(it, groupTitle = null) }
+            }
             is MediaId.AlbumBucket ->
                 Paging.slice(albumBucketMembers(id.source, id.key), page, pageSize)
                     .map(MediaItemFactory::forAlbum)

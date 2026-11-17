@@ -11,12 +11,14 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import java.io.File
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Rule
@@ -45,6 +47,9 @@ class PlexMusicRepositoryTest {
 
     @get:Rule
     val tmp = TemporaryFolder()
+
+    private fun snapshots(scope: CoroutineScope) =
+        SnapshotStore(File(tmp.root, "browse"), scope, EmptyCoroutineContext)
 
     private val account = PlexAccount(
         serverUri = "https://vault.example.com:32400",
@@ -104,7 +109,7 @@ class PlexMusicRepositoryTest {
         )
         return TestEnv(
             sessionManager,
-            PlexMusicRepository(sessionManager, settings, "studio.koeda.norrklang", scope),
+            PlexMusicRepository(sessionManager, settings, snapshots(scope), "studio.koeda.norrklang", scope),
             settings,
             store,
         )
@@ -685,5 +690,32 @@ class PlexMusicRepositoryTest {
 
         assertEquals(emptySet(), env.settings.excludedLibraryIds.first())
         assertEquals(null, env.store.data.first()[stringPreferencesKey("plex_section_id")])
+    }
+
+    @Test
+    fun `after a restart a scoped list comes from disk without asking for the libraries`() = runTest {
+        routes["type=8"] = """{"MediaContainer":{"Metadata":[
+            {"ratingKey":"7","type":"artist","title":"The Artist"}]}}"""
+        val env = env(backgroundScope)
+        env.signedIn().artists()
+        testScheduler.runCurrent()
+        val restarted = PlexMusicRepository(
+            env.sessionManager,
+            env.settings,
+            snapshots(backgroundScope),
+            "studio.koeda.norrklang",
+            backgroundScope,
+        )
+        val change = async { restarted.listChanges.first() }
+        testScheduler.runCurrent()
+        routes["type=8"] = """{"MediaContainer":{"Metadata":[
+            {"ratingKey":"8","type":"artist","title":"Another Artist"}]}}"""
+        requests.clear()
+
+        assertEquals(listOf("The Artist"), restarted.artists().map { it.name })
+        assertEquals(emptyList(), requests)
+
+        assertEquals(BrowseList.ARTISTS, change.await())
+        assertEquals(listOf("Another Artist"), restarted.artists().map { it.name })
     }
 }

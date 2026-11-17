@@ -1,5 +1,7 @@
 package studio.koeda.norrklang.data.repo
 
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import studio.koeda.norrklang.data.model.Album
 import studio.koeda.norrklang.data.model.AlbumDetail
 import studio.koeda.norrklang.data.model.Artist
@@ -172,6 +174,13 @@ interface MusicRepository {
         expectedSession: ProviderSession? = null,
     )
     fun invalidateCache()
+
+    /** Lists whose content changed after a stale copy was served; the browse nodes showing them need a refresh. */
+    val listChanges: Flow<BrowseList> get() = emptyFlow()
+
+    /** Retries the background refreshes that failed while offline. */
+    fun refreshStale() {
+    }
 
     companion object {
         /** Default [recentlyAddedTracks] length — a flat 200-track browse list. */

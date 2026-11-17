@@ -62,9 +62,10 @@ import studio.koeda.norrklang.jellyfin.model.JellyfinPlaybackBody
 class JellyfinMusicRepository @Inject constructor(
     sessionManager: SessionManager,
     settings: ServerSettingsRepository,
+    store: SnapshotStore,
     @AppPackageName private val packageName: String,
     @ApplicationScope scope: CoroutineScope,
-) : ProviderMusicRepository<JellyfinSession>(sessionManager, settings, scope) {
+) : ProviderMusicRepository<JellyfinSession>(sessionManager, settings, store, scope) {
 
     // The open play session reported to /Sessions/Playing; reportPlayState is
     // state-only, so the repository tracks which item the start was sent for.
@@ -84,7 +85,7 @@ class JellyfinMusicRepository @Inject constructor(
     }
 
     override suspend fun artists(): List<Artist> =
-        scoped("artists") { session, scope ->
+        persistedScoped(BrowseList.ARTISTS, "artists", BrowseListSerializers.artists) { session, scope ->
             // Artists are server-wide entities: one spanning libraries comes
             // back from each, so dedupe by id after the merge.
             mergeSorted(scope.perLibrary { session.client.albumArtists(session.userId, it) }, BY_SORT_NAME)
@@ -155,7 +156,7 @@ class JellyfinMusicRepository @Inject constructor(
     }
 
     override suspend fun recentlyAdded(size: Int): List<Album> =
-        scoped("recent/$size") { session, scope ->
+        persistedScoped(BrowseList.RECENTLY_ADDED_ALBUMS, "recent/$size", BrowseListSerializers.albums) { session, scope ->
             mergeSorted(
                 scope.perLibrary { lib ->
                     session.items(
@@ -171,7 +172,7 @@ class JellyfinMusicRepository @Inject constructor(
         }
 
     override suspend fun favoriteAlbums(size: Int): List<Album> =
-        scoped("favorites/$size") { session, scope ->
+        persistedScoped(BrowseList.FAVORITE_ALBUMS, "favorites/$size", BrowseListSerializers.albums) { session, scope ->
             mergeSorted(
                 scope.perLibrary { lib ->
                     session.items(
@@ -186,14 +187,14 @@ class JellyfinMusicRepository @Inject constructor(
         }
 
     override suspend fun favoriteTracks(): List<Track> =
-        scoped("favorite-tracks") { session, scope ->
+        persistedScoped(BrowseList.FAVORITE_TRACKS, "favorite-tracks", BrowseListSerializers.tracks) { session, scope ->
             mergeTagged(scope.selectedIds, BY_NAME) { lib ->
                 session.items(type = ItemType.AUDIO, parentId = lib, filters = IS_FAVORITE).items
             }.mapNotNull { (lib, item) -> item.toTrackOrNull(lib) }
         }
 
     override suspend fun favoriteArtists(): List<Artist> =
-        scoped("favorite-artists") { session, scope ->
+        persistedScoped(BrowseList.FAVORITE_ARTISTS, "favorite-artists", BrowseListSerializers.artists) { session, scope ->
             mergeSorted(
                 scope.perLibrary { session.client.albumArtists(session.userId, it, isFavorite = true) },
                 BY_SORT_NAME,
@@ -201,7 +202,11 @@ class JellyfinMusicRepository @Inject constructor(
         }
 
     override suspend fun recentlyAddedTracks(size: Int): List<Track> =
-        scoped("recently-added-tracks/$size") { session, scope ->
+        persistedScoped(
+            BrowseList.RECENTLY_ADDED_TRACKS,
+            "recently-added-tracks/$size",
+            BrowseListSerializers.tracks,
+        ) { session, scope ->
             mergeTagged(scope.selectedIds, BY_DATE_CREATED_DESC) { lib ->
                 session.items(
                     type = ItemType.AUDIO,
@@ -246,7 +251,12 @@ class JellyfinMusicRepository @Inject constructor(
         }
 
     override suspend fun recentlyPlayedAlbums(size: Int): List<Album> =
-        playedAlbums("recently-played-albums/$size", "DatePlayed", size)
+        playedAlbums(
+            "recently-played-albums/$size",
+            "DatePlayed",
+            size,
+            persistAs = BrowseList.RECENTLY_PLAYED_ALBUMS,
+        )
 
     override suspend fun mostPlayedAlbums(size: Int): List<Album> =
         playedAlbums("most-played-albums/$size", "PlayCount", size)
@@ -426,7 +436,7 @@ class JellyfinMusicRepository @Inject constructor(
     // never lags a local change. Unscoped: the heart must be right for a
     // playlist track from a hidden library. Cached as an id Set.
     override suspend fun isFavoriteTrack(trackId: String): Boolean =
-        trackId in cached("favorite-track-ids") { session ->
+        trackId in persisted(BrowseList.FAVORITE_TRACK_IDS, "favorite-track-ids", BrowseListSerializers.ids) { session ->
             session.items(
                 type = ItemType.AUDIO,
                 filters = IS_FAVORITE,
@@ -436,7 +446,7 @@ class JellyfinMusicRepository @Inject constructor(
     override suspend fun setTrackFavorite(trackId: String, favorite: Boolean) =
         withSession { session ->
             session.client.setFavorite(session.userId, trackId, favorite)
-            cache.clear()
+            trackFavoriteChanged()
         }
 
     override suspend fun setAlbumFavorite(albumId: String, favorite: Boolean) =
@@ -444,7 +454,7 @@ class JellyfinMusicRepository @Inject constructor(
             session.client.setFavorite(session.userId, albumId, favorite)
             // Albums carry their favorite state; every cached album list is
             // stale the moment the flag changes.
-            cache.clear()
+            albumFavoriteChanged()
         }
 
     override suspend fun album(id: String): AlbumDetail =
@@ -463,7 +473,7 @@ class JellyfinMusicRepository @Inject constructor(
         }
 
     override suspend fun playlists(): List<Playlist> =
-        cached("playlists") { session ->
+        persisted(BrowseList.PLAYLISTS, "playlists", BrowseListSerializers.playlists) { session ->
             // Playlists live outside the music libraries, so no ParentId here;
             // MediaType keeps video playlists out.
             session.items(
@@ -688,8 +698,13 @@ class JellyfinMusicRepository @Inject constructor(
      * first occurrence wins. Track counts are unknown (0) — same policy as
      * the artist synthesis.
      */
-    private suspend fun playedAlbums(key: String, sortBy: String, size: Int): List<Album> =
-        scoped(key) { session, scope ->
+    private suspend fun playedAlbums(
+        key: String,
+        sortBy: String,
+        size: Int,
+        persistAs: BrowseList? = null,
+    ): List<Album> {
+        val loader: suspend (JellyfinSession, LibraryScope) -> List<Album> = { session, scope ->
             playedTracks(session, scope, sortBy, size)
                 .mapNotNull { track ->
                     val albumId = track.albumId ?: return@mapNotNull null
@@ -709,6 +724,12 @@ class JellyfinMusicRepository @Inject constructor(
                 .distinctBy { it.id }
                 .take(size)
         }
+        return if (persistAs == null) {
+            scoped(key, loader)
+        } else {
+            persistedScoped(persistAs, key, BrowseListSerializers.albums, loader)
+        }
+    }
 
     /** Artists behind the played tracks, order preserved, first occurrence wins. */
     private suspend fun playedArtists(key: String, sortBy: String, size: Int): List<Artist> =

@@ -9,8 +9,10 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import studio.koeda.norrklang.data.radio.SavedRadioSongs
+import studio.koeda.norrklang.data.repo.BrowseList
 import studio.koeda.norrklang.data.repo.MusicRepository
 import studio.koeda.norrklang.data.runSuspendCatching
 
@@ -30,6 +32,14 @@ internal class PlaybackButtonsListener(
 ) : Player.Listener {
 
     private var refreshJob: Job? = null
+
+    init {
+        // A heart drawn from the stored ids must follow their background reload:
+        // the toggle reads the fresh ids and would otherwise do the opposite of what is shown.
+        scope.launch {
+            repository.listChanges.filter { it == BrowseList.FAVORITE_TRACK_IDS }.collect { refresh() }
+        }
+    }
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = refresh()
 

@@ -11,6 +11,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import java.io.File
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -45,6 +46,9 @@ class JellyfinMusicRepositoryTest {
 
     @get:Rule
     val tmp = TemporaryFolder()
+
+    private fun snapshots(scope: CoroutineScope) =
+        SnapshotStore(File(tmp.root, "browse"), scope, EmptyCoroutineContext)
 
     private val account = JellyfinAccount(
         baseUrl = "https://jf.example.com",
@@ -96,7 +100,7 @@ class JellyfinMusicRepositoryTest {
         )
         return TestEnv(
             sessionManager,
-            JellyfinMusicRepository(sessionManager, settings, "studio.koeda.norrklang", scope),
+            JellyfinMusicRepository(sessionManager, settings, snapshots(scope), "studio.koeda.norrklang", scope),
             settings,
             store,
         )

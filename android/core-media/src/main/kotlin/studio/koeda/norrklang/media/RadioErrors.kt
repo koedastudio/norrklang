@@ -8,9 +8,9 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.util.UnstableApi
 
 /**
- * Rewrites a player error raised while a radio station is playing into what
- * the car should show — ExoPlayer's own "Source error" tells the driver
- * nothing. Code, cause and extras are kept, so recovery and diagnostics
+ * Rewrites a player error raised while a radio station is playing, or a
+ * track's connection failure, into what the car should show — ExoPlayer's
+ * own "Source error" tells the driver nothing. Code, cause and extras are kept, so recovery and diagnostics
  * still see the original failure.
  */
 internal object RadioErrors {
@@ -26,13 +26,18 @@ internal object RadioErrors {
 
     @OptIn(UnstableApi::class) // 4-arg PlaybackException, extras
     fun present(context: Context, current: MediaItem?, error: PlaybackException): PlaybackException {
-        val station = stationName(current) ?: return error
-        return PlaybackException(
-            context.getString(kindOf(error).message, station),
-            error.cause,
-            error.errorCode,
-            error.extras,
-        )
+        val message = stationName(current)?.let { context.getString(kindOf(error).message, it) }
+            // A track queued without signal: say so while recovery waits for the network.
+            ?: if (isConnectionFailure(error)) context.getString(R.string.error_no_connection) else return error
+        return PlaybackException(message, error.cause, error.errorCode, error.extras)
+    }
+
+    /** The server could not be reached at all, as opposed to answering with an error. */
+    fun isConnectionFailure(error: PlaybackException): Boolean = when (error.errorCode) {
+        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+        -> true
+        else -> false
     }
 
     /** The station [item] plays, or null when it is not a radio station. */

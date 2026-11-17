@@ -50,6 +50,9 @@ class TtlCache(
         }
     }
 
+    /** The unexpired entry for [key], without loading. */
+    fun peek(key: String): Any? = synchronized(monitor) { fresh(key) }
+
     /** Called only while holding [monitor]. */
     private fun fresh(key: String): Any? {
         val existing = entries[key] ?: return null

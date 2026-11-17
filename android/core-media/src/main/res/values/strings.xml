@@ -45,6 +45,7 @@
   <string name="error_sign_in_required">Sign in to your music server to start listening</string>
   <string name="error_sign_in_action">Sign in</string>
   <string name="error_sign_in_on_phone">Open Norrklang on your phone to sign in</string>
+  <string name="error_no_connection">No connection. Try again when you\'re back online.</string>
   <string name="error_loading_library">Couldn\'t load your library. Check your connection and try again.</string>
   <!-- Radio station playback failures; %1$s is the station name (see RadioErrors). -->
   <string name="error_radio_unreachable">Can\'t reach %1$s right now</string>
