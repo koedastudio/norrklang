@@ -37,7 +37,7 @@ In the car
 genre or decade
 • Artist pages in sections — Albums, Compilations, Singles & EPs — with
 similar artists below
-• Home screen with one-tap Quick play — favourites, new songs, random songs,
+• Home screen with Quick play — favourites, new songs, random songs,
 a random album — the radio stations you play most, and mixes made for you:
 Best of and Similar to
 • Full playback: queue, shuffle, seek, cover art
@@ -58,6 +58,9 @@ bitrate on mobile data — or pick your own tiers
 out of browsing, search and mixes
 • Play counts reported to your own server, with per-artist, per-playlist and
 per-library exclusions — or turned off entirely
+• Starts at once: Home and your lists show from the last drive, even in a
+garage without signal, and music you tap there starts when the connection
+returns
 • Picks up where you left off after the car restarts
 
 Navidrome and Subsonic
@@ -74,8 +77,9 @@ the car
 • Streams from your own Plex Media Server
 
 Jellyfin
-• Sign in with your server address and account. The password is never stored
-— only an access token, encrypted on the device
+• Sign in with Quick Connect — approve a code in another Jellyfin app — or
+with your account. The password is never stored — only an access token,
+encrypted on the device
 • HTTPS required for the server address
 
 Private by design
@@ -95,11 +99,13 @@ Privacy policy: https://norrklang.app/privacy
 For the 1.6.0 release:
 
 ```
-• Random albums: tap to play a random album start to end, then the next
-• Quick play tiles play on one tap; the list is still a tap away
-• Library: browse albums by genre and by decade, each with a Shuffle tile
-• A simpler Home: Quick play, your radio stations and Made for you, now
-with three mixes seeded from random artists in your library
+• Instant start: Home and your lists appear at once, even without signal,
+then refresh in the background
+• Music tapped without a connection starts when it returns
+• Random albums: a random album start to end, then the next
+• Albums by genre and by decade, each with a Shuffle tile
+• Jellyfin: sign in with Quick Connect
+• Try the demo server from the sign-in page
 ```
 
 For the 1.5.0 release:

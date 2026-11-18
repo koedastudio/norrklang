@@ -29,13 +29,13 @@ import studio.koeda.norrklang.media.MediaId.AlbumSource
  * root
  * ├── tab/home        → grid of square buttons in headed sections:
  * │                     "Quick play" (Favourites, New songs, Random songs
- * │                     → track lists that also play on tap; Random albums
- * │                     → plays one random album)
+ * │                     → track lists; Random albums → plays one random
+ * │                     album)
  * │                     "Radio" (the most listened stations → playable,
  * │                     present only once a station has been listened to)
  * │                     "Made for you" (Best of <artist>, Similar to <artist>
- * │                     → track lists that also play on tap, present only
- * │                     when the server has similarity data)
+ * │                     → track lists, present only when the server has
+ * │                     similarity data)
  * ├── tab/playlists   → playlist list → tracks
  * └── tab/library     → list in headed sections:
  *                       "Albums" (Recently added, Recently played,
@@ -498,7 +498,7 @@ internal class BrowseTree(
         }
     }
 
-    /** A home tile opening a track list (the mixes and favourite songs) that a tap also plays as a whole. */
+    /** A home tile opening a track list (the mixes and favourite songs), like an album or playlist. */
     private fun trackListTile(
         mediaId: MediaId,
         title: String,
@@ -511,7 +511,6 @@ internal class BrowseTree(
         mediaType = MediaMetadata.MEDIA_TYPE_PLAYLIST,
         childrenStyle = MediaItemFactory.listChildrenExtras(),
         groupTitle = group,
-        playable = true,
     )
 
     /** A Library tile in the "Albums" section opening an album grid. */

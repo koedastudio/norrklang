@@ -2,7 +2,7 @@
 layout: ../layouts/Legal.astro
 title: Privacy Policy
 description: What Norrklang stores, what it sends, and to whom. No analytics, no third parties.
-effectiveDate: 2026-11-04
+effectiveDate: 2026-11-18
 ---
 
 Norrklang is a music player for [Navidrome](https://www.navidrome.org/) and
@@ -47,17 +47,25 @@ All data the app stores stays **on your device**:
   decided on the device from the car's current connection; nothing about the
   network is sent anywhere.
 - **Caches** — library listings and cover art fetched from your server, kept
-  per account. Listings are held in memory only and disappear when the app
-  stops; cached cover art is stored in the app's cache area and deleted when a
+  per account in the app's cache area. The listings Home, Playlists and the
+  top of Library show — playlists, artists, recently added, recently played
+  and favourite albums, artists and songs, radio stations, your music
+  libraries and the Made for you mixes — are stored so they can appear when
+  the car starts, also without a connection; they are deleted when you sign
+  out or a different account signs in. Other listings are held in memory
+  only and disappear when the app stops. Cached cover art is deleted when a
   different account signs in.
 - **Diagnostics** — a short log of recent errors and the last crash, shown on
-  the in-car **Settings → Diagnostics** screen to help you report problems.
+  the in-car **Settings → About and support → Diagnostics** screen to help
+  you report problems. If you run the connection test, its result is added:
+  response times, how many libraries, artists, playlists and radio stations
+  your server listed, and the names of stations that did not answer.
   Entries are sanitized before they are written: server addresses and URL
   query strings — which can carry authentication tokens — are stripped. The
   log never leaves the device on its own (see below for the report flow).
 
 Signing out deletes the stored connection details, your settings, the
-playback state and the radio listening history. Two things stay: the songs
+playback state, the stored library listings and the radio listening history. Two things stay: the songs
 saved from radio, which hold titles and station names rather than anything
 about the account, until you clear the list; and the random device identifier
 the app mints for Plex, so that linking again does not register a duplicate
@@ -83,6 +91,13 @@ governed by [Plex's privacy policy](https://www.plex.tv/about/privacy-legal/),
 not this one. Jellyfin sign-in involves no such intermediary: the app talks to
 your Jellyfin server alone.
 
+**The demo.** If you choose **Try the demo** on the sign-in page, the server
+you connect to is the public demo server at demo-music.norrklang.app, run by
+Koeda Studio. It receives what any server you sign in to receives — the
+requests above and your car's IP address — and the account is shared by
+everyone who tries the demo, so favourites and play history there are not
+private to you. Signing out ends it like any other account.
+
 **Internet radio** is the one case where audio comes from somewhere other than
 your server. Your Navidrome/Subsonic server only lists the stations; when you
 play one, the car streams from the station's own server, at the address your
@@ -92,6 +107,13 @@ for stations that stream in short segments (HLS), where the car fetches each
 segment from the station's address. Some stations offer only plain `http://`
 streams, which the app plays as they are; the connection to your own server
 stays HTTPS.
+
+The **connection test** under **Settings → About and support** runs only when
+you open it. It sends your server a handful of the same listing requests
+browsing uses, and it opens the stream address of each radio station your
+server lists (up to 30) just long enough to see whether the station answers.
+No audio is played, but each of those stations sees the request and your
+car's IP address, as it would if you played it.
 
 The **Diagnostics** screen can show a QR code that lets you share the
 sanitized log when reporting a problem. The car uploads nothing: the log is
@@ -110,9 +132,9 @@ website, so your phone can open it; it carries nothing else.
 
 Norrklang has **no analytics, no advertising, no crash reporting, and no
 third-party services** — the app bundles no Google or other third-party
-tracking libraries. Koeda Studio receives no data from the app, so there is
-nothing on its side to export or delete on request: everything is on your
-device and on your server. What your server operator logs is governed by that
+tracking libraries. Unless you use the demo server, Koeda Studio receives no
+data from the app, so there is nothing on its side to export or delete on
+request: everything is on your device and on your server. What your server operator logs is governed by that
 server's own policies — if you use someone else's Navidrome server, ask them.
 
 Installing and updating the app goes through Google Play, which is covered by

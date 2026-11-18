@@ -153,7 +153,6 @@ internal enum class HomeTile(
 
     /** What the tile opens or plays — picks the browse-item builder in [BrowseTree]. */
     enum class Shape {
-        /** A track list that also plays as a whole on tap. */
         TRACK_LIST,
 
         /** Plays on tap, nothing to browse. */

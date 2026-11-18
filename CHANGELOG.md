@@ -5,48 +5,42 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow semver (`norrklang.version` in `android/gradle.properties`
 is the single source of truth).
 
-## [Unreleased]
-
+## [1.6.0] — 2026-11-18
 ### Added
 
-- Connection test under Settings → About and support: server response time,
-  library counts and whether each radio station answers; the result is added
-  to Diagnostics.
-- Try the demo on the sign-in page: one tap signs in to the public demo
-  server.
-- Jellyfin Quick Connect: approve a code in another Jellyfin app instead of
-  typing a password; the password form stays as fallback.
-- Random albums on Home: plays a random album start to end, then the next
-  one (#24).
-- Genres and Decades under Library → Albums: each opens a Shuffle tile and
-  the album grid.
-- Quick play and Made for you tiles play on one tap; the list still opens.
-- Made for you grows to nine tiles: three more Similar to mixes seeded from
-  random artists in the library.
-- Autoplay continues a random-albums queue with the next random album.
+- Instant start: Home, Playlists, Library and its first lists show from the
+  last drive, also without signal, then refresh in place.
+- Favourites, New songs and Made for you tapped without a connection start
+  when it returns; other taps show "No connection" and keep the queue.
+- Random albums on Home: a random album start to end, then the next;
+  autoplay continues it (#24).
+- Genres and Decades under Library → Albums, each with a Shuffle tile.
+- Made for you: three more Similar to mixes, seeded from random artists.
+- Jellyfin Quick Connect sign-in; the password form stays as fallback.
+- Try the demo on the sign-in page: one tap into the public demo server.
+- Connection test in Settings → About and support: response time, library
+  counts and radio station checks, saved to Diagnostics.
 
 ### Changed
 
-- Home is Quick play, Radio and Made for you. "Random mix" is now "Random
-  songs" and the "Recently added" songs tile "New songs".
+- Home is Quick play, Radio and Made for you; "Random mix" is "Random songs"
+  and the "Recently added" songs tile "New songs".
+- Tapping an empty list leaves the current queue playing.
 - The autoplay setting is "Autoplay", covering every continuation.
-- Plex and Jellyfin code sign-in stops waiting after 30 minutes; Try again
-  shows a new code.
-- Privacy policy opens an in-app page with a QR code instead of the car's
-  full-screen link dialog.
-- The Plex link page shows its QR code the same way as the Settings pages.
-- Settings is shorter: About, Privacy policy and Diagnostics move to a new
-  About and support page.
+- Plex and Jellyfin sign-in codes expire after 30 minutes; Try again shows
+  a new one.
+- Privacy policy and the Plex link code show as in-app QR pages.
+- Settings: About, Privacy policy and Diagnostics move to About and support.
+- Privacy policy (effective 2026-11-17) covers stored listings, the
+  connection test and the demo server; README, website and listing updated.
 
 ### Removed
 
-- Genre and Decade mix sections on Home (now under Library).
-- Most played row in Library.
+- Genre and Decade mixes on Home (now under Library); Most played in Library.
 
 ### Fixed
 
-- Jellyfin: capped-quality playback failed with 401 on Jellyfin 12, which
-  no longer accepts the legacy `api_key` parameter (#25).
+- Jellyfin 12: capped-quality playback failed with 401 (#25).
 
 ## [1.5.0] — 2026-11-04
 

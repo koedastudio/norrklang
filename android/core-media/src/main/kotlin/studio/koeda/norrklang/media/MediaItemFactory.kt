@@ -94,8 +94,6 @@ internal object MediaItemFactory {
         childrenStyle: Bundle? = null,
         groupTitle: String? = null,
         supportedCommands: List<String> = emptyList(),
-        /** Also playable: a tap plays the node's tracks (see LibrarySessionCallback.resolve). */
-        playable: Boolean = false,
     ): MediaItem = MediaItem.Builder()
         .setMediaId(mediaId.encode())
         .setMediaMetadata(
@@ -104,7 +102,8 @@ internal object MediaItemFactory {
                 .setSubtitle(subtitle)
                 .setArtworkUri(artworkUrl?.let(Uri::parse))
                 .setIsBrowsable(true)
-                .setIsPlayable(playable)
+                // Never both: hosts play a browsable+playable item on tap and offer no way into its list.
+                .setIsPlayable(false)
                 .setMediaType(mediaType)
                 .setSupportedCommands(supportedCommands)
                 .apply {
@@ -177,11 +176,6 @@ internal object MediaItemFactory {
         if (recorded != null) recorded.ifEmpty { null } else field?.toString()
 
     /**
-     * A playable station carrying its public stream URL as-is (no auth or
-     * quality resolution). [artistLine] sits under the title, which ICY
-     * metadata replaces with the current song once the stream plays.
-     */
-    /**
      * A playable node that is not a track (a mix or random-album tile): no
      * URI, the host hands the id to onSetMediaItems, which expands it.
      */
@@ -213,6 +207,11 @@ internal object MediaItemFactory {
         )
         .build()
 
+    /**
+     * A playable station carrying its public stream URL as-is (no auth or
+     * quality resolution). [artistLine] sits under the title, which ICY
+     * metadata replaces with the current song once the stream plays.
+     */
     fun forStation(
         station: RadioStation,
         artworkUrl: String?,

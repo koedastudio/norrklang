@@ -83,7 +83,7 @@ phone/desktop clients in this monorepo.
 - Streaming quality: Original / 320 / 192 / 128 kbps, independently for Wi-Fi
   and cellular. New track loads use the current tier; retries and seeks retain
   the same encoding so byte offsets stay valid
-- Browse: Home with one-tap Quick play (favourites, new songs, random songs,
+- Browse: Home with Quick play (favourites, new songs, random songs,
   random albums), the radio stations you play most and Made for you (Best of /
   Similar to); Playlists; Library with all artists (artist pages in Albums /
   Compilations / Singles & EPs sections, similar artists below), all albums,
@@ -102,6 +102,9 @@ phone/desktop clients in this monorepo.
   or your favourites
 - Play reporting back to the server (Navidrome scrobbles, Plex timelines, Jellyfin sessions),
   with on/off and per-artist/per-playlist/per-library exclusions
+- Instant start: Home, Playlists and the top of Library are kept on the device
+  and show at once, also without signal; music tapped offline starts when the
+  connection returns
 - Playback resumption after restarts; automatic recovery from network dropouts
 
 ## Guides
