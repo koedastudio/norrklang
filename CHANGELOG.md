@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow semver (`norrklang.version` in `android/gradle.properties`
 is the single source of truth).
 
+## [Unreleased]
+
+### Fixed
+
+- Radio: play after a pause of half a minute or more, or after a start with
+  the last station paused, reconnects and plays live instead of what was on
+  air when the pause began (#26).
+
 ## [1.6.0] — 2026-11-18
 ### Added
 
