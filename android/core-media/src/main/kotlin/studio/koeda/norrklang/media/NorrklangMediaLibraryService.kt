@@ -253,6 +253,9 @@ class NorrklangMediaLibraryService : MediaLibraryService() {
                     if (preload) trackPreload else ExoPlayer.PreloadConfiguration.DEFAULT
             },
         )
+        // A station paused for a while, or restored paused at start, plays
+        // live again on play rather than the audio from the moment it paused.
+        exoPlayer.addListener(StationLiveResume(exoPlayer))
         return AuthGatePlayer(ShuffleFromCurrentPlayer(exoPlayer)) { error ->
             RadioErrors.present(this, exoPlayer.currentMediaItem, error)
         }
